@@ -574,7 +574,7 @@ class ExperimentRunner:
     @staticmethod
     def _load_dataset(name: str, max_samples: int, tokenizer) -> list:
         """Returns list of (input_ids_tensor, prompt_len) tuples."""
-        max_samples = 10  # remove
+
         logger.info("Loading dataset %s with max_samples=%d", name, max_samples)
         from datasets import load_dataset
 
