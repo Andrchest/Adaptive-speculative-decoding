@@ -65,36 +65,28 @@ class DraftModel:
         logger.info("Drafting %d token(s) from context length %d", k, context.shape[1])
         tokens: list[int] = []
         cur = context.clone()
+        step_logits: list[torch.Tensor] = []
 
         for i in range(k):
             is_last = i == k - 1
 
             if distill and not is_last:
-                # Intermediate steps: no gradient, no logits stored.
-                # The context stays connected to the original tensor
-                # (through torch.cat), so the final step can still
-                # compute gradients through the model parameters.
                 with torch.no_grad():
                     out = self.model(cur, use_cache=True)
-                _ = out.logits[:, -1, :]
             else:
                 out = self.model(cur, use_cache=True)
 
             logits = out.logits[:, -1, :]  # (1, vocab)
+            step_logits.append(logits)
             next_tok = logits.argmax(dim=-1)  # greedy
             tokens.append(next_tok.item())
             cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
             logger.debug("Draft token %d/%d: %d", i + 1, k, tokens[-1])
 
-        # Only the last step has gradient tracking (when distill=True),
-        # so we only return its logits. For non-distillation mode we
-        # return all k logits for the full sequence.
         if distill:
-            logits_to_return = logits.unsqueeze(0)  # (1, vocab)
+            logits_to_return = torch.cat(step_logits, dim=0)  # (k, vocab)
         else:
-            logits_to_return = torch.stack(
-                [self._get_logits_at(context, cur, k)], 0
-            )  # (k, vocab)
+            logits_to_return = self._get_logits_at(context, cur, k)  # (k, vocab)
 
         logger.info("Draft complete: generated %d token(s)", len(tokens))
         return tokens, logits_to_return
@@ -109,13 +101,13 @@ class DraftModel:
         with torch.no_grad():
             cur = start.clone()
             all_logits: list[torch.Tensor] = []
-            for i in range(k):
+            for _ in range(k):
                 out = self.model(cur, use_cache=True)
-                logits = out.logits[:, -1, :].squeeze(0)
-                all_logits.append(logits)
-                next_tok = logits.argmax(dim=-1)
+                logits = out.logits[:, -1, :]  # (1, vocab)
+                all_logits.append(logits.squeeze(0))  # (vocab,)
+                next_tok = logits.argmax(dim=-1)  # (1,)
                 cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
-        return torch.stack(all_logits, dim=0)
+        return torch.stack(all_logits, dim=0)  # (k, vocab)
 
     def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Full forward pass; returns logits (seq, vocab)."""

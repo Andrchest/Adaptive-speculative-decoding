@@ -86,6 +86,7 @@ class OnlineDistiller:
         target_logits: torch.Tensor,  # (k, target_vocab)
         draft_tokens: list[int],
         accepted_mask: list[bool],
+        prompt_ids: list | None = None,
     ) -> float | None:
         """
         Accumulate one step of distillation loss.
@@ -173,9 +174,7 @@ class OnlineDistiller:
                 target_logits=target_logits,
                 accepted_mask=accepted_mask,
                 draft_tokens=draft_tokens,
-                target_to_draft_mapping=self._get_target_to_draft_mapping(
-                    target_logits.shape[-1]
-                ),
+                target_to_draft_mapping=self._get_target_to_draft_mapping(target_logits.shape[-1]),
             )
             total = total + cont_loss
             self.cont_losses.append(cont_stats["contrastive"])
@@ -255,7 +254,5 @@ class OnlineDistiller:
             "mean_nll": sum(self.nll_losses[-100:]) / max(1, len(self.nll_losses[-100:])),
         }
         if self.cont_losses:
-            stats["mean_contrastive"] = (
-                sum(self.cont_losses[-100:]) / len(self.cont_losses[-100:])
-            )
+            stats["mean_contrastive"] = sum(self.cont_losses[-100:]) / len(self.cont_losses[-100:])
         return stats

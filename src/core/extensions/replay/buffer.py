@@ -151,6 +151,26 @@ class ReplayDistiller:
             replay_batch,
         )
 
+    def step(
+        self,
+        draft_logits: torch.Tensor,
+        target_logits: torch.Tensor,
+        draft_tokens: list,
+        accepted_mask: list,
+        prompt_ids: list | None = None,
+    ) -> float | None:
+        accepted_tokens = [t for t, a in zip(draft_tokens, accepted_mask, strict=False) if a]
+        rejected_tokens = [t for t, a in zip(draft_tokens, accepted_mask, strict=False) if not a]
+        return self.live_step(
+            draft_logits=draft_logits,
+            target_logits=target_logits,
+            draft_tokens=draft_tokens,
+            accepted_mask=accepted_mask,
+            accepted_tokens=accepted_tokens,
+            rejected_tokens=rejected_tokens,
+            prompt_ids=prompt_ids or [],
+        )
+
     def live_step(
         self,
         draft_logits: torch.Tensor,
@@ -188,15 +208,23 @@ class ReplayDistiller:
 
         return loss
 
+    def training_stats(self) -> dict:
+        return self.distiller.training_stats()
+
     def _replay(self) -> None:
         """Replay sampled traces through the distiller."""
         traces = self.buffer.sample(self.replay_batch)
         logger.info("Replay phase: %d traces from buffer (size=%d)", len(traces), len(self.buffer))
         device = next(self.distiller.drafter.model.parameters()).device
         for t in traces:
-            self.distiller.step(
+            loss = self.distiller._compute_loss(
                 draft_logits=t.draft_logits.to(device),
                 target_logits=t.target_logits.to(device),
                 draft_tokens=t.draft_tokens,
                 accepted_mask=[tok in t.accepted_tokens for tok in t.draft_tokens],
             )
+            if loss is not None:
+                self.distiller._accum_loss = self.distiller._accum_loss + loss.detach().cpu()
+                self.distiller._accum_count += 1
+                if self.distiller._accum_count >= self.distiller.accum_steps:
+                    self.distiller._update_weights()

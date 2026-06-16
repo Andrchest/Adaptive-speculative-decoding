@@ -356,19 +356,21 @@ class ExperimentRunner:
                 DrafterSpec(
                     name=path,
                     model=d,
+                    n_params=sum(p.numel() for p in d.model.parameters()),
                     size_penalty=1.0,
                 )
                 for path, d in drafters.items()
             ]
             n_drafters = len(specs)
             d_hidden = drafter.model.config.hidden_size
-            router_model = RouterModel(d_input=d_hidden, n_drafters=n_drafters)
+            router_model = RouterModel(d_input=d_hidden, n_drafters=n_drafters).to(self.device)
             router = DynamicRouter(
                 drafter_specs=specs,
                 router_model=router_model,
                 embedder=lambda ids: drafter.model(ids, output_hidden_states=True)
                 .hidden_states[-1]
-                .mean(dim=1),
+                .mean(dim=1)
+                .to(dtype=router_model.net[0].weight.dtype),
             )
             logger.info("Dynamic router ready: %d drafters", n_drafters)
 
@@ -390,6 +392,7 @@ class ExperimentRunner:
                 device=self.device,
                 dtype=getattr(drafter.model, "dtype", torch.float16),
             )
+
             # Replace the drafter reference with the universal drafter wrapper
             # We monkey-patch the expected interface: universal.draft() and universal.model
             class _UniversalDrafterAdapter:
@@ -402,18 +405,14 @@ class ExperimentRunner:
                     self.model = base.model
 
                 @torch.no_grad()
-                def draft(
-                    self, context: torch.Tensor, k: int
-                ) -> tuple[list[int], torch.Tensor]:
-                    return self.universal.draft(
-                        context, k, target_name=cfg.target_model_path
-                    )
+                def draft(self, context: torch.Tensor, k: int) -> tuple[list[int], torch.Tensor]:
+                    return self.universal.draft(context, k, target_name=cfg.target_model_path)
 
                 def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
                     return self.universal.base_model(input_ids).logits.squeeze(0)
 
             # Find or replace the drafter in specs with the adapter
-            for spec in (specs if specs else []):
+            for spec in specs if specs else []:
                 if spec.name == cfg.drafter_model_path:
                     spec.model = _UniversalDrafterAdapter(drafter, universal)
 
@@ -564,6 +563,7 @@ class ExperimentRunner:
     @staticmethod
     def _load_dataset(name: str, max_samples: int, tokenizer) -> list:
         """Returns list of (input_ids_tensor, prompt_len) tuples."""
+        max_samples = 10  # remove
         logger.info("Loading dataset %s with max_samples=%d", name, max_samples)
         from datasets import load_dataset
 

@@ -114,9 +114,7 @@ class SpeculativeDecoder:
         # Only disable no_grad when distillation is active
         grad_ctx = contextlib.nullcontext() if distiller is not None else torch.no_grad()
         with grad_ctx:
-            return self._generate_loop(
-                input_ids, max_new_tokens, adaptive_length_fn, distiller
-            )
+            return self._generate_loop(input_ids, max_new_tokens, adaptive_length_fn, distiller)
 
     def _generate_loop(
         self,
@@ -273,6 +271,7 @@ class SpeculativeDecoder:
                 accepted_mask=[
                     i < rejected_at if rejected_at >= 0 else True for i in range(len(draft_tokens))
                 ],
+                prompt_ids=context[0].tolist(),
             )
             logger.debug("Online distillation step complete")
 

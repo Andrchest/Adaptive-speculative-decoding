@@ -23,6 +23,17 @@ from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
+from rich.logging import RichHandler
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%H:%M:%S]",
+    handlers=[RichHandler(rich_tracebacks=True, show_path=False)],
+)
+
+for noisy in ("urllib3", "httpx", "requests", "transformers", "huggingface_hub"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 
 from experiments.runner import ABLATION_SUITE, ExperimentConfig, ExperimentRunner
 
@@ -61,11 +72,15 @@ def main(
     ] = False,
     max_samples: Annotated[
         int | None,
-        typer.Option("--max-samples", "-n", help="Override max_samples per experiment (0 = keep default)"),
+        typer.Option(
+            "--max-samples", "-n", help="Override max_samples per experiment (0 = keep default)"
+        ),
     ] = 0,
     max_new_tokens: Annotated[
         int | None,
-        typer.Option("--max-new-tokens", help="Override max_new_tokens per experiment (0 = keep default)"),
+        typer.Option(
+            "--max-new-tokens", help="Override max_new_tokens per experiment (0 = keep default)"
+        ),
     ] = 0,
     tiny_models: Annotated[
         bool,
