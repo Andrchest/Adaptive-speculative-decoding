@@ -1,0 +1,47 @@
+# Pre-commit hooks
+# Install: pip install pre-commit && pre-commit install
+# Run: pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-PyYAML, types-requests]
+        args: [--config-file, .mypy.ini]
+        exclude: ^tests/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--max-size=10M']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args: [--ignore-words-list, 'drafting,ue']
+
+  - repo: local
+    hooks:
+      - id: pytest-check
+        name: pytest (quick check)
+        entry: bash -c 'cd tests && python -m pytest --co -q 2>/dev/null || true'
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [push]

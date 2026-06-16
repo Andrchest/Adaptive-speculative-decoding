@@ -1,0 +1,28 @@
+# Ruff configuration
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "A",      # flake8-builtins
+    "C90",    # mccabe (complexity)
+    "RUF",    # ruff-specific
+    "TCH",    # type-checking
+]
+ignore = [
+    "E501",   # line length — handled by formatter
+    "E731",   # don't assign lambdas
+]
+
+[lint.isort]
+known-first-party = ["omnidraft", "experiments", "benchmarks", "config", "inference"]
+
+[lint.mccabe]
+max-complexity = 10

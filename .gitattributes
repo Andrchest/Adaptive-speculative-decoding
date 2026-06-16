@@ -1,0 +1,24 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Explicitly declare text files you want to always be normalized
+*.py text
+*.md text
+*.yaml text
+*.yml text
+*.toml text
+*.json text
+*.txt text
+*.csv text
+*.sh text
+
+# Binary files
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.woff2 binary
+
+# Jupyter notebooks
+*.ipynb text eol=lf

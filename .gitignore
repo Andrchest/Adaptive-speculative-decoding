@@ -1,0 +1,67 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.venv.bak/
+
+# UV
+uv.lock
+.python-version
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Results & artifacts (kept per-researcher)
+results/
+*_test*.json
+comparison_table.csv
+mlflow.db
+mlruns/
+
+# Docker
+*.pid
+*.rdb
+*.aof
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Type stubs
+*.pyi
