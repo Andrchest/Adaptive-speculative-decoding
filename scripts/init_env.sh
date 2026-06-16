@@ -6,7 +6,7 @@
 # =============================================================================
 set -euo pipefail
 
-echo "🔧 Initializing OmniDraft++ development environment..."
+echo "🔧 Initializing development environment..."
 
 # Check Python version
 PYTHON_VER=$(python3 --version 2>&1 | grep -oP '\d+\.\d+')

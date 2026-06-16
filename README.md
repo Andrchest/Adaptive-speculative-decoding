@@ -1,4 +1,4 @@
-# OmniDraft++ — Adaptive Speculative Decoding Framework
+# Adaptive Speculative Decoding
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -27,7 +27,7 @@ uv run python src/main.py --suite ablation
 ```
 Adaptive-speculative-decoding/
 ├── src/                      # Main source code
-│   ├── omnidraft/            # Core library
+│   ├── core/                 # Core library
 │   │   ├── core/             # Speculative decoder, drafters
 │   │   ├── translation/      # Cross-vocab translation (Rule1, Rule2)
 │   │   ├── cache/            # N-gram cache with eviction strategies
@@ -97,7 +97,7 @@ docker compose up -d mlflow
 
 ## 🔗 References
 
-- **Original OmniDraft**: [odspd](odspd/) — legacy codebase
+- **Inspired by OmniDraft**: [odspd](odspd/) — legacy codebase for reference
 - **Paper**: _Adaptive Speculative Decoding_ (TBD)
 
 ## 📄 License

@@ -1,5 +1,5 @@
 [project]
-name = "omnidraft"
+name = "adaptive-speculative-decoding"
 version = "0.1.0"
 description = "Adaptive Speculative Decoding — a research framework for optimizing speculative decoding with adaptive draft length, cross-vocabulary translation, and online distillation"
 readme = "README.md"
@@ -106,7 +106,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["omnidraft", "experiments", "benchmarks"]
+known-first-party = ["experiments", "benchmarks", "config", "inference"]
 
 [tool.mypy]
 python_version = "3.12"

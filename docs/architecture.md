@@ -2,7 +2,7 @@
 
 ## System Design
 
-OmniDraft++ implements adaptive speculative decoding for accelerating LLM inference.
+This project implements adaptive speculative decoding for accelerating LLM inference.
 
 ### Core Pipeline
 

@@ -1,5 +1,5 @@
 # =============================================================================
-# OmniDraft++ — docker-compose
+# docker-compose
 # =============================================================================
 #
 # Usage:
@@ -19,14 +19,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: omnidraft:latest
+    image: adaptive-speculative-decoding:latest
     runtime: nvidia
     stdin_open: true
     tty: true
     volumes:
       - .:/app
-      - omnidraft-results:/app/results
-      - omnidraft-mlruns:/app/mlruns
+      - research-results:/app/results
+      - mlflow-data:/app/mlruns
     environment:
       - CUDA_VISIBLE_DEVICES=0
       - PYTHONDONTWRITEBYTECODE=1
@@ -44,7 +44,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - omnidraft-mlruns:/mlflow-data
+      - mlflow-data:/mlflow-data
     environment:
       - MLFLOW_S3_ENDPOINT_URL=
     command: >
@@ -63,6 +63,6 @@ services:
   #     - redis-data:/data
 
 volumes:
-  omnidraft-results:
-  omnidraft-mlruns:
+  research-results:
+  mlflow-data:
   # redis-data:

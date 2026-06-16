@@ -1,4 +1,4 @@
-# Contributing to OmniDraft++
+# Contributing to Adaptive Speculative Decoding
 
 ## 📋 For Human Contributors
 

@@ -1,4 +1,4 @@
-# OmniDraft++ — Docker Build & Push
+# Docker Build & Push
 # Runs on tags (e.g., v0.1.0)
 
 name: Docker

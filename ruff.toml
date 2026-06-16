@@ -22,7 +22,7 @@ ignore = [
 ]
 
 [lint.isort]
-known-first-party = ["omnidraft", "experiments", "benchmarks", "config", "inference"]
+known-first-party = ["experiments", "benchmarks", "config", "inference"]
 
 [lint.mccabe]
 max-complexity = 10

@@ -1,4 +1,4 @@
-<!-- PR Template for OmniDraft++ -->
+<!-- PR Template -->
 
 ## Summary
 <!-- One-paragraph summary of the changes -->

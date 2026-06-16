@@ -1,10 +1,10 @@
-# AI Agent Guidelines — OmniDraft++
+# AI Agent Guidelines
 
 ## 📁 Project Layout
 
 ```
 src/
-├── omnidraft/           # Core library
+├── core/                # Core library
 ├── experiments/         # Experiment runner
 ├── benchmarks/          # Metrics
 ├── config/              # Configuration
@@ -25,7 +25,7 @@ research/                # Per-researcher work area
 2. **Configuration** lives in `src/config/` — never hardcode params
 3. **Type hints** are mandatory for public APIs (enforced by mypy)
 4. **Docstrings** use Google style
-5. **Extensions** go in `src/omnidraft/extensions/` — clearly experimental
+5. **Extensions** go in `src/core/extensions/` — clearly experimental
 
 ## 🧪 Testing Rules
 

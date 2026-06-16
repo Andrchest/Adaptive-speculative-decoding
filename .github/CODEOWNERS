@@ -2,25 +2,25 @@
 # Format: @username path
 
 # Core library
-* @da.popov src/omnidraft/core
+* @da.popov src/core/
 
 # Translation
-* @a.polevoi src/omnidraft/translation
+* @a.polevoi src/core/translation
 
 # Cache
-* @m.krylov src/omnidraft/cache
+* @m.krylov src/core/cache
 
 # Distillation
-* @v.poponnikov src/omnidraft/distillation
+* @v.poponnikov src/core/distillation
 
 # Extensions
-* @al.khadeeva src/omnidraft/extensions/lattice
-* @e.pestrovskii src/omnidraft/extensions/translator
-* @m.krylov src/omnidraft/extensions/adaptive
-* @v.poponnikov src/omnidraft/extensions/replay
-* @a.polevoi src/omnidraft/extensions/contrastive
-* @al.khadeeva src/omnidraft/extensions/routing
-* @e.pestrovskii src/omnidraft/extensions/multitarget
+* @al.khadeeva src/core/extensions/lattice
+* @e.pestrovskii src/core/extensions/translator
+* @m.krylov src/core/extensions/adaptive
+* @v.poponnikov src/core/extensions/replay
+* @a.polevoi src/core/extensions/contrastive
+* @al.khadeeva src/core/extensions/routing
+* @e.pestrovskii src/core/extensions/multitarget
 
 # Experiments & Benchmarks
 * @da.popov src/experiments
