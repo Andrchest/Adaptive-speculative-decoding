@@ -1,0 +1,47 @@
+# Code Ownership — who to review for each area
+# Format: @username path
+
+# Core library
+* @da.popov src/omnidraft/core
+
+# Translation
+* @a.polevoi src/omnidraft/translation
+
+# Cache
+* @m.krylov src/omnidraft/cache
+
+# Distillation
+* @v.poponnikov src/omnidraft/distillation
+
+# Extensions
+* @al.khadeeva src/omnidraft/extensions/lattice
+* @e.pestrovskii src/omnidraft/extensions/translator
+* @m.krylov src/omnidraft/extensions/adaptive
+* @v.poponnikov src/omnidraft/extensions/replay
+* @a.polevoi src/omnidraft/extensions/contrastive
+* @al.khadeeva src/omnidraft/extensions/routing
+* @e.pestrovskii src/omnidraft/extensions/multitarget
+
+# Experiments & Benchmarks
+* @da.popov src/experiments
+* @da.popov src/benchmarks
+
+# Configuration
+* @da.popov src/config
+
+# Inference API
+* @da.popov src/inference
+
+# Tests
+* @all tests/
+
+# CI/CD
+* @all .github/
+
+# Research (each person owns their own folder)
+* @m.krylov research/m.krylov
+* @v.poponnikov research/v.poponnikov
+* @a.polevoi research/a.polevoi
+* @al.khadeeva research/al.khadeeva
+* @da.popov research/da.popov
+* @e.pestrovskii research/e.pestrovskii
