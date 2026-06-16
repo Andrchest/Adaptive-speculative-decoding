@@ -151,6 +151,50 @@ class ReplayDistiller:
             replay_batch,
         )
 
+    def step(
+        self,
+        draft_logits: torch.Tensor,
+        target_logits: torch.Tensor,
+        draft_tokens: list,
+        accepted_mask: list,
+    ) -> float | None:
+        """
+        Process one live decoding step (matches OnlineDistiller.step interface).
+
+        Stores the trace in the buffer and forwards to the inner distiller.
+        Periodically triggers replay of stored traces.
+        """
+        # Live distillation step
+        loss = self.distiller.step(
+            draft_logits=draft_logits,
+            target_logits=target_logits,
+            draft_tokens=draft_tokens,
+            accepted_mask=accepted_mask,
+        )
+
+        # Store trace for replay (detach and move to CPU to save GPU memory)
+        acc_rate = sum(accepted_mask) / max(len(accepted_mask), 1)
+        trace = Trace(
+            prompt_ids=[],  # prompt not available in decoder context
+            draft_logits=draft_logits.detach().cpu(),
+            target_logits=target_logits.detach().cpu(),
+            draft_tokens=draft_tokens,
+            accepted_tokens=[
+                t for t, a in zip(draft_tokens, accepted_mask, strict=True) if a
+            ],
+            rejected_tokens=[
+                t for t, a in zip(draft_tokens, accepted_mask, strict=True) if not a
+            ],
+            acceptance_rate=acc_rate,
+        )
+        self.buffer.add(trace)
+
+        self._live_steps += 1
+        if self._live_steps % self.replay_every == 0:
+            self._replay()
+
+        return loss
+
     def live_step(
         self,
         draft_logits: torch.Tensor,
@@ -161,7 +205,7 @@ class ReplayDistiller:
         rejected_tokens: list,
         prompt_ids: list,
     ) -> float | None:
-        """Process one live decoding step, store trace, and maybe replay."""
+        """Process one live decoding step with full trace info (legacy interface)."""
         acc_rate = sum(accepted_mask) / max(len(accepted_mask), 1)
         trace = Trace(
             prompt_ids=prompt_ids,
@@ -200,3 +244,11 @@ class ReplayDistiller:
                 draft_tokens=t.draft_tokens,
                 accepted_mask=[tok in t.accepted_tokens for tok in t.draft_tokens],
             )
+
+    def training_stats(self) -> dict:
+        """Delegate to inner distiller, adding replay buffer stats."""
+        stats = self.distiller.training_stats()
+        stats["buffer_size"] = len(self.buffer)
+        stats["buffer_mean_acc"] = self.buffer.mean_acceptance_rate()
+        stats["live_steps"] = self._live_steps
+        return stats

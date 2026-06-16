@@ -225,14 +225,20 @@ class SpeculativeDecoder:
         # target_logits: (k+1, target_vocab_size) — the +1 is the bonus token
 
         # 4. Translate drafter logits to target vocab space (if we have them)
+        # When distillation is active, draft_logits has requires_grad=True.
+        # The translator is NOT trained, so wrap in no_grad to prevent
+        # intermediate activations (softmax, index_add_) from being retained
+        # on the computation graph and contributing to OOM under cumulative
+        # memory pressure from drafter forward-pass activations.
         if draft_logits is not None:
             logger.debug("Translating drafter logits to target vocab")
-            translated_probs = self.translator.translate(draft_logits)  # (k, target_vocab)
-            # Defensive: guarantee this matches target_logits' actual width
-            # regardless of how the translator was constructed (e.g. if it
-            # was built from len(tokenizer.get_vocab()) rather than
-            # model.config.vocab_size — see translation/vocabulary.py).
-            translated_probs = _align_last_dim(translated_probs, target_logits.shape[-1])
+            with torch.no_grad():
+                translated_probs = self.translator.translate(draft_logits)  # (k, target_vocab)
+                # Defensive: guarantee this matches target_logits' actual width
+                # regardless of how the translator was constructed (e.g. if it
+                # was built from len(tokenizer.get_vocab()) rather than
+                # model.config.vocab_size — see translation/vocabulary.py).
+                translated_probs = _align_last_dim(translated_probs, target_logits.shape[-1])
         else:
             logger.debug("Skipping translation because draft tokens came from cache")
             translated_probs = None

@@ -58,43 +58,46 @@ class DraftModel:
         ----------
         distill : if True, gradient information is preserved for
                   online distillation. Steps 0..k-2 are run with
-                  torch.no_grad() and their logits are discarded,
-                  keeping only the last step's logits for the loss.
-                  This reduces activation memory by ~80%.
+                  torch.no_grad() to save activation memory; their
+                  logits are detached before stacking.  The final
+                  step runs with gradients so the distiller can
+                  backpropagate through the model parameters.
+                  ``use_cache`` is disabled when distill=True so the
+                  cached key/value states (created under no_grad) do
+                  not corrupt the gradient-enabled final forward pass.
         """
         logger.info("Drafting %d token(s) from context length %d", k, context.shape[1])
         tokens: list[int] = []
+        all_logits: list[torch.Tensor] = []
         cur = context.clone()
 
         for i in range(k):
             is_last = i == k - 1
 
             if distill and not is_last:
-                # Intermediate steps: no gradient, no logits stored.
+                # Intermediate steps: no gradient, no cache.
                 # The context stays connected to the original tensor
                 # (through torch.cat), so the final step can still
                 # compute gradients through the model parameters.
                 with torch.no_grad():
-                    out = self.model(cur, use_cache=True)
-                _ = out.logits[:, -1, :]
+                    out = self.model(cur, use_cache=False)
+                all_logits.append(out.logits[:, -1, :].detach())
             else:
-                out = self.model(cur, use_cache=True)
+                out = self.model(cur, use_cache=not distill)
+                all_logits.append(out.logits[:, -1, :])
 
-            logits = out.logits[:, -1, :]  # (1, vocab)
+            logits = all_logits[-1]  # (1, vocab)
             next_tok = logits.argmax(dim=-1)  # greedy
             tokens.append(next_tok.item())
             cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
             logger.debug("Draft token %d/%d: %d", i + 1, k, tokens[-1])
 
-        # Only the last step has gradient tracking (when distill=True),
-        # so we only return its logits. For non-distillation mode we
-        # return all k logits for the full sequence.
-        if distill:
-            logits_to_return = logits.unsqueeze(0)  # (1, vocab)
-        else:
-            logits_to_return = torch.stack(
-                [self._get_logits_at(context, cur, k)], 0
-            )  # (k, vocab)
+        # Always return (k, vocab) so downstream modules (translator,
+        # accept_reject, distiller) receive the expected shape.
+        # Each entry in all_logits is (1, vocab) with batch dim;
+        # squeeze to (vocab,) before stacking to get (k, vocab).
+        logits_squeezed = [logit.squeeze(0) for logit in all_logits]  # list of (vocab,)
+        logits_to_return = torch.stack(logits_squeezed, dim=0)  # (k, vocab)
 
         logger.info("Draft complete: generated %d token(s)", len(tokens))
         return tokens, logits_to_return
@@ -111,11 +114,11 @@ class DraftModel:
             all_logits: list[torch.Tensor] = []
             for i in range(k):
                 out = self.model(cur, use_cache=True)
-                logits = out.logits[:, -1, :].squeeze(0)
-                all_logits.append(logits)
-                next_tok = logits.argmax(dim=-1)
-                cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
-        return torch.stack(all_logits, dim=0)
+                logits = out.logits[:, -1, :]  # (1, vocab) — keep batch dim
+                all_logits.append(logits.squeeze(0))  # (vocab,) for stacking
+                next_tok = logits.argmax(dim=-1)  # (1,)
+                cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)  # (1,1) + (1,n) → (1,n+1)
+        return torch.stack(all_logits, dim=0)  # (k, vocab)
 
     def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Full forward pass; returns logits (seq, vocab)."""
