@@ -9,6 +9,7 @@ and present results at the end of the week.
 ## Current Cycle (Week 1-5)
 
 | Week | m.krylov | v.poponnikov | a.polevoi | al.khadeeva | da.popov | e.pestrovskii |
+| (Михаил Крылов) | (Вадим Попонников) | (Андрей Полевой) | (Алия Хадеева) | (Данил Попов) | (Евгений Пестровский) |
 |------|----------|--------------|-----------|-------------|----------|---------------|
 | 1 | 📖 Read papers | 📖 Read papers | 📖 Read papers | 📖 Read papers | 📖 Read papers | 📖 Read papers |
 | 2 | Hypothesis | Hypothesis | Hypothesis | Hypothesis | Hypothesis | Hypothesis |
