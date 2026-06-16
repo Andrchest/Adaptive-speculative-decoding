@@ -396,9 +396,11 @@ class ExperimentRunner:
             from core.extensions.multitarget.universal_drafter import UniversalDrafter
 
             d_model = drafter.model.config.hidden_size
+            # Use explicit target list, or fall back to the single target model
+            target_names = cfg.target_model_paths or [cfg.target_model_path]
             universal = UniversalDrafter(
                 base_model_name=cfg.drafter_model_path,
-                target_names=cfg.target_model_paths,
+                target_names=target_names,
                 d_model=d_model,
                 device=self.device,
                 dtype=getattr(drafter.model, "dtype", torch.float16),
@@ -415,9 +417,17 @@ class ExperimentRunner:
                     self.tokenizer = base.tokenizer
                     self.model = base.model
 
-                @torch.no_grad()
-                def draft(self, context: torch.Tensor, k: int) -> tuple[list[int], torch.Tensor]:
-                    return self.universal.draft(context, k, target_name=cfg.target_model_path)
+                def draft(
+                    self, context: torch.Tensor, k: int, distill: bool = False
+                ) -> tuple[list[int], torch.Tensor]:
+                    if distill:
+                        # When distillation is active, fall back to the base
+                        # drafter so gradients flow through the model.
+                        return self.base.draft(context, k, distill=True)
+                    with torch.no_grad():
+                        return self.universal.draft(
+                            context, k, target_name=cfg.target_model_path
+                        )
 
                 def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
                     return self.universal.base_model(input_ids).logits.squeeze(0)

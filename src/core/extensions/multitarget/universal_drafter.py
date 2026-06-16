@@ -105,6 +105,10 @@ class UniversalDrafter(nn.Module):
                 p.requires_grad_(False)
 
         self.target_adapter = TargetEmbeddingAdapter(n_targets, d_model)
+        # Move the adapter to the same device and dtype as the base model so
+        # that target_embedding weights are co-located with the input tensors
+        # and match the lm_head dtype (float16/bfloat16, not float32).
+        self.target_adapter.to(device=device, dtype=dtype)
         self._register_hooks()
         logger.info(
             "UniversalDrafter initialized: base=%s targets=%s trainable_base=%s",
