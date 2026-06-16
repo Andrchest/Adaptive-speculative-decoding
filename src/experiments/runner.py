@@ -136,11 +136,24 @@ class ExperimentRunner:
             len(configs),
         )
 
-    def run_all(self) -> list[dict]:
+    @staticmethod
+    def _clear_gpu_memory() -> None:
+        """Aggressively free GPU memory between experiments."""
         import gc
 
         import torch
 
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            logger.info(
+                "GPU memory: %.1f MB used / %.1f MB total",
+                torch.cuda.memory_allocated() / 1e6,
+                torch.cuda.memory_reserved() / 1e6,
+            )
+
+    def run_all(self) -> list[dict]:
         results = []
         logger.info("Starting run_all for %d experiment(s)", len(self.configs))
         for index, cfg in enumerate(self.configs, start=1):
@@ -152,8 +165,7 @@ class ExperimentRunner:
             # Free GPU memory from previous experiment
             if index > 1:
                 logger.info("Clearing GPU memory from previous experiment")
-                torch.cuda.empty_cache()
-                gc.collect()
+                self._clear_gpu_memory()
 
             result = self._run_one(cfg)
             results.append(result)
@@ -162,8 +174,7 @@ class ExperimentRunner:
 
             # Free GPU memory before next experiment
             logger.info("Releasing GPU memory after experiment %d", index)
-            torch.cuda.empty_cache()
-            gc.collect()
+            self._clear_gpu_memory()
 
         self._write_csv(results)
         logger.info("Finished run_all with %d result(s)", len(results))

@@ -58,12 +58,17 @@ class DraftModel:
         ----------
         distill : if True, gradient information is preserved for
                   online distillation. Steps 0..k-2 are run with
-                  torch.no_grad() and their logits are discarded,
-                  keeping only the last step's logits for the loss.
-                  This reduces activation memory by ~80%.
+                  torch.no_grad() to save activation memory; their
+                  logits are detached before stacking.  The final
+                  step runs with gradients so the distiller can
+                  backpropagate through the model parameters.
+                  ``use_cache`` is disabled when distill=True so the
+                  cached key/value states (created under no_grad) do
+                  not corrupt the gradient-enabled final forward pass.
         """
         logger.info("Drafting %d token(s) from context length %d", k, context.shape[1])
         tokens: list[int] = []
+        all_logits: list[torch.Tensor] = []
         cur = context.clone()
         step_logits: list[torch.Tensor] = []
 
@@ -74,7 +79,8 @@ class DraftModel:
                 with torch.no_grad():
                     out = self.model(cur, use_cache=True)
             else:
-                out = self.model(cur, use_cache=True)
+                out = self.model(cur, use_cache=not distill)
+                all_logits.append(out.logits[:, -1, :])
 
             logits = out.logits[:, -1, :]  # (1, vocab)
             step_logits.append(logits)

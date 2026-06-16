@@ -143,21 +143,25 @@ class Rule1Mapping:
         if squeeze:
             drafter_logits = drafter_logits.unsqueeze(0)
 
+        device = drafter_logits.device
         drafter_probs = F.softmax(drafter_logits.float(), dim=-1)  # (B, Vd)
         batch = drafter_probs.shape[0]
         target_probs = torch.zeros(
-            batch, self.target_size, dtype=torch.float32, device=drafter_logits.device
+            batch, self.target_size, dtype=torch.float32, device=device
         )
-        valid_d_idx = self._mapping[self._valid_mask]  # (M,)
-        valid_t_idx = self._mapping[self._valid_mask]  # same (M,) target indices
+
+        # Ensure index tensors are on the same device as the data tensors
+        # to avoid implicit cross-device copies that can trigger OOM under
+        # memory fragmentation (see #index_add_ OOM with CUDA + CPU indices).
+        valid_mask = self._valid_mask.to(device, non_blocking=True)
+        mapping = self._mapping.to(device, non_blocking=True)
+
+        # Pre-compute index tensors once (avoid repeated torch.where calls)
+        source_d_indices = torch.where(valid_mask)[0]  # (M,)
+        target_d_indices = mapping[source_d_indices]    # (M,) — target vocab indices
 
         # scatter_add: for each valid drafter token, accumulate its prob at target index
-        source_d_indices = torch.where(self._valid_mask)[0]  # (M,)
-        target_probs.index_add_(
-            1,
-            self._mapping[source_d_indices].to(drafter_logits.device),
-            drafter_probs[:, source_d_indices],
-        )
+        target_probs.index_add_(1, target_d_indices, drafter_probs[:, source_d_indices])
         if squeeze:
             return target_probs.squeeze(0)
         return target_probs

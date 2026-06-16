@@ -99,7 +99,10 @@ class OnlineDistiller:
             return None
 
         (loss / self.accum_steps).backward()
-        self._accum_loss = self._accum_loss + loss.detach().cpu()
+        # Detach immediately after backward to free the computation graph.
+        # Storing only the scalar loss value on CPU to avoid GPU memory leaks.
+        loss_scalar = loss.detach().item()
+        self._accum_loss = self._accum_loss + torch.tensor(loss_scalar, dtype=torch.float32)
         self._accum_count += 1
 
         if self._accum_count >= self.accum_steps:
@@ -127,10 +130,11 @@ class OnlineDistiller:
             logger.debug("No accepted tokens, skipping distillation loss")
             return None
 
-        k = len(draft_tokens)
         # Translate target logits back to drafter vocab for KL comparison
         # (We use the inverse of Rule1: direct-mapped tokens only)
-        direct_mask = self._get_direct_mask(draft_logits.shape[-1])  # (drafter_vocab,)
+        direct_mask = self._get_direct_mask(
+            draft_logits.shape[-1], device=draft_logits.device
+        )  # (drafter_vocab,)
 
         # --- KL divergence loss (direct mappings) ---
         drafter_log_probs = F.log_softmax(draft_logits.float(), dim=-1)  # (k, Vd)
@@ -204,30 +208,36 @@ class OnlineDistiller:
         )
         return loss_val
 
-    def _get_direct_mask(self, drafter_vocab_size: int) -> torch.Tensor:
+    def _get_direct_mask(self, drafter_vocab_size: int, device=None) -> torch.Tensor:
         mapping = self.translator.rule1._mapping  # (drafter_vocab,)
-        return mapping >= 0
+        mask = mapping >= 0
+        if device is not None and mask.device != device:
+            mask = mask.to(device, non_blocking=True)
+        return mask
 
     def _project_target_to_drafter(self, target_logits: torch.Tensor) -> torch.Tensor:
         """
         Project target logits back to drafter vocab using Rule1 inverse mapping.
         Tokens without a mapping get zero probability mass.
         """
-        mapping = self.translator.rule1._mapping  # (drafter_vocab,)
+        device = target_logits.device
+        mapping = self.translator.rule1._mapping.to(device, non_blocking=True)
         drafter_vocab = mapping.shape[0]
         k = target_logits.shape[0]
 
         target_probs = F.softmax(target_logits.float(), dim=-1)  # (k, Vt)
-        drafter_proj = torch.zeros(k, drafter_vocab, device=target_logits.device)
+        drafter_proj = torch.zeros(k, drafter_vocab, device=device)
 
-        valid = mapping >= 0  # (drafter_vocab,)
+        valid = mapping >= 0
         d_idx = torch.where(valid)[0]  # (M,)
         t_idx = mapping[d_idx]  # (M,)
         drafter_proj[:, d_idx] = target_probs[:, t_idx]
 
         return drafter_proj
 
-    def _get_target_to_draft_mapping(self, target_vocab_size: int) -> torch.Tensor:
+    def _get_target_to_draft_mapping(
+        self, target_vocab_size: int, device=None
+    ) -> torch.Tensor:
         """
         Build a tensor mapping target vocab indices → drafter vocab indices.
 
@@ -238,10 +248,12 @@ class OnlineDistiller:
         mapping = self.translator.rule1._mapping  # (drafter_vocab,) → target_vocab
         # mapping[d] = t means drafter token d maps to target token t
         # We need the inverse: target → drafter
-        t2d = torch.full((target_vocab_size,), -1, dtype=torch.long)
+        t2d = torch.full(
+            (target_vocab_size,), -1, dtype=torch.long, device=device
+        )
         d_indices = torch.where(mapping >= 0)[0]
         t_indices = mapping[d_indices]
-        t2d[t_indices] = d_indices
+        t2d[t_indices] = d_indices.to(device)
         return t2d
 
     def training_stats(self) -> dict:

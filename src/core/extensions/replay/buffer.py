@@ -181,7 +181,7 @@ class ReplayDistiller:
         rejected_tokens: list,
         prompt_ids: list,
     ) -> float | None:
-        """Process one live decoding step, store trace, and maybe replay."""
+        """Process one live decoding step with full trace info (legacy interface)."""
         acc_rate = sum(accepted_mask) / max(len(accepted_mask), 1)
         trace = Trace(
             prompt_ids=prompt_ids,
