@@ -25,7 +25,7 @@ Prompt → [Drafter] → Draft k tokens → [Translator] → Map to target vocab
 5. **Extensions** — modular plugins for advanced features
 
 See individual module docs for details:
-- [Core](modules/core/speculative.md)
-- [Translation](modules/translation/cross_vocab.md)
-- [Cache](modules/cache/ngram.md)
-- [Distillation](modules/distillation/online.md)
+- [Core](modules/core/decoder/speculative.md)
+- [Translation](modules/core/translation/cross_vocab.md)
+- [Cache](modules/core/cache/ngram.md)
+- [Distillation](modules/core/distillation/online.md)

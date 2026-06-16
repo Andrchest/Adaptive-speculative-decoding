@@ -1,0 +1,72 @@
+# configs/default.yaml
+# Default experiment configuration.
+# Override individual fields on the CLI:
+#   python scripts/run_experiments.py drafter_model_path=TinyLlama/TinyLlama-1.1B-Chat-v1.0
+
+name: adaptive_speculative_default
+
+# ─── Models ────────────────────────────────────────────────────────────────
+drafter_model_path: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+target_model_path:  meta-llama/Llama-2-7b-chat-hf
+device: cuda
+dtype: float16
+
+# ─── Dataset ───────────────────────────────────────────────────────────────
+dataset: gsm8k           # gsm8k | mbpp | humaneval | alpaca | xsum
+max_samples: 500
+max_new_tokens: 128
+
+# ─── Draft length ──────────────────────────────────────────────────────────
+draft_length: 5
+k_min: 1
+k_max: 8
+
+# ─── Translation ───────────────────────────────────────────────────────────
+use_rule1: true
+use_rule2: true
+use_lattice: false
+use_translator: false
+translator_weight: 0.3
+
+# ─── Cache ─────────────────────────────────────────────────────────────────
+cache_max_size: 65536
+cache_eviction: hybrid     # lru | lfu | acc | hybrid
+
+# ─── Distillation ──────────────────────────────────────────────────────────
+use_online_distil: false
+lambda_ngram: 0.5
+distil_lr: 1.0e-5
+use_lora: false
+lora_rank: 8
+accum_steps: 8
+
+# ─── Replay ────────────────────────────────────────────────────────────────
+use_replay: false
+replay_strategy: fifo    # fifo | prioritized
+replay_capacity: 4096
+replay_every: 32
+replay_batch: 8
+
+# ─── Contrastive ───────────────────────────────────────────────────────────
+use_contrastive: false
+lambda_contrastive: 0.1
+contrastive_temperature: 0.07
+
+# ─── Adaptive drafting ─────────────────────────────────────────────────────
+use_speedup_adaptive: false
+speedup_predictor_d_hidden: auto   # 'auto' → reads from drafter config
+
+# ─── Multi-drafter routing ─────────────────────────────────────────────────
+use_dynamic_routing: false
+drafter_model_paths:
+  - TinyLlama/TinyLlama-1.1B-Chat-v1.0
+
+# ─── Multi-target ──────────────────────────────────────────────────────────
+use_universal_drafter: false
+target_model_paths:
+  - meta-llama/Llama-2-7b-chat-hf
+
+# ─── Logging ───────────────────────────────────────────────────────────────
+mlflow_experiment: adaptive_speculative
+log_every: 50
+seed: 42

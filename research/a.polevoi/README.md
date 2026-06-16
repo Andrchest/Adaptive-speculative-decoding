@@ -1,19 +1,19 @@
 # a.polevoi — Research Area
 
-## Имя
-Андрей Полевой
+## Name
+Andrei Polevoi
 
-## Гипотеза / Направление
-> _Опишите вашу исследовательскую гипотезу_
+## Hypothesis / Research Direction
+> _Describe your research hypothesis_
 
-## Задачи
-- [ ] Задача 1
-- [ ] Задача 2
-- [ ] Задача 3
+## Tasks
+- [ ] Task 1
+- [ ] Task 2
+- [ ] Task 3
 
-## Ссылки
+## References
 - [ ] Paper 1
 - [ ] Paper 2
 
 ## Notes
-_Здесь ваши заметки по ходу исследования_
+_Place your research notes here_

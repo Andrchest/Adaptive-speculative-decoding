@@ -48,6 +48,7 @@ htmlcov/
 
 # Results & artifacts (kept per-researcher)
 results/
+results_test*/
 *_test*.json
 comparison_table.csv
 mlflow.db
@@ -65,3 +66,11 @@ dmypy.json
 
 # Type stubs
 *.pyi
+
+# ML model artifacts
+*.safetensors
+*.pt
+*.ckpt
+*.bin
+*.checkpoint
+wandb/

@@ -28,15 +28,18 @@ uv run python src/main.py --suite ablation
 Adaptive-speculative-decoding/
 ├── src/                      # Main source code
 │   ├── core/                 # Core library
-│   │   ├── core/             # Speculative decoder, drafters
+│   │   ├── models/           # DraftModel, TargetModel, UniversalDrafter
+│   │   ├── decoder/          # SpeculativeDecoder
 │   │   ├── translation/      # Cross-vocab translation (Rule1, Rule2)
 │   │   ├── cache/            # N-gram cache with eviction strategies
 │   │   ├── distillation/     # Online distillation
 │   │   └── extensions/       # Experimental modules
 │   ├── experiments/          # Experiment runner & ablation suite
 │   ├── benchmarks/           # Metrics collection
-│   ├── config/               # Configuration management
-│   └── inference/            # Production inference (future)
+│   ├── config/               # Configuration
+│   ├── utils/                # Shared utilities
+│   ├── inference/            # Production inference (future)
+│   └── main.py               # CLI entry point
 ├── tests/                    # Test suite
 │   ├── unit/                 # Unit tests
 │   ├── integration/          # Integration tests
@@ -44,7 +47,6 @@ Adaptive-speculative-decoding/
 ├── research/                 # Research areas per team member
 ├── docs/                     # Documentation
 ├── notebooks/                # Jupyter notebooks for analysis
-├── scripts/                  # Utility scripts
 └── pyproject.toml            # Project configuration (uv + hatchling)
 ```
 
@@ -54,12 +56,12 @@ Each team member works on their own research track (separate branch):
 
 | Member | Branch | Direction |
 |--------|--------|-----------|
-| m.krylov (Михаил Крылов) | `research/m.krylov` | — |
-| v.poponnikov (Вадим Попонников) | `research/v.poponnikov` | — |
-| a.polevoi (Андрей Полевой) | `research/a.polevoi` | — |
-| al.khadeeva (Алия Хадеева) | `research/al.khadeeva` | — |
-| da.popov (Данил Попов) | `research/da.popov` | — |
-| e.pestrovskii (Евгений Пестровский) | `research/e.pestrovskii` | — |
+| m.krylov | `research/m.krylov` | — |
+| v.poponnikov | `research/v.poponnikov` | — |
+| a.polevoi | `research/a.polevoi` | — |
+| al.khadeeva | `research/al.khadeeva` | — |
+| da.popov | `research/da.popov` | — |
+| e.pestrovskii | `research/e.pestrovskii` | — |
 
 ## 🛠 Tools
 

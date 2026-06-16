@@ -1,18 +1,18 @@
 # =============================================================================
-# OmniDraft++ — Multi-stage Dockerfile
+# Adaptive Speculative Decoding — Multi-stage Dockerfile
 # =============================================================================
 #
 # Usage:
 #   # Build GPU image
-#   docker build -t omnidraft:latest -f Dockerfile .
+#   docker build -t adaptive-speculative-decoding:latest -f Dockerfile .
 #
 #   # Run experiments
-#   docker run --rm -it --gpus all -v $(pwd):/app omnidraft:latest \
+#   docker run --rm -it --gpus all -v $(pwd):/app adaptive-speculative-decoding:latest \
 #     python src/main.py --smoke
 #
 #   # Run with MLflow tracking
 #   docker-compose up -d
-#   docker run --rm -it --gpus all -v $(pwd):/app omnidraft:latest \
+#   docker run --rm -it --gpus all -v $(pwd):/app adaptive-speculative-decoding:latest \
 #     python src/main.py --mlflow-tracking-uri=http://host.docker.internal:5000
 # =============================================================================
 
@@ -44,7 +44,7 @@ RUN uv pip install --system --compile-bytecode -e ".[dev]"
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
 # Metadata
-LABEL org.opencontainers.image.title="OmniDraft++"
+LABEL org.opencontainers.image.title="Adaptive Speculative Decoding"
 LABEL org.opencontainers.image.description="Adaptive Speculative Decoding Framework"
 LABEL org.opencontainers.image.source="https://github.com/Andrchest/Adaptive-speculative-decoding"
 LABEL org.opencontainers.image.licenses="MIT"

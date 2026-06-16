@@ -1,53 +1,49 @@
-# Git
-.git
-.gitignore
-
-# Python
-__pycache__
+# Byte-compiled / optimized / DLL files
+__pycache__/
 *.py[cod]
-*.egg-info
+*$py.class
 *.so
 
-# Virtual env
-.venv
-venv
-env
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
 
-# UV
-uv.lock
-.python-version
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Results & artifacts
+results/
+*_test*.json
+comparison_table.csv
+mlflow.db
+mlruns/
 
 # IDE
-.vscode
-.idea
-*.swp
+.vscode/
+.idea/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Results
-results/
-comparison_table.csv
-mlflow.db
-mlruns/
+# Git
+.git/
+.gitignore
 
-# Docker
-Dockerfile
-docker-compose.yml
-.dockerignore
+# ML model artifacts
+*.safetensors
+*.pt
+*.ckpt
+*.bin
 
-# CI/.github
-.github
-.gitlab-ci.yml
-
-# Docs
-docs/
-*.md
-CONTRIBUTING.md
-CODE_OF_CONDUCT.md
-
-# Test artifacts
-.pytest_cache
-.coverage
-htmlcov/
+# Python
+*.egg-info/

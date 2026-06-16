@@ -1,30 +1,30 @@
 # Research Area — Shared
 
-Каждый член команды имеет свою папку в этой директории для хранения:
-- экспериментальных ноутбуков (`.ipynb`)
-- результатов (`.csv`, `.json`)
-- конфигураций (`.yaml`)
-- заметок (`README.md`)
+Each team member has their own folder here for storing:
+- Experimental notebooks (`.ipynb`)
+- Results (`.csv`, `.json`)
+- Configuration files (`.yaml`)
+- Notes (`README.md`)
 
-## Структура исследовательской папки
+## Research Folder Structure
 
 ```
 research/<username>/
-├── README.md              — описание работы, гипотезы, задачи
-├── configs/               — конфигурации экспериментов
-│   └── *.yaml
-├── results/               — результаты
+├── README.md              — project description, hypotheses, tasks
+│   └── configs/             — experiment configurations
+│       └── *.yaml
+├── results/               — results
 │   ├── *.csv
 │   └── *.json
-├── notebooks/             — Jupyter ноутбуки
+├── notebooks/             — Jupyter notebooks
 │   └── *.ipynb
-└── plots/                 — графики
+└── plots/                 — plots
     └── *.png
 ```
 
-## Правила
+## Rules
 
-- Каждая исследовательская ветка создаётся от `main` и живёт отдельно
-- Результаты пишутся в `research/<username>/results/`
-- Кодовые эксперименты — в `src/`, исследовательский анализ — в ноутбуках
-- Перед мержем в `main` — минимум один пройденный тест
+- Each research branch is created from `main` and lives independently
+- Results are written to `research/<username>/results/`
+- Coding experiments go in `src/`, research analysis goes in notebooks
+- Before merging to `main` — at least one passing test

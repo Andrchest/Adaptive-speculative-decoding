@@ -1,13 +1,24 @@
 # AI Agent Guidelines
 
+## 🌍 Language Policy
+
+All files in this repository — code, comments, documentation, configs, commit messages, PR descriptions — **must be in English**. No Russian, Chinese, or other non-English text. Exception: user-provided data (e.g. prompts, test inputs) may contain any language.
+
 ## 📁 Project Layout
 
 ```
 src/
 ├── core/                # Core library
-├── experiments/         # Experiment runner
-├── benchmarks/          # Metrics
+│   ├── models/          # DraftModel, TargetModel, UniversalDrafter
+│   ├── decoder/         # SpeculativeDecoder
+│   ├── translation/     # Cross-vocab translation (Rule1, Rule2)
+│   ├── cache/           # N-gram cache with eviction strategies
+│   ├── distillation/    # Online distillation
+│   └── extensions/      # Experimental modules
+├── experiments/         # Experiment runner & ablation suite
+├── benchmarks/          # Metrics collection
 ├── config/              # Configuration
+├── utils/               # Shared utilities (logging, model loading)
 ├── inference/           # API (future)
 └── main.py              # Entry point
 
@@ -21,7 +32,7 @@ research/                # Per-researcher work area
 
 ## 🔧 Key Conventions
 
-1. **All imports are relative to `src/`** — no `sys.path.insert`
+1. **All imports are absolute from `src/` root** — no `sys.path.insert`
 2. **Configuration** lives in `src/config/` — never hardcode params
 3. **Type hints** are mandatory for public APIs (enforced by mypy)
 4. **Docstrings** use Google style
