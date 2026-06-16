@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+*.so
+
+# Virtual env
+.venv
+venv
+env
+
+# UV
+uv.lock
+.python-version
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Results
+results/
+comparison_table.csv
+mlflow.db
+mlruns/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# CI/.github
+.github
+.gitlab-ci.yml
+
+# Docs
+docs/
+*.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+
+# Test artifacts
+.pytest_cache
+.coverage
+htmlcov/

@@ -1,0 +1,68 @@
+# =============================================================================
+# OmniDraft++ — docker-compose
+# =============================================================================
+#
+# Usage:
+#   # Start everything (GPU)
+#   docker compose up -d
+#
+#   # Start only tracking server
+#   docker compose up -d mlflow
+#
+#   # Run a single experiment
+#   docker compose run --rm app python src/main.py --smoke
+# =============================================================================
+
+services:
+  # ─── Main app container ─────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: omnidraft:latest
+    runtime: nvidia
+    stdin_open: true
+    tty: true
+    volumes:
+      - .:/app
+      - omnidraft-results:/app/results
+      - omnidraft-mlruns:/app/mlruns
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONDONTWRITEBYTECODE=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    depends_on:
+      - mlflow
+
+  # ─── MLflow tracking server ─────────────────────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.13.0
+    ports:
+      - "5000:5000"
+    volumes:
+      - omnidraft-mlruns:/mlflow-data
+    environment:
+      - MLFLOW_S3_ENDPOINT_URL=
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:///mlflow-data/mlflow.db
+      --default-artifact-root /mlflow-data/artifacts
+      --host 0.0.0.0
+      --port 5000
+
+  # ─── Optional: Redis (future caching layer) ─────────────────────────────
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+
+volumes:
+  omnidraft-results:
+  omnidraft-mlruns:
+  # redis-data:
