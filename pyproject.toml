@@ -6,6 +6,11 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [
     { name = "Danil Popov" },
+    { name = "Andrei Polevoi" },
+    { name = "Vadim Poponnikov" },
+    { name = "Evgenei Piestrovskii" },
+    { name = "Aliya Khadeeva" },
+    { name = "Mikhail Krylov" },
 ]
 requires-python = ">=3.12,<3.13"
 dependencies = [
