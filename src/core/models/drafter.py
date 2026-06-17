@@ -80,7 +80,7 @@ class DraftModel:
                     out = self.model(cur, use_cache=True)
             else:
                 out = self.model(cur, use_cache=not distill)
-                all_logits.append(out.logits[:, -1, :])
+                all_logits.append(out.logits[0, -1, :].detach())
 
             logits = out.logits[:, -1, :]  # (1, vocab)
             step_logits.append(logits)
@@ -92,28 +92,12 @@ class DraftModel:
         if distill:
             logits_to_return = torch.cat(step_logits, dim=0)  # (k, vocab)
         else:
-            logits_to_return = self._get_logits_at(context, cur, k)  # (k, vocab)
+            # Reuse logits already collected during the autoregressive loop.
+            # This avoids the redundant k forward passes that _get_logits_at() used to do.
+            logits_to_return = torch.stack(all_logits, dim=0)  # (k, vocab)
 
         logger.info("Draft complete: generated %d token(s)", len(tokens))
         return tokens, logits_to_return
-
-    def _get_logits_at(
-        self,
-        start: torch.Tensor,
-        end: torch.Tensor,
-        k: int,
-    ) -> torch.Tensor:
-        """Recompute the full sequence logits (non-gradient) for return."""
-        with torch.no_grad():
-            cur = start.clone()
-            all_logits: list[torch.Tensor] = []
-            for _ in range(k):
-                out = self.model(cur, use_cache=True)
-                logits = out.logits[:, -1, :]  # (1, vocab)
-                all_logits.append(logits.squeeze(0))  # (vocab,)
-                next_tok = logits.argmax(dim=-1)  # (1,)
-                cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
-        return torch.stack(all_logits, dim=0)  # (k, vocab)
 
     def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Full forward pass; returns logits (seq, vocab)."""

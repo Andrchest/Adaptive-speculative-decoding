@@ -219,6 +219,11 @@ class Rule2Mapping:
             len(self._transfer),
         )
 
+        # Pre-compute sparse matrix for fast map_logits (avoids 50K Python loop)
+        self._sparse_T = self._build_sparse_matrix(
+            self._transfer, self.target_size, self.drafter_size
+        )
+
     # ------------------------------------------------------------------
 
     def map_logits(
@@ -242,24 +247,21 @@ class Rule2Mapping:
             drafter_logits = drafter_logits.unsqueeze(0)
 
         drafter_probs = F.softmax(drafter_logits.float(), dim=-1)  # (B, Vd)
-        batch = drafter_probs.shape[0]
-        target_probs = torch.zeros(
-            batch,
-            self.target_size,
-            dtype=torch.float32,
-            device=drafter_logits.device,
-        )
+        device = drafter_logits.device
 
-        for t_idx, contrib in self._transfer.items():
-            if rule1_mask is not None and rule1_mask[t_idx]:
-                continue
-            d_indices = torch.tensor(
-                [d for d, _ in contrib], dtype=torch.long, device=drafter_logits.device
-            )
-            weights = torch.tensor(
-                [w for _, w in contrib], dtype=torch.float32, device=drafter_logits.device
-            )
-            target_probs[:, t_idx] = (drafter_probs[:, d_indices] * weights).sum(dim=-1)
+        if rule1_mask is None:
+            # Fast path: single sparse matrix multiplication
+            # T = (target_vocab, drafter_vocab), drafter_probs = (B, drafter_vocab)
+            # result = (B, target_vocab) = drafter_probs @ T.T
+            sparse_T = self._sparse_T.to(device)
+            target_probs = torch.sparse.mm(drafter_probs, sparse_T.t())
+        else:
+            # Masked path: compute full result, then zero out Rule 1 positions.
+            # This avoids the 50K Python loop entirely.
+            sparse_T = self._sparse_T.to(device)
+            target_probs = torch.sparse.mm(drafter_probs, sparse_T.t())
+            # Zero out positions already handled by Rule 1
+            target_probs[rule1_mask.unsqueeze(0).expand_as(target_probs)] = 0.0
 
         if squeeze:
             return target_probs.squeeze(0)
@@ -268,6 +270,31 @@ class Rule2Mapping:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_sparse_matrix(
+        transfer: dict[int, list[tuple[int, float]]],
+        target_size: int,
+        drafter_size: int,
+    ) -> torch.Tensor:
+        """Build a sparse COO matrix (target_vocab, drafter_vocab) from _transfer."""
+        rows, cols, vals = [], [], []
+        for t_idx, contrib in transfer.items():
+            for d_idx, weight in contrib:
+                rows.append(t_idx)
+                cols.append(d_idx)
+                vals.append(weight)
+
+        if len(rows) == 0:
+            indices = torch.empty((2, 0), dtype=torch.long)
+            values = torch.empty(0, dtype=torch.float32)
+        else:
+            indices = torch.tensor([rows, cols], dtype=torch.long)  # (2, nnz)
+            values = torch.tensor(vals, dtype=torch.float32)
+
+        return torch.sparse_coo_tensor(
+            indices, values, (target_size, drafter_size)
+        )
 
     @staticmethod
     def _build_string_list(tokenizer) -> list[str]:
