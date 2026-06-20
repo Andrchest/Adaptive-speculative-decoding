@@ -29,7 +29,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
     datefmt="[%H:%M:%S]",
-    handlers=[RichHandler(rich_tracebacks=True, show_path=False)],
+    handlers=[RichHandler(rich_tracebacks=True, show_path=True)],
 )
 
 for noisy in ("urllib3", "httpx", "requests", "transformers", "huggingface_hub"):
