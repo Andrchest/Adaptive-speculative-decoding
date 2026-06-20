@@ -167,29 +167,17 @@ class ExperimentRunner:
                 logger.info("Clearing GPU memory from previous experiment")
                 self._clear_gpu_memory()
 
-            try:
-                result = self._run_one(cfg)
-                results.append(result)
-                self._save_result(result)
-                logger.info("Finished experiment %d/%d: %s", index, len(self.configs), cfg.name)
-            except Exception as e:
-                logger.error("Experiment %d/%d (%s) FAILED: %s", index, len(self.configs), cfg.name, e)
-                import traceback
-                traceback.print_exc()
-                failed_result = {
-                    "config": asdict(cfg),
-                    "metrics": {"error": True, "error_type": type(e).__name__, "error_message": str(e)},
-                }
-                results.append(failed_result)
-                self._save_result(failed_result)
-                logger.info("Experiment %d/%d (%s) saved as FAILED", index, len(self.configs), cfg.name)
+            result = self._run_one(cfg)
+            results.append(result)
+            self._save_result(result)
+            logger.info("Finished experiment %d/%d: %s", index, len(self.configs), cfg.name)
 
             # Free GPU memory before next experiment
             logger.info("Releasing GPU memory after experiment %d", index)
             self._clear_gpu_memory()
 
         self._write_csv(results)
-        logger.info("Finished run_all with %d result(s)" % len(results))
+        logger.info("Finished run_all with %d result(s)", len(results))
         return results
 
     def _run_one(self, cfg: ExperimentConfig) -> dict:
@@ -201,14 +189,6 @@ class ExperimentRunner:
         import torch
 
         torch.manual_seed(cfg.seed)
-        import random as _random
-        import numpy as np
-
-        _random.seed(cfg.seed)
-        np.random.seed(cfg.seed)
-        # Create a deterministic RNG for sampling operations
-        torch_rng = torch.Generator()
-        torch_rng.manual_seed(cfg.seed)
         logger.info("Set random seed: %s", cfg.seed)
 
         # --- Build components ---
@@ -229,9 +209,15 @@ class ExperimentRunner:
         # often differs from len(tokenizer.get_vocab()) (e.g. OPT pads
         # 50265 → 50272). Passing the model size keeps every probability
         # tensor downstream aligned with raw logits shapes.
+        logger.info("Building cross-vocabulary translator")
+        translator = CrossVocabTranslator.from_tokenizers(
+            drafter.tokenizer,
+            target.tokenizer,
+            device=self.device,
+            drafter_vocab_size=drafter.model.config.vocab_size,
+            target_vocab_size=target.model.config.vocab_size,
+        )
 
-        # Build lattice first if needed (translator needs it in constructor)
-        lattice = None
         if cfg.use_lattice:
             logger.info("Building tokenizer lattice")
             from core.extensions.lattice.tokenizer_lattice import TokenizerLattice
@@ -242,17 +228,9 @@ class ExperimentRunner:
                 drafter_vocab_size=drafter.model.config.vocab_size,
                 target_vocab_size=target.model.config.vocab_size,
             )
-            logger.info("Tokenizer lattice ready")
-
-        logger.info("Building cross-vocabulary translator")
-        translator = CrossVocabTranslator.from_tokenizers(
-            drafter.tokenizer,
-            target.tokenizer,
-            device=self.device,
-            drafter_vocab_size=drafter.model.config.vocab_size,
-            target_vocab_size=target.model.config.vocab_size,
-            lattice=lattice,
-        )
+            # Monkey-patch translator rule2 with lattice
+            translator.lattice = lattice
+            logger.info("Attached tokenizer lattice to translator")
 
         if cfg.use_translator:
             logger.info("Building learned translator model")
@@ -265,9 +243,6 @@ class ExperimentRunner:
             translator.learned_model = learned
             translator.learned_weight = cfg.translator_weight
             logger.info("Attached learned translator with weight %.4f", cfg.translator_weight)
-
-        # Collect translation traces for batch training
-        translator_traces: list[tuple[list[int], list[int]]] = []  # (draft_tokens, target_tokens)
 
         # Cache
         logger.info(
@@ -349,19 +324,32 @@ class ExperimentRunner:
             )
             from core.extensions.contrastive.loss import ContrastiveLoss
 
-            distiller.contrastive_loss = ContrastiveLoss(
-                lambda_nll=cfg.lambda_ngram,
-                lambda_contrastive=cfg.lambda_contrastive,
-                temperature=0.07,
+            # Use the public setter — a previous version assigned to
+            # ``distiller.contrastive_loss`` (no underscore), which never
+            # reached the underscore-prefixed attribute read by
+            # ``OnlineDistiller._compute_loss``. The contrastive-loss
+            # ablation was therefore a silent no-op.
+            distiller.set_contrastive_loss(
+                ContrastiveLoss(
+                    lambda_nll=cfg.lambda_ngram,
+                    lambda_contrastive=cfg.lambda_contrastive,
+                    temperature=0.07,
+                )
             )
             # Expose translator for the contrastive module (needs Rule1 mapping)
             distiller.translator = translator
             logger.info("Contrastive distiller ready")
 
         # Dynamic multi-drafter routing
-        # (specs is shared between routing and universal drafter blocks)
-        specs: list = []
         router = None
+        # ``specs`` is populated by the routing block when routing is
+        # enabled. We initialise it here (BEFORE the routing block) so
+        # the universal-drafter block below can safely read it without
+        # re-initialising and discarding the routing block's work
+        # (a previous version had ``specs: list = []`` AFTER the routing
+        # block, which unconditionally wiped the populated list and
+        # broke the universal-drafter adapter insertion).
+        specs: list = []
         if cfg.use_dynamic_routing:
             logger.info(
                 "Building dynamic router with %d drafter(s)",
@@ -404,8 +392,8 @@ class ExperimentRunner:
             router_model = RouterModel(d_input=d_hidden, n_drafters=n_drafters).to(self.device)
             router = DynamicRouter(
                 drafter_specs=specs,
-                router_model=router_model,
-                embedder=lambda ids: drafter.model(ids, output_hidden_states=True)
+                router_model=router_model, # idk why ruff fails to recognize drafter (it is initialized after imports)
+                embedder=lambda ids: drafter.model(ids, output_hidden_states=True)  # noqa: F821
                 .hidden_states[-1]
                 .mean(dim=1)
                 .to(dtype=router_model.net[0].weight.dtype),
@@ -413,6 +401,10 @@ class ExperimentRunner:
             logger.info("Dynamic router ready: %d drafters", n_drafters)
 
         # Universal drafter (multi-target)
+        # NOTE: ``specs`` was already initialised above (before the
+        # routing block). Do NOT re-initialise it here — doing so would
+        # discard the routing block's work and break the universal-drafter
+        # adapter insertion loop below.
         if cfg.use_universal_drafter:
             logger.info(
                 "Building universal drafter: base=%s targets=%s",
@@ -444,15 +436,35 @@ class ExperimentRunner:
                     self.model = base.model
 
                 def draft(
-                    self, context: torch.Tensor, k: int, distill: bool = False
+                    self,
+                    context: torch.Tensor,
+                    k: int,
+                    distill: bool = False,
+                    temperature: float = 1.0,
                 ) -> tuple[list[int], torch.Tensor]:
-                    # Pass distill through to universal model so it can
-                    # properly manage hooks and gradient flow.
-                    return self.universal.draft(
-                        context, k,
-                        target_name=cfg.target_model_path,
-                        distill=distill,
-                    )
+                    """
+                    Forward to either the base drafter (when distillation
+                    needs gradients) or the universal drafter.
+
+                    The base path forwards the temperature so the
+                    drafter samples from the same ``q`` used by the
+                    decoder's acceptance test (C1 fix). The universal
+                    path is greedy (UniversalDrafter.draft uses argmax
+                    under @torch.no_grad); it therefore does NOT support
+                    stochastic decoding and is only correct under
+                    greedy target decoding. Distillation with the
+                    universal adapter is also unsupported (the universal
+                    drafter cannot produce grad-enabled logits), so the
+                    adapter falls back to the base drafter in that case.
+                    """
+                    if distill:
+                        return self.base.draft(
+                            context, k, distill=True, temperature=temperature
+                        )
+                    with torch.no_grad():
+                        return self.universal.draft(
+                            context, k, target_name=cfg.target_model_path
+                        )
 
                 def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
                     return self.universal.base_model(input_ids).logits.squeeze(0)
@@ -539,7 +551,6 @@ class ExperimentRunner:
                     max_new_tokens=cfg.max_new_tokens,
                     adaptive_length_fn=adaptive_fn,
                     distiller=distiller,
-                    rng=torch_rng,
                 )
                 # Reconstruct step records from decoder stats
                 for sr in decoder._step_results[-cfg.max_new_tokens :]:
@@ -547,29 +558,9 @@ class ExperimentRunner:
                         draft_len=sr.draft_length,
                         accepted=sr.accepted_count,
                         cache_hit=sr.cache_hit,
-                        actual_draft_len=len(sr.draft_tokens),
                     )
-            # Collect translation traces for batch training.
-            # One sample per accepted token, with draft prefix up to that token.
-            if cfg.use_translator:
-                for sr in decoder._step_results[-cfg.max_new_tokens :]:
-                    if sr.draft_tokens and sr.accepted_tokens:
-                        for ai, accepted_tok in enumerate(sr.accepted_tokens):
-                            prefix = sr.draft_tokens[: min(ai + 1, len(sr.draft_tokens))]
-                            translator_traces.append((list(prefix), [accepted_tok]))
-
-            # Record adaptive drafting result ( SpeedupPredictor training signal )
-            if adaptive_fn is not None:
-                total_accepted = sum(sr.accepted_count for sr in (decoder._step_results or []))
-                adaptive_fn.record_result(accepted_count=total_accepted)
-
-            # Record routing observation (for DynamicRouter training)
-            if router is not None:
-                prompt_acc_rate = collector.summary().get("acceptance_rate", 0.0)
-                router.record(input_ids, n_routing_stats["selected_drafter"], prompt_acc_rate)
-
             # Reset step results for next sequence
-            decoder.clear_step_results()
+            decoder._step_results.clear()
             logger.info("Finished prompt %d/%d output_len=%d", i + 1, len(prompts), out.shape[1])
 
             if i % cfg.log_every == 0:
@@ -593,58 +584,6 @@ class ExperimentRunner:
                     for k, v in tags.items():
                         mlflow.set_tag(k, str(v))
 
-        # Train adaptive predictor if enabled (once per experiment)
-        if adaptive_fn is not None:
-            pred_loss = adaptive_fn.predictor.train_on_buffer(
-                n_steps=32, batch_size=16, rng=torch_rng
-            )
-            logger.info("SpeedupPredictor training complete: loss=%.6f", pred_loss)
-            summary["speedup_predictor_loss"] = pred_loss
-
-        # Train router if enabled (once per experiment)
-        if router is not None and router._train_X:
-            router_loss = router.train_router(n_epochs=20, lr=1e-3)
-            logger.info("DynamicRouter training complete: loss=%.4f, samples=%d", router_loss, len(router._train_X))
-            summary["router_train_loss"] = router_loss
-
-        # Batch-train translator model if enabled
-        if cfg.use_translator and translator.learned_model is not None and translator_traces:
-            from torch.utils.data import DataLoader, TensorDataset
-
-            opt = torch.optim.Adam(translator.learned_model.parameters(), lr=1e-3)
-            total_loss = 0.0
-            n_batches = 0
-            for epoch in range(3):
-                random.shuffle(translator_traces)
-                for batch_start in range(0, len(translator_traces), 8):
-                    batch = translator_traces[batch_start : batch_start + 8]
-                    # Build input: stack draft tokens (padded to max length)
-                    max_len = max(len(dt) for dt, _ in batch)
-                    input_ids = torch.zeros(len(batch), max_len, dtype=torch.long, device=self.device)
-                    target_ids = torch.zeros(len(batch), dtype=torch.long, device=self.device)
-                    padding_masks = torch.ones(len(batch), max_len, dtype=torch.bool, device=self.device)
-                    for bi, (dt, at) in enumerate(batch):
-                        length = min(len(dt), max_len)
-                        input_ids[bi, :length] = torch.tensor(dt[:length], dtype=torch.long)
-                        padding_masks[bi, :length] = False
-                        # Target: the single accepted token for this sample
-                        if at:
-                            target_ids[bi] = at[0]
-                        else:
-                            target_ids[bi] = 0
-                    b_loss = translator.learned_model.train_step(
-                        input_ids, target_ids, opt, padding_mask=padding_masks
-                    )
-                    total_loss += b_loss
-                    n_batches += 1
-            if n_batches > 0:
-                mean_loss = total_loss / n_batches
-                logger.info(
-                    "TranslatorModel trained: %d steps, %.3f epochs, mean_loss=%.4f",
-                    n_batches, 3 * len(translator_traces) / 8, mean_loss,
-                )
-                summary["translator_train_loss"] = mean_loss
-
         summary = collector.summary()
         # Add routing stats to summary
         if router is not None:
@@ -667,13 +606,12 @@ class ExperimentRunner:
 
         # Free GPU memory before returning
         logger.info("Freeing GPU memory before return")
-        # Clean up UniversalDrafter hooks to prevent memory leaks
-        if 'universal' in locals() and universal is not None:
-            universal.remove_hooks()
         del drafter, target, translator, decoder, cache, distiller, router, collector
         import gc
 
-        torch.cuda.empty_cache()
+        # Guard: torch.cuda.empty_cache() raises on CPU-only hosts.
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         gc.collect()
         logger.info("GPU memory freed")
         return {"config": asdict(cfg), "metrics": summary}

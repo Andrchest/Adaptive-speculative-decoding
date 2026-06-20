@@ -28,9 +28,6 @@ class OnlineDistiller:
     Accumulates training signal from accepted speculative steps and
     periodically updates the drafter weights.
 
-    Supports optional contrastive loss via the ``contrastive_loss``
-    property (set by the runner when ``use_contrastive=True``).
-
     Parameters
     ----------
     drafter_model   : DraftModel whose weights will be updated
@@ -80,22 +77,23 @@ class OnlineDistiller:
         )
 
     # ------------------------------------------------------------------
-    # Contrastive loss public API (property + setter)
-    # ------------------------------------------------------------------
-
-    @property
-    def contrastive_loss(self) -> "ContrastiveLoss | None":
-        """Public access to the optional contrastive loss module."""
-        return self._contrastive_loss
-
-    @contrastive_loss.setter
-    def contrastive_loss(self, value) -> None:
-        """Allow runner to set the contrastive loss module (e.g. ContrastiveLoss)."""
-        self._contrastive_loss = value
-
-    # ------------------------------------------------------------------
     # Public
     # ------------------------------------------------------------------
+
+    def set_contrastive_loss(self, loss_module) -> None:
+        """
+        Attach a ContrastiveLoss module to be added to subsequent steps.
+
+        This is the public API for the contrastive-loss ablation. The
+        runner should call this instead of assigning to the (private)
+        ``_contrastive_loss`` attribute directly — a previous version of
+        the runner assigned to ``contrastive_loss`` (no underscore),
+        which silently never reached the underscore-prefixed attribute
+        read by ``_compute_loss`` and so the entire contrastive-loss
+        ablation was a no-op.
+        """
+        self._contrastive_loss = loss_module
+        logger.info("Contrastive loss attached: %s", type(loss_module).__name__)
 
     def step(
         self,
@@ -154,15 +152,30 @@ class OnlineDistiller:
         )  # (drafter_vocab,)
 
         # --- KL divergence loss (direct mappings) ---
+        # Both distributions must be normalized over the SAME support
+        # (the Rule1-mappable subset) for the KL to be a valid divergence.
+        # Previously, the unnormalized target projection was passed
+        # directly to F.kl_div, producing a biased surrogate whose value
+        # depended on vocab size rather than on learning.
         drafter_log_probs = F.log_softmax(draft_logits.float(), dim=-1)  # (k, Vd)
         # Target probs projected back to drafter space via Rule1 transpose
         target_in_drafter = self._project_target_to_drafter(target_logits)  # (k, Vd)
 
         # Only compute KL where we have direct mappings
         if direct_mask.any():
+            # Renormalize both distributions over the direct_mask support
+            # so the KL is well-defined.
+            drafter_masked_log = drafter_log_probs[:, direct_mask]  # (k, M)
+            drafter_masked_log = drafter_masked_log - torch.logsumexp(
+                drafter_masked_log, dim=-1, keepdim=True
+            )
+            target_masked = target_in_drafter[:, direct_mask]  # (k, M)
+            target_masked = target_masked / target_masked.sum(
+                dim=-1, keepdim=True
+            ).clamp(min=1e-8)
             kl = F.kl_div(
-                drafter_log_probs[:, direct_mask],
-                target_in_drafter[:, direct_mask].clamp(min=1e-8),
+                drafter_masked_log,
+                target_masked,
                 reduction="batchmean",
                 log_target=False,
             )
@@ -189,14 +202,15 @@ class OnlineDistiller:
         self.nll_losses.append(nll.item())
 
         # --- Contrastive loss (optional) ---
-        cl = self.contrastive_loss
-        if cl is not None:
-            cont_loss, cont_stats = cl(
+        if self._contrastive_loss is not None:
+            cont_loss, cont_stats = self._contrastive_loss(
                 draft_logits=draft_logits,
                 target_logits=target_logits,
                 accepted_mask=accepted_mask,
                 draft_tokens=draft_tokens,
-                target_to_draft_mapping=self._get_target_to_draft_mapping(target_logits.shape[-1]),
+                target_to_draft_mapping=self._get_target_to_draft_mapping(
+                    target_logits.shape[-1], device=target_logits.device
+                ),
             )
             total = total + cont_loss
             self.cont_losses.append(cont_stats["contrastive"])

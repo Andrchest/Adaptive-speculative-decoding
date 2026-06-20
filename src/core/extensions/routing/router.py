@@ -105,6 +105,7 @@ class DynamicRouter:
         Returns (DraftModel, drafter_index).
         """
         if self.router is None or self.embedder is None:
+            logger.info('Selecting default (0) drafter')
             return self.specs[0].model, 0
 
         emb = self.embedder(input_ids)  # (d,)

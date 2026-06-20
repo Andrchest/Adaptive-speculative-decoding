@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 import torch
+import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class DraftModel:
         logger.info("Loading drafter model from %s on %s", model_name_or_path, device)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
-            torch_dtype=dtype,
+            dtype=dtype,
             device_map=device,
             **model_kwargs,
         )
@@ -49,6 +50,7 @@ class DraftModel:
         context: torch.Tensor,
         k: int,
         distill: bool = False,
+        temperature: float = 1.0,
     ) -> tuple[list[int], torch.Tensor]:
         """
         Autoregressively generate k tokens.
@@ -65,12 +67,39 @@ class DraftModel:
                   ``use_cache`` is disabled when distill=True so the
                   cached key/value states (created under no_grad) do
                   not corrupt the gradient-enabled final forward pass.
+        temperature : sampling temperature for the drafter. The drafter
+                  MUST sample from the SAME distribution ``q`` that the
+                  decoder uses in its acceptance test, otherwise the
+                  speculative-sampling theorem does not apply and the
+                  output distribution is biased.
+
+                  - ``temperature <= 1e-6`` → greedy argmax (one-hot q;
+                    only valid when the decoder also uses greedy target
+                    decoding — see note below).
+                  - ``temperature > 0`` → sample from
+                    ``softmax(logits / temperature)``.
+
+        Note on greedy mode
+        -------------------
+        For the standard speculative-sampling theorem (Leviathan et al.
+        2023, Chen et al. 2023) to preserve the target distribution,
+        the drafter must actually *sample* from ``q``. Greedy drafting
+        (argmax) is only distribution-preserving when paired with a
+        greedy target AND a "strict" acceptance rule (accept iff
+        ``argmax(p) == draft_token``). The default ``temperature=1.0``
+        here ensures the theorem holds for stochastic decoding.
         """
-        logger.info("Drafting %d token(s) from context length %d", k, context.shape[1])
+        logger.info(
+            "Drafting %d token(s) from context length %d (temperature=%s)",
+            k,
+            context.shape[1],
+            temperature,
+        )
         tokens: list[int] = []
         all_logits: list[torch.Tensor] = []
         cur = context.clone()
         step_logits: list[torch.Tensor] = []
+        greedy = temperature <= 1e-6
 
         for i in range(k):
             is_last = i == k - 1
@@ -84,7 +113,7 @@ class DraftModel:
 
             logits = out.logits[:, -1, :]  # (1, vocab)
             step_logits.append(logits)
-            next_tok = logits.argmax(dim=-1)  # greedy
+            next_tok = self._sample_next_token(logits, temperature, greedy)
             tokens.append(next_tok.item())
             cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
             logger.debug("Draft token %d/%d: %d", i + 1, k, tokens[-1])
@@ -98,6 +127,22 @@ class DraftModel:
 
         logger.info("Draft complete: generated %d token(s)", len(tokens))
         return tokens, logits_to_return
+
+    @staticmethod
+    def _sample_next_token(
+        logits: torch.Tensor, temperature: float, greedy: bool
+    ) -> torch.Tensor:
+        """
+        Sample (or argmax) the next token from ``logits`` of shape (1, V).
+
+        Returns a tensor of shape (1,) so that ``.unsqueeze(0)`` yields
+        (1, 1) for concatenation with the running context.
+        """
+        if greedy:
+            return logits.argmax(dim=-1)  # (1,)
+        probs = F.softmax(logits.float() / max(temperature, 1e-6), dim=-1)  # (1, V)
+        # multinomial returns (1, 1); squeeze the last dim to match argmax shape.
+        return torch.multinomial(probs, 1).squeeze(-1)  # (1,)
 
     def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Full forward pass; returns logits (seq, vocab)."""

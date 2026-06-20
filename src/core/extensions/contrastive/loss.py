@@ -65,7 +65,18 @@ def infonce_loss(
     neg_scores = log_probs[:, negative_ids]  # (m, n)
 
     # InfoNCE: -log [ exp(pos) / (exp(pos) + Σ exp(neg)) ]
-    all_scores = torch.cat([pos_scores.unsqueeze(1), neg_scores / temperature], dim=1)  # (m, 1+n)
+    #
+    # Temperature must be applied to ALL scores (positive AND negatives).
+    # Previously it was applied only to negatives, which collapsed the
+    # denominator toward exp(pos) and drove the loss to ~0, providing
+    # no gradient signal.
+    all_scores = torch.cat(
+        [
+            pos_scores.unsqueeze(1) / temperature,
+            neg_scores / temperature,
+        ],
+        dim=1,
+    )  # (m, 1+n)
     loss = -F.log_softmax(all_scores, dim=1)[:, 0].mean()
     return loss
 
@@ -113,10 +124,33 @@ class ContrastiveLoss(torch.nn.Module):
         valid = target_to_draft_mapping >= 0
         d_idx = target_to_draft_mapping[valid]
         t_idx = torch.where(valid)[0]
-        target_in_drafter[:, d_idx] = target_probs[:, t_idx]
+        # Out-of-place assignment to avoid in-place modification of a
+        # tensor that may participate in autograd.
+        target_in_drafter = target_in_drafter.scatter(
+            1,
+            d_idx.unsqueeze(0).expand(k, -1),
+            target_probs[:, t_idx],
+        )
+
+        # Both distributions must be normalized over the SAME support
+        # (the Rule1-mappable subset) for the KL to be well-defined.
+        # Previously the unnormalized projection was passed directly,
+        # producing a biased surrogate.
+        valid_mask = valid.unsqueeze(0).expand(k, -1)  # (k, drafter_vocab)
+        drafter_masked_log = draft_log[valid_mask].view(k, -1)
+        drafter_masked_log = drafter_masked_log - torch.logsumexp(
+            drafter_masked_log, dim=-1, keepdim=True
+        )
+        target_masked = target_in_drafter[valid_mask].view(k, -1)
+        target_masked = target_masked / target_masked.sum(
+            dim=-1, keepdim=True
+        ).clamp(min=1e-8)
 
         kl = F.kl_div(
-            draft_log, target_in_drafter.clamp(min=1e-8), reduction="batchmean", log_target=False
+            drafter_masked_log,
+            target_masked,
+            reduction="batchmean",
+            log_target=False,
         )
 
         # --- NLL on accepted tokens ---

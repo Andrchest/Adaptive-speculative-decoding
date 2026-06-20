@@ -80,13 +80,17 @@ class SpeedupPredictor(nn.Module):
         n_steps: int = 64,
         batch_size: int = 32,
         lr: float = 1e-3,
-        rng: torch.Generator | None = None,
     ) -> float:
-        """Fit on collected samples; returns mean loss.
+        """
+        Fit on collected samples; returns mean loss.
 
-        Parameters
-        ----------
-        rng : optional torch.Generator for deterministic sampling.
+        Each sample provides a speedup observation for exactly ONE
+        draft length ``k`` (the one actually used). The other ``K_max-1``
+        columns of the target are unknown and MUST be masked out of the
+        MSE — otherwise the predictor is trained to output 0 for every
+        unobserved ``k``, which contaminates the regression target and
+        breaks ``select_k`` (it would return whichever column happened
+        to get the most non-zero observations, not the genuinely best k).
         """
         if len(self._buffer) < batch_size:
             logger.debug(
@@ -100,33 +104,43 @@ class SpeedupPredictor(nn.Module):
 
         device = next(self.parameters()).device
         total_loss = 0.0
+        n_valid_steps = 0
 
         for _ in range(n_steps):
-            if rng is not None:
-                indices = torch.randint(
-                    len(self._buffer), (batch_size,), generator=rng
-                )
-            else:
-                indices = torch.randint(len(self._buffer), (batch_size,))
+            indices = torch.randint(len(self._buffer), (batch_size,))
             samples = [self._buffer[i] for i in indices.tolist()]
 
             hidden_batch = torch.stack([s.hidden for s in samples]).to(device)
             target = torch.zeros(batch_size, self.k_max, device=device)
+            obs_mask = torch.zeros(
+                batch_size, self.k_max, device=device, dtype=torch.bool
+            )
             for i, s in enumerate(samples):
-                k_idx = min(s.draft_len - 1, self.k_max - 1)
-                target[i, k_idx] = s.speedup
+                # draft_len is 1-indexed; k_idx is 0-indexed.
+                # Guard against draft_len <= 0 (shouldn't happen, but
+                # defensive: previously draft_len=0 wrote into the LAST
+                # column via min(-1, k_max-1) = -1).
+                if s.draft_len >= 1:
+                    k_idx = min(s.draft_len - 1, self.k_max - 1)
+                    target[i, k_idx] = s.speedup
+                    obs_mask[i, k_idx] = True
+
+            if not obs_mask.any():
+                continue
 
             self._optimizer.zero_grad()
             pred = self.forward(hidden_batch)
-            loss = F.mse_loss(pred, target)
+            # MSE only on observed (sample, k) positions.
+            loss = F.mse_loss(pred[obs_mask], target[obs_mask])
             loss.backward()
             self._optimizer.step()
             total_loss += loss.item()
+            n_valid_steps += 1
 
-        mean_loss = total_loss / n_steps
+        mean_loss = total_loss / max(n_valid_steps, 1)
         logger.info(
             "SpeedupPredictor trained: n_steps=%d batch_size=%d buffer_size=%d mean_loss=%.6f",
-            n_steps,
+            n_valid_steps,
             batch_size,
             len(self._buffer),
             mean_loss,
@@ -195,7 +209,5 @@ class AdaptiveDraftController:
 
     def _get_hidden(self, context: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
-            out = self.drafter.model(
-                context, output_hidden_states=True, use_cache=True
-            )
+            out = self.drafter.model(context, output_hidden_states=True)
         return out.hidden_states[-1][0, -1, :].float()  # (d_hidden,)

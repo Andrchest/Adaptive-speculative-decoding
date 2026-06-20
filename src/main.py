@@ -26,7 +26,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(message)s",
     datefmt="[%H:%M:%S]",
     handlers=[RichHandler(rich_tracebacks=True, show_path=True)],

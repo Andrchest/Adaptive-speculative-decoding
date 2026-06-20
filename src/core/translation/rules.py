@@ -139,6 +139,8 @@ class Rule1Mapping:
         target_probs   : (batch, target_vocab) or (target_vocab,)
                          Un-normalised; caller may need softmax.
         """
+        logger.debug('Rule 1: mapping logits')
+
         squeeze = drafter_logits.dim() == 1
         if squeeze:
             drafter_logits = drafter_logits.unsqueeze(0)

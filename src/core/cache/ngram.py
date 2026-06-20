@@ -45,9 +45,18 @@ class CacheEntry:
         self.acceptance_rate = (1 - alpha) * self.acceptance_rate + alpha * float(accepted)
 
     def eviction_score(self, current_step: int) -> float:
-        """Higher score → keep longer."""
+        """
+        Higher score → keep longer.
+
+        The ``+1`` in the numerator gives freshly-inserted entries
+        (which have ``hit_count = 0``) a non-zero score, preventing the
+        cache from evicting them on the very next insert. Without this
+        grace, the ``acc``/``hybrid`` strategies thrash: every new entry
+        is the global minimum (score = 0) and gets evicted immediately,
+        so the cache can never grow beyond ``max_size`` once full.
+        """
         age = max(1, current_step - self.insert_step)
-        return (self.hit_count * self.acceptance_rate) / age
+        return ((self.hit_count + 1) * self.acceptance_rate) / age
 
 
 # ---------------------------------------------------------------------------

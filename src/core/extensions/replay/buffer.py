@@ -31,7 +31,6 @@ class Trace:
     target_logits: torch.Tensor  # (k, target_vocab)
     draft_tokens: list[int]
     accepted_tokens: list[int]
-    accepted_mask: list[bool]  # position-level, length == len(draft_tokens)
     rejected_tokens: list[int]
     acceptance_rate: float
 
@@ -152,6 +151,13 @@ class ReplayDistiller:
             replay_batch,
         )
 
+    def set_contrastive_loss(self, loss_module) -> None:
+        """
+        Attach a ContrastiveLoss module to be added to subsequent steps.
+        """
+        self.distiller.set_contrastive_loss(loss_module)
+        logger.info('ReplayDistiller contrastive loss attachment')
+
     def step(
         self,
         draft_logits: torch.Tensor,
@@ -190,7 +196,6 @@ class ReplayDistiller:
             target_logits=target_logits.detach().cpu(),
             draft_tokens=draft_tokens,
             accepted_tokens=accepted_tokens,
-            accepted_mask=accepted_mask,
             rejected_tokens=rejected_tokens,
             acceptance_rate=acc_rate,
         )
@@ -214,20 +219,83 @@ class ReplayDistiller:
         return self.distiller.training_stats()
 
     def _replay(self) -> None:
-        """Replay sampled traces through the distiller."""
+        """
+        Replay sampled traces through the distiller.
+
+        Each trace's stored ``draft_logits`` is detached and CPU-resident
+        (see ``live_step``), so it has no ``grad_fn``. Re-using them
+        directly would contribute zero gradient to the drafter. We
+        therefore re-run the drafter's forward pass on the stored
+        ``prompt_ids`` + the first ``k-1`` drafted tokens to obtain
+        fresh, grad-enabled logits at all k draft positions, then route
+        the resulting loss through ``distiller.step`` so backward and
+        gradient accumulation are handled by the standard pathway.
+
+        The ``accepted_mask`` is reconstructed POSITIONALLY from
+        ``len(t.accepted_tokens)`` rather than via set membership:
+        speculative decoding accepts a contiguous prefix of the draft,
+        so ``accepted_mask[i] = (i < len(t.accepted_tokens))``. The
+        previous set-membership reconstruction mislabelled duplicate
+        token ids as accepted whenever they appeared at an accepted
+        position elsewhere in the draft.
+        """
         traces = self.buffer.sample(self.replay_batch)
-        logger.info("Replay phase: %d traces from buffer (size=%d)", len(traces), len(self.buffer))
+        logger.info(
+            "Replay phase: %d traces from buffer (size=%d)",
+            len(traces),
+            len(self.buffer),
+        )
+        if not traces:
+            return
         device = next(self.distiller.drafter.model.parameters()).device
+
         for t in traces:
-            loss = self.distiller._compute_loss(
-                draft_logits=t.draft_logits.to(device),
+            k = len(t.draft_tokens)
+            if k == 0:
+                continue
+
+            # Re-run drafter forward to obtain fresh grad-enabled logits.
+            prompt_ids = torch.tensor(
+                t.prompt_ids, dtype=torch.long, device=device
+            ).unsqueeze(0)
+            draft_tokens_tensor = torch.tensor(
+                t.draft_tokens, dtype=torch.long, device=device
+            ).unsqueeze(0)
+            # Feed (prompt + draft_tokens[:-1]) so the model's logits at
+            # positions [prompt_len-1 .. prompt_len+k-2] predict
+            # draft_tokens[0..k-1]. For k=1, just feed the prompt.
+            if k > 1:
+                input_for_drafter = torch.cat(
+                    [prompt_ids, draft_tokens_tensor[:, :-1]], dim=1
+                )
+            else:
+                input_for_drafter = prompt_ids
+
+            try:
+                out = self.distiller.drafter.model(input_for_drafter)
+            except Exception as e:
+                logger.warning(
+                    "Replay: skipping trace due to drafter forward error: %s", e
+                )
+                continue
+
+            prompt_len = prompt_ids.shape[1]
+            # logits at positions [prompt_len-1, prompt_len, ..., prompt_len+k-2]
+            fresh_logits = out.logits[0, prompt_len - 1 : prompt_len - 1 + k, :]
+            # (k, drafter_vocab) — has grad_fn
+
+            # Reconstruct accepted_mask positionally (C6 fix).
+            # Speculative decoding accepts a contiguous prefix of the
+            # draft; len(t.accepted_tokens) is the length of that prefix
+            # (NOT including the bonus token, which is not a draft token).
+            n_accepted = len(t.accepted_tokens)
+            accepted_mask = [i < n_accepted for i in range(k)]
+
+            # Route through the standard step() so backward and
+            # accumulation are handled consistently with live steps.
+            self.distiller.step(
+                draft_logits=fresh_logits,
                 target_logits=t.target_logits.to(device),
                 draft_tokens=t.draft_tokens,
-                accepted_mask=t.accepted_mask,
+                accepted_mask=accepted_mask,
             )
-            if loss is not None:
-                # Keep on GPU: .item() in _update_weights handles the scalar transfer
-                self.distiller._accum_loss = self.distiller._accum_loss + loss.detach()
-                self.distiller._accum_count += 1
-                if self.distiller._accum_count >= self.distiller.accum_steps:
-                    self.distiller._update_weights()

@@ -118,13 +118,6 @@ class UniversalDrafter(nn.Module):
         )
 
         self._current_target_id: int = 0
-        self._hooks_standalone: list = []  # hooks not tied to layers
-
-    def __enter__(self) -> "UniversalDrafter":
-        return self
-
-    def __exit__(self, *args) -> None:
-        self.remove_hooks()
 
     def set_target(self, target_name: str) -> None:
         """Set active target for the next forward pass."""
@@ -138,64 +131,39 @@ class UniversalDrafter(nn.Module):
     def forward(self, input_ids: torch.Tensor, **kwargs) -> object:
         return self.base_model(input_ids, **kwargs)
 
+    @torch.no_grad()
     def draft(
         self,
         context: torch.Tensor,
         k: int,
         target_name: str | None = None,
-        distill: bool = False,
     ) -> tuple[list[int], torch.Tensor]:
         """
         Draft k tokens conditioned on the specified target family.
 
-        Parameters
-        ----------
-        distill : if True, enable gradient flow (no hooks, no cache)
-                  for online distillation. If False (default), use KV-cache
-                  and run without gradients for inference speed.
+        The target adapter is applied at EVERY transformer layer via
+        the forward hooks registered in ``_register_hooks``. We must
+        NOT apply it again here — doing so would double the target bias
+        at the final position and produce systematically wrong logits.
         """
         if target_name is not None:
             self.set_target(target_name)
-
-        # Remove hooks when distilling to allow clean gradient flow
-        if distill:
-            self.remove_hooks()
-        else:
-            # Re-register hooks for inference (use_cache + gradient-free)
-            self._register_hooks()
-
-        grad_ctx = torch.no_grad() if not distill else torch.enable_grad()
-        if not distill:
-            for p in self.base_model.parameters():
-                p.requires_grad_(False)
 
         tokens: list[int] = []
         all_logits: list[torch.Tensor] = []
         cur = context.clone()
 
-        with grad_ctx:
-            for i in range(k):
-                is_last = i == k - 1
-                use_cache = not distill and not is_last
-
-                out = self.base_model(
-                    cur,
-                    output_hidden_states=True,
-                    use_cache=use_cache,
-                )
-                # Inject target adaptation into last hidden state before lm_head
-                last_hidden = out.hidden_states[-1]  # (1, seq, d)
-                adapted = self.target_adapter(last_hidden, self._current_target_id)
-                # Re-compute logits with adapted hidden
-                logits = self.base_model.lm_head(adapted[:, -1, :])  # (1, vocab)
-                all_logits.append(logits.squeeze(0))
-                next_tok = logits.argmax(dim=-1)
-                tokens.append(next_tok.item())
-                cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
-
-        # Re-register hooks after distillation pass
-        if distill:
-            self._register_hooks()
+        for _ in range(k):
+            out = self.base_model(cur, output_hidden_states=True)
+            # last_hidden already has the target adapter applied via the
+            # per-layer forward hooks. Re-applying the adapter here would
+            # double the bias at the final position.
+            last_hidden = out.hidden_states[-1]  # (1, seq, d)
+            logits = self.base_model.lm_head(last_hidden[:, -1, :])  # (1, vocab)
+            all_logits.append(logits.squeeze(0))
+            next_tok = logits.argmax(dim=-1)
+            tokens.append(next_tok.item())
+            cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
 
         return tokens, torch.stack(all_logits, dim=0)  # (k, vocab)
 
@@ -239,12 +207,6 @@ class UniversalDrafter(nn.Module):
                 self._hooks.append(h)
 
     def remove_hooks(self) -> None:
-        if not hasattr(self, "_hooks") or self._hooks is None:
-            return
         for h in self._hooks:
-            try:
-                h.remove()
-            except RuntimeError:
-                pass  # hook already removed
+            h.remove()
         self._hooks = []
-        self._hooks_standalone = []
