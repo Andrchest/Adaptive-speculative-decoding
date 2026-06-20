@@ -38,6 +38,11 @@ lambda_ngram: 0.5
 distil_lr: 1.0e-5
 use_lora: false
 lora_rank: 8
+lora_alpha: 16.0
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - v_proj
 accum_steps: 8
 
 # ─── Replay ────────────────────────────────────────────────────────────────

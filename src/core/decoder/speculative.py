@@ -140,7 +140,6 @@ class SpeculativeDecoder:
             if new_tokens >= max_new_tokens:
                 break
 
-            logger.debug(generated)
             k = self._choose_draft_length(generated, adaptive_length_fn)
             logger.debug(
                 "Decode step %d selected draft length k=%d (new_tokens=%d/%d)",

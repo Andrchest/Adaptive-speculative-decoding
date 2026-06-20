@@ -79,6 +79,10 @@ class ExperimentConfig:
     distil_lr: float = 1e-5
     use_lora: bool = False
     lora_rank: int = 8
+    lora_alpha: float = 16.0
+    lora_dropout: float = 0.05
+    lora_target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+    accum_steps: int = 8
 
     # Replay
     use_replay: bool = False
@@ -152,6 +156,31 @@ class ExperimentRunner:
                 torch.cuda.memory_allocated() / 1e6,
                 torch.cuda.memory_reserved() / 1e6,
             )
+
+    @staticmethod
+    def _apply_lora(drafter, cfg) -> None:
+        """Wrap the drafter model with PEFT LoRA adapters."""
+        from peft import LoraConfig, TaskType, get_peft_model
+
+        config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=cfg.lora_rank,
+            lora_alpha=cfg.lora_alpha,
+            lora_dropout=cfg.lora_dropout,
+            target_modules=cfg.lora_target_modules,
+        )
+        drafter.model = get_peft_model(drafter.model, config)
+        trainable = sum(p.numel() for p in drafter.model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in drafter.model.parameters())
+        logger.info(
+            "LoRA applied: rank=%d alpha=%.1f target_modules=%s trainable=%d/%d (%.2f%%)",
+            cfg.lora_rank,
+            cfg.lora_alpha,
+            cfg.lora_target_modules,
+            trainable,
+            total,
+            100.0 * trainable / max(total, 1),
+        )
 
     def run_all(self) -> list[dict]:
         results = []
@@ -261,10 +290,13 @@ class ExperimentRunner:
 
             from core.distillation.online import OnlineDistiller
 
-            # Enable gradients for fine-tuning
+            if cfg.use_lora:
+                self._apply_lora(drafter, cfg)
+
             drafter.model.train()
-            for p in drafter.model.parameters():
-                p.requires_grad_(True)
+            if not cfg.use_lora:
+                for p in drafter.model.parameters():
+                    p.requires_grad_(True)
 
             opt = optim.Adam(drafter.model.parameters(), lr=cfg.distil_lr)
             distiller = OnlineDistiller(
@@ -308,6 +340,13 @@ class ExperimentRunner:
                 import torch.optim as optim
 
                 from core.distillation.online import OnlineDistiller
+
+                if cfg.use_lora:
+                    self._apply_lora(drafter, cfg)
+                drafter.model.train()
+                if not cfg.use_lora:
+                    for p in drafter.model.parameters():
+                        p.requires_grad_(True)
 
                 opt = optim.Adam(drafter.model.parameters(), lr=cfg.distil_lr)
                 distiller = OnlineDistiller(
@@ -392,11 +431,13 @@ class ExperimentRunner:
             router_model = RouterModel(d_input=d_hidden, n_drafters=n_drafters).to(self.device)
             router = DynamicRouter(
                 drafter_specs=specs,
-                router_model=router_model, # idk why ruff fails to recognize drafter (it is initialized after imports)
-                embedder=lambda ids: drafter.model(ids, output_hidden_states=True)  # noqa: F821
-                .hidden_states[-1]
-                .mean(dim=1)
-                .to(dtype=router_model.net[0].weight.dtype),
+                router_model=router_model,  # idk why ruff fails to recognize drafter (it is initialized after imports)
+                embedder=lambda ids: (
+                    drafter.model(ids, output_hidden_states=True)  # noqa: F821
+                    .hidden_states[-1]
+                    .mean(dim=1)
+                    .to(dtype=router_model.net[0].weight.dtype)
+                ),
             )
             logger.info("Dynamic router ready: %d drafters", n_drafters)
 
@@ -458,13 +499,9 @@ class ExperimentRunner:
                     adapter falls back to the base drafter in that case.
                     """
                     if distill:
-                        return self.base.draft(
-                            context, k, distill=True, temperature=temperature
-                        )
+                        return self.base.draft(context, k, distill=True, temperature=temperature)
                     with torch.no_grad():
-                        return self.universal.draft(
-                            context, k, target_name=cfg.target_model_path
-                        )
+                        return self.universal.draft(context, k, target_name=cfg.target_model_path)
 
                 def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
                     return self.universal.base_model(input_ids).logits.squeeze(0)

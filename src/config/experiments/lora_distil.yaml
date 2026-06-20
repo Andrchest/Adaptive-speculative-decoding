@@ -1,0 +1,48 @@
+# ─── LoRA Fine-Tuning Experiment ───────────────────────────────────────────
+name: lora_distil
+description: Online distillation with LoRA adapters on the drafter
+
+# Models (drafter is trained with LoRA, target is frozen)
+drafter_model_path: facebook/opt-125m
+target_model_path: facebook/opt-350m
+
+# Device
+device: cuda
+
+# Dataset
+dataset: alpaca
+max_samples: 128
+max_new_tokens: 64
+
+# Draft length
+draft_length: 5
+k_min: 1
+k_max: 8
+
+# Translation
+use_rule1: true
+use_rule2: true
+use_lattice: true
+
+# Cache
+cache_max_size: 65536
+cache_eviction: hybrid
+
+# Distillation with LoRA
+use_online_distil: true
+lambda_ngram: 0.5
+distil_lr: 1.0e-3
+accum_steps: 8
+use_lora: true
+lora_rank: 8
+lora_alpha: 16.0
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - v_proj
+
+# Contrastive
+use_contrastive: false
+
+# Benchmark
+collect_benchmarks: true
