@@ -164,6 +164,8 @@ class Rule1Mapping:
 
         # scatter_add: for each valid drafter token, accumulate its prob at target index
         target_probs.index_add_(1, target_d_indices, drafter_probs[:, source_d_indices])
+        logger.debug('Rule 1: end mapping logits ')
+
         if squeeze:
             return target_probs.squeeze(0)
         return target_probs

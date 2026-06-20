@@ -83,8 +83,22 @@ class TokenizerLattice:
         # Precomputed match index for fast DP: target_string → [(start, end, d_id)]
         self._match_index = self._build_match_index()
 
-        # Precompute match tensors and filtered str_to_ids
-        self._precompute_match_tensors()
+        # Match tensors kept on CPU; lazily moved to GPU on first exact_map_logits call
+        self._match_tensors: dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
+        self._match_device: torch.device | None = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        filtered_str_to_ids: dict[str, list[int]] = {}
+        for t_str, t_ids in self._build_str_to_ids().items():
+            matches = self._match_index.get(t_str)
+            if matches is None:
+                continue
+            filtered_str_to_ids[t_str] = t_ids
+            m = torch.tensor(
+                matches,
+                dtype=torch.long,
+                device='cuda' if torch.cuda.is_available() else 'cpu'
+            )
+            self._match_tensors[t_str] = (m[:, 0], m[:, 1], m[:, 2])
+        self._str_to_ids = filtered_str_to_ids
 
         logger.info(
             "TokenizerLattice initialized: drafter_vocab=%d target_vocab=%d max_cache=%d",
@@ -184,6 +198,20 @@ class TokenizerLattice:
         return kl
 
     def exact_map_logits(self, drafter_logits: torch.Tensor) -> torch.Tensor:
+        logger.debug("Lattice: exact_map_logits")
+
+        device = drafter_logits.device
+
+        # Lazily move match tensors to target device (once, not per-string)
+        if self._match_device != device:
+            logger.debug(f'Devices does not match: Logits device - {device}, match tensors - {self._match_device}')
+            self._match_tensors = {
+                k: (s.to(device), e.to(device), d.to(device))
+                for k, (s, e, d) in self._match_tensors.items()
+            }
+            self._match_device = device
+            logger.debug(f'Translation complete, all tensors were moved to {self._match_device}')
+
         squeeze = drafter_logits.dim() == 1
         if squeeze:
             drafter_logits = drafter_logits.unsqueeze(0)
@@ -191,20 +219,16 @@ class TokenizerLattice:
         k = drafter_logits.shape[0]
         target_size = self.target_size
         drafter_probs = F.softmax(drafter_logits.float(), dim=-1)
-        result = torch.zeros(k, target_size, device=drafter_logits.device)
+        result = torch.zeros(k, target_size, device=device)
 
         for step in range(k):
             dp = drafter_probs[step]
 
+            logger.debug(len(self._str_to_ids.items()))
             for t_str, t_ids in self._str_to_ids.items():
                 starts, ends, d_ids = self._match_tensors[t_str]
-                if starts.device != dp.device:
-                    starts = starts.to(dp.device, non_blocking=True)
-                    ends = ends.to(dp.device, non_blocking=True)
-                    d_ids = d_ids.to(dp.device, non_blocking=True)
-                    self._match_tensors[t_str] = (starts, ends, d_ids)
                 n = len(t_str)
-                fwd = torch.zeros(n + 1, device=dp.device, dtype=dp.dtype)
+                fwd = torch.zeros(n + 1, device=device, dtype=dp.dtype)
                 fwd[0] = 1.0
 
                 for pos in range(n):
@@ -216,6 +240,8 @@ class TokenizerLattice:
                 if prob > 0:
                     result[step, t_ids] = prob
 
+        logger.debug("Lattice: end exact_map_logits")
+
         if squeeze:
             return result.squeeze(0)
         return result
@@ -223,22 +249,6 @@ class TokenizerLattice:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
-
-    def _precompute_match_tensors(self) -> None:
-        self._match_tensors: dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
-        filtered_str_to_ids: dict[str, list[int]] = {}
-
-        for t_str, t_ids in self._build_str_to_ids().items():
-            matches = self._match_index.get(t_str)
-
-            if matches is None:
-                continue
-
-            filtered_str_to_ids[t_str] = t_ids
-            m = torch.tensor(matches, dtype=torch.long)
-            self._match_tensors[t_str] = (m[:, 0], m[:, 1], m[:, 2])
-
-        self._str_to_ids = filtered_str_to_ids
 
     def _build_match_index(self) -> dict[str, list[tuple[int, int, int]]]:
         """Precompute drafter token matches for fast forward DP.
