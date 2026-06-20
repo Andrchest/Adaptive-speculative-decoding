@@ -31,6 +31,7 @@ class Trace:
     target_logits: torch.Tensor  # (k, target_vocab)
     draft_tokens: list[int]
     accepted_tokens: list[int]
+    accepted_mask: list[bool]  # position-level, length == len(draft_tokens)
     rejected_tokens: list[int]
     acceptance_rate: float
 
@@ -189,6 +190,7 @@ class ReplayDistiller:
             target_logits=target_logits.detach().cpu(),
             draft_tokens=draft_tokens,
             accepted_tokens=accepted_tokens,
+            accepted_mask=accepted_mask,
             rejected_tokens=rejected_tokens,
             acceptance_rate=acc_rate,
         )
@@ -221,10 +223,11 @@ class ReplayDistiller:
                 draft_logits=t.draft_logits.to(device),
                 target_logits=t.target_logits.to(device),
                 draft_tokens=t.draft_tokens,
-                accepted_mask=[tok in t.accepted_tokens for tok in t.draft_tokens],
+                accepted_mask=t.accepted_mask,
             )
             if loss is not None:
-                self.distiller._accum_loss = self.distiller._accum_loss + loss.detach().cpu()
+                # Keep on GPU: .item() in _update_weights handles the scalar transfer
+                self.distiller._accum_loss = self.distiller._accum_loss + loss.detach()
                 self.distiller._accum_count += 1
                 if self.distiller._accum_count >= self.distiller.accum_steps:
                     self.distiller._update_weights()

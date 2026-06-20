@@ -22,6 +22,7 @@ Given a target token string s_t (e.g. "flake"):
 from __future__ import annotations
 
 import logging
+import time
 
 import torch
 import torch.nn.functional as F
@@ -76,7 +77,15 @@ class TokenizerLattice:
         # Lattice cache: target_string → list of drafter-token-id paths
         # Each "path" is a list of drafter token ids whose strings concatenate to target_string
         self._lattice_cache: dict[str, list[list[int]]] = {}
+        self._last_access: dict[str, float] = {}
         self._max_cache = max_cache_size
+
+        # Precomputed match index for fast DP: target_string → [(start, end, d_id)]
+        self._match_index = self._build_match_index()
+
+        # String dedup for exact_map_logits: string → [target_token_ids]
+        self._str_to_ids = self._build_str_to_ids()
+
         logger.info(
             "TokenizerLattice initialized: drafter_vocab=%d target_vocab=%d max_cache=%d",
             self.drafter_size,
@@ -92,8 +101,11 @@ class TokenizerLattice:
         """
         Return all valid drafter tokenisation paths for *target_string*.
         Each path is a list of drafter token ids.
+
+        Uses LRU eviction to keep hot entries longer.
         """
         if target_string in self._lattice_cache:
+            self._last_access[target_string] = time.time()
             return self._lattice_cache[target_string]
 
         paths = self._enumerate_paths(target_string)
@@ -105,10 +117,13 @@ class TokenizerLattice:
         )
 
         if len(self._lattice_cache) >= self._max_cache:
-            # Simple FIFO eviction
-            oldest = next(iter(self._lattice_cache))
-            del self._lattice_cache[oldest]
+            # LRU eviction: remove the least recently accessed entry
+            oldest_key = min(self._last_access, key=self._last_access.get)
+            del self._lattice_cache[oldest_key]
+            del self._last_access[oldest_key]
+
         self._lattice_cache[target_string] = paths
+        self._last_access[target_string] = time.time()
         return paths
 
     def forward(
@@ -118,25 +133,35 @@ class TokenizerLattice:
     ) -> torch.Tensor:
         """
         Compute the exact probability mass assigned by the drafter to a
-        given target token (scalar tensor).
+        given target token using forward DP over character positions.
+
+        Replaces exponential path enumeration with O(n²) DP where n is the
+        string length. Uses precomputed match index from _build_match_index().
 
         P(target_token) = Σ_paths Π_{token in path} drafter_probs[token]
         """
         t_str = self._target_vocab.get(target_token_id, "")
         if not t_str:
-            return torch.tensor(0.0, device=drafter_probs.device)
+            return torch.tensor(
+                0.0, device=drafter_probs.device, dtype=drafter_probs.dtype
+            )
 
-        paths = self.build(t_str)
-        if not paths:
-            return torch.tensor(0.0, device=drafter_probs.device)
+        matches = self._match_index.get(t_str)
+        if not matches:
+            return torch.tensor(
+                0.0, device=drafter_probs.device, dtype=drafter_probs.dtype
+            )
 
-        total = torch.tensor(0.0, device=drafter_probs.device, dtype=drafter_probs.dtype)
-        for path in paths:
-            path_prob = torch.tensor(1.0, device=drafter_probs.device, dtype=drafter_probs.dtype)
-            for tok_id in path:
-                path_prob = path_prob * drafter_probs[tok_id]
-            total = total + path_prob
-        return total
+        n = len(t_str)
+        fwd = torch.zeros(n + 1, device=drafter_probs.device, dtype=drafter_probs.dtype)
+        fwd[0] = 1.0
+
+        # Process matches sorted by start position (already sorted from _build_match_index)
+        for start, end, d_id in matches:
+            if fwd[start] > 0:
+                fwd[end] += fwd[start] * drafter_probs[d_id]
+
+        return fwd[n]
 
     def backward(
         self,
@@ -164,7 +189,13 @@ class TokenizerLattice:
 
     def exact_map_logits(self, drafter_logits: torch.Tensor) -> torch.Tensor:
         """
-        Map drafter logits → exact target probability vector.
+        Map drafter logits → exact target probability vector using batched DP.
+
+        Uses string deduplication (_str_to_ids) to compute each unique target
+        string probability once, then broadcasts to all token ids sharing that
+        string. Combined with O(n²) forward DP instead of exponential path
+        enumeration, this reduces complexity from O(k × Vt × paths) to
+        O(k × unique_strings × n²).
 
         drafter_logits : (k, drafter_vocab)  or  (drafter_vocab,)
         returns        : (k, target_vocab)   or  (target_vocab,)
@@ -174,26 +205,30 @@ class TokenizerLattice:
             drafter_logits = drafter_logits.unsqueeze(0)
 
         k = drafter_logits.shape[0]
-        logger.debug(
-            "Lattice exact_map_logits: k=%d drafter_vocab=%d target_size=%d",
-            k,
-            drafter_logits.shape[-1],
-            self.target_size,
-        )
-
-        k = drafter_logits.shape[0]
         target_size = self.target_size
         drafter_probs = F.softmax(drafter_logits.float(), dim=-1)  # (k, Vd)
         result = torch.zeros(k, target_size, device=drafter_logits.device)
 
-        # Iterate over each batch step
         for step in range(k):
             dp = drafter_probs[step]
-            # forward() returns 0.0 for target_token_id outside the
-            # tokenizer's string table (i.e. padding region of target_size),
-            # so this naturally yields zeros there.
-            for t_idx in range(target_size):
-                result[step, t_idx] = self.forward(dp, t_idx)
+
+            # Deduplicate: compute once per unique target string, then broadcast
+            for t_str, t_ids in self._str_to_ids.items():
+                if not t_str or t_str not in self._match_index:
+                    continue
+
+                matches = self._match_index[t_str]
+                n = len(t_str)
+                fwd = torch.zeros(n + 1, device=dp.device, dtype=dp.dtype)
+                fwd[0] = 1.0
+
+                for start, end, d_id in matches:
+                    if fwd[start] > 0:
+                        fwd[end] += fwd[start] * dp[d_id]
+
+                prob = fwd[n]
+                for t_idx in t_ids:
+                    result[step, t_idx] = prob
 
         if squeeze:
             return result.squeeze(0)
@@ -202,6 +237,42 @@ class TokenizerLattice:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _build_match_index(self) -> dict[str, list[tuple[int, int, int]]]:
+        """Precompute drafter token matches for fast forward DP.
+
+        For each target string, find all drafter token substrings and their
+        character positions. Returns a sorted list of (start, end, d_id) tuples.
+        Sorting is by (start, end) so the forward DP processes matches in
+        topological order.
+        """
+        match_index: dict[str, list[tuple[int, int, int]]] = {}
+        for t_idx in range(self.target_size):
+            t_str = self._target_vocab.get(t_idx, "")
+            if not t_str:
+                continue
+            matches: list[tuple[int, int, int]] = []
+            n = len(t_str)
+            for i in range(n):
+                for j in range(i + 1, n + 1):
+                    sub = t_str[i:j]
+                    if sub in self._drafter_by_string:
+                        matches.append((i, j, self._drafter_by_string[sub]))
+            if matches:
+                match_index[t_str] = matches
+        return match_index
+
+    def _build_str_to_ids(self) -> dict[str, list[int]]:
+        """Map each unique non-empty string to its target token ids.
+
+        Used for deduplication in exact_map_logits: compute probability once
+        per unique string, then broadcast to all token ids sharing that string.
+        """
+        str_to_ids: dict[str, list[int]] = {}
+        for t_idx, t_str in self._target_vocab.items():
+            if t_str:
+                str_to_ids.setdefault(t_str, []).append(t_idx)
+        return str_to_ids
 
     @staticmethod
     def _build_vocab(tokenizer) -> dict[int, str]:

@@ -47,8 +47,9 @@ class DecodeRecord:
     def acceptance_rate(self) -> float:
         if not self.step_records:
             return 0.0
-        total_d = sum(r.draft_len for r in self.step_records)
         total_a = sum(r.accepted for r in self.step_records)
+        # Use actual_draft_len when available, fall back to draft_len
+        total_d = sum(r.actual_draft_len if r.actual_draft_len > 0 else r.draft_len for r in self.step_records)
         return total_a / max(1, total_d)
 
 
@@ -58,6 +59,7 @@ class StepRecord:
     accepted: int
     cache_hit: bool
     kl_div: float = 0.0
+    actual_draft_len: int = 0  # 0 = unknown (kept for backward compat)
 
 
 class BenchmarkCollector:
@@ -109,8 +111,9 @@ class BenchmarkCollector:
             accepted: int,
             cache_hit: bool = False,
             kl_div: float = 0.0,
+            actual_draft_len: int = 0,
         ) -> None:
-            self._rec.step_records.append(StepRecord(draft_len, accepted, cache_hit, kl_div))
+            self._rec.step_records.append(StepRecord(draft_len, accepted, cache_hit, kl_div, actual_draft_len))
             self._rec.total_new_tokens += accepted
 
         def __exit__(self, *args) -> None:
@@ -161,8 +164,13 @@ class BenchmarkCollector:
         all_accepted = [s.accepted for r in self._records for s in r.step_records]
         cache_hits = [s.cache_hit for r in self._records for s in r.step_records]
 
-        mean_tps = sum(all_tps) / len(all_tps)
-        speedup = (mean_tps / self._baseline_tps) if self._baseline_tps else None
+        # Overall TPS: total new tokens / total wall time (unbiased)
+        total_new_tokens = sum(r.total_new_tokens for r in self._records)
+        total_wall_time = sum(r.wall_time_s for r in self._records)
+        overall_tps = total_new_tokens / max(total_wall_time, 1e-9)
+        avg_tps = sum(all_tps) / len(all_tps)
+
+        speedup = (overall_tps / self._baseline_tps) if self._baseline_tps else None
 
         result = {
             "name": self.name,
@@ -171,7 +179,10 @@ class BenchmarkCollector:
             "avg_accepted_tokens": _mean(all_accepted),
             "avg_draft_length": _mean(all_draft_lens),
             "cache_hit_rate": _mean([float(h) for h in cache_hits]),
-            "tokens_per_sec": mean_tps,
+            "tokens_per_sec": overall_tps,
+            "avg_tokens_per_sec": avg_tps,
+            "total_new_tokens": total_new_tokens,
+            "wall_time_total_s": total_wall_time,
             "wall_time_mean_s": _mean([r.wall_time_s for r in self._records]),
             "gpu_mem_peak_gb": max(self._gpu_mem_samples, default=0.0),
         }

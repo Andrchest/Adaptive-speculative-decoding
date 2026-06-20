@@ -80,8 +80,14 @@ class SpeedupPredictor(nn.Module):
         n_steps: int = 64,
         batch_size: int = 32,
         lr: float = 1e-3,
+        rng: torch.Generator | None = None,
     ) -> float:
-        """Fit on collected samples; returns mean loss."""
+        """Fit on collected samples; returns mean loss.
+
+        Parameters
+        ----------
+        rng : optional torch.Generator for deterministic sampling.
+        """
         if len(self._buffer) < batch_size:
             logger.debug(
                 "SpeedupPredictor: buffer too small (%d < %d), skipping train",
@@ -96,7 +102,12 @@ class SpeedupPredictor(nn.Module):
         total_loss = 0.0
 
         for _ in range(n_steps):
-            indices = torch.randint(len(self._buffer), (batch_size,))
+            if rng is not None:
+                indices = torch.randint(
+                    len(self._buffer), (batch_size,), generator=rng
+                )
+            else:
+                indices = torch.randint(len(self._buffer), (batch_size,))
             samples = [self._buffer[i] for i in indices.tolist()]
 
             hidden_batch = torch.stack([s.hidden for s in samples]).to(device)
@@ -184,5 +195,7 @@ class AdaptiveDraftController:
 
     def _get_hidden(self, context: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
-            out = self.drafter.model(context, output_hidden_states=True)
+            out = self.drafter.model(
+                context, output_hidden_states=True, use_cache=True
+            )
         return out.hidden_states[-1][0, -1, :].float()  # (d_hidden,)

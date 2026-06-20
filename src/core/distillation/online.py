@@ -28,6 +28,9 @@ class OnlineDistiller:
     Accumulates training signal from accepted speculative steps and
     periodically updates the drafter weights.
 
+    Supports optional contrastive loss via the ``contrastive_loss``
+    property (set by the runner when ``use_contrastive=True``).
+
     Parameters
     ----------
     drafter_model   : DraftModel whose weights will be updated
@@ -75,6 +78,20 @@ class OnlineDistiller:
             use_lora,
             optimizer.param_groups[0]["lr"] if optimizer.param_groups else "N/A",
         )
+
+    # ------------------------------------------------------------------
+    # Contrastive loss public API (property + setter)
+    # ------------------------------------------------------------------
+
+    @property
+    def contrastive_loss(self) -> "ContrastiveLoss | None":
+        """Public access to the optional contrastive loss module."""
+        return self._contrastive_loss
+
+    @contrastive_loss.setter
+    def contrastive_loss(self, value) -> None:
+        """Allow runner to set the contrastive loss module (e.g. ContrastiveLoss)."""
+        self._contrastive_loss = value
 
     # ------------------------------------------------------------------
     # Public
@@ -172,8 +189,9 @@ class OnlineDistiller:
         self.nll_losses.append(nll.item())
 
         # --- Contrastive loss (optional) ---
-        if self._contrastive_loss is not None:
-            cont_loss, cont_stats = self._contrastive_loss(
+        cl = self.contrastive_loss
+        if cl is not None:
+            cont_loss, cont_stats = cl(
                 draft_logits=draft_logits,
                 target_logits=target_logits,
                 accepted_mask=accepted_mask,

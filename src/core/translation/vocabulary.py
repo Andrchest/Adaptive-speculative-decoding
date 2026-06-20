@@ -62,11 +62,13 @@ class CrossVocabTranslator:
         rule2: Rule2Mapping,
         learned_model=None,
         learned_weight: float = 0.0,
+        lattice=None,
     ) -> None:
         self.rule1 = rule1
         self.rule2 = rule2
         self.learned_model = learned_model
         self.learned_weight = learned_weight
+        self.lattice = lattice
         logger.info(
             "CrossVocabTranslator initialized: rule1=%s rule2=%s learned=%s weight=%.2f",
             type(rule1).__name__,
@@ -90,11 +92,19 @@ class CrossVocabTranslator:
         r1 = self.rule1.map_logits(draft_logits)  # (k, target_vocab)
         r1_mask = r1.sum(dim=0) > 0  # target tokens covered by R1
 
-        # Rule 2 — approximate redistribution for unmatched tokens
-        r2 = self.rule2.map_logits(draft_logits, rule1_mask=r1_mask)
+        # Rule 2 — either lattice exact mapping or approximate redistribution
+        if self.lattice is not None:
+            # Lattice: exact probability mass via DAG forward-DP
+            r2 = self.lattice.exact_map_logits(draft_logits)  # (k, target_vocab)
+            # Zero out R1-covered positions to avoid double-counting
+            r2 = r2 * (1 - r1_mask.float().unsqueeze(0))
+            logger.debug("Using lattice for Rule 2 (exact mapping)")
+        else:
+            # Fallback: approximate redistribution via Rule 2 heuristic
+            r2 = self.rule2.map_logits(draft_logits, rule1_mask=r1_mask)
 
         # Combine: R1 has priority; R2 fills the rest
-        combined = r1 + r2 * (1 - r1_mask.float().unsqueeze(0))
+        combined = r1 + r2
 
         # Learned translator blend
         if self.learned_model is not None and self.learned_weight > 0:
@@ -125,6 +135,7 @@ class CrossVocabTranslator:
         device: str = "cpu",
         learned_model=None,
         learned_weight: float = 0.0,
+        lattice=None,
         drafter_vocab_size: int | None = None,
         target_vocab_size: int | None = None,
     ) -> CrossVocabTranslator:
@@ -156,4 +167,4 @@ class CrossVocabTranslator:
             r1.target_size,
             device,
         )
-        return cls(r1, r2, learned_model=learned_model, learned_weight=learned_weight)
+        return cls(r1, r2, learned_model=learned_model, learned_weight=learned_weight, lattice=lattice)

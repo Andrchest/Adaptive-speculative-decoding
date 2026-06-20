@@ -96,9 +96,16 @@ class SpeculativeDecoder:
         max_new_tokens: int = 128,
         adaptive_length_fn=None,  # callable(hidden) → int, optional
         distiller=None,  # OnlineDistiller, optional
+        rng: torch.Generator | None = None,  # optional RNG for reproducibility
     ) -> torch.Tensor:
         """
         Full generation loop. Returns (1, seq_len + new_tokens).
+
+        Parameters
+        ----------
+        rng : optional torch.Generator for deterministic sampling.
+              When provided, acceptance tests and residual sampling use
+              this generator for reproducible results.
         """
         import contextlib
 
@@ -114,7 +121,9 @@ class SpeculativeDecoder:
         # Only disable no_grad when distillation is active
         grad_ctx = contextlib.nullcontext() if distiller is not None else torch.no_grad()
         with grad_ctx:
-            return self._generate_loop(input_ids, max_new_tokens, adaptive_length_fn, distiller)
+            return self._generate_loop(
+                input_ids, max_new_tokens, adaptive_length_fn, distiller, rng
+            )
 
     def _generate_loop(
         self,
@@ -122,8 +131,11 @@ class SpeculativeDecoder:
         max_new_tokens: int,
         adaptive_length_fn,
         distiller,
+        rng=None,
     ) -> torch.Tensor:
         generated = input_ids.clone()
+        max_consec_zero = 5  # stop after N consecutive steps with 0 accepted tokens
+        consec_zero = 0
 
         for step_idx in range(max_new_tokens):
             k = self._choose_draft_length(generated, adaptive_length_fn)
@@ -131,7 +143,7 @@ class SpeculativeDecoder:
                 "Decode step %d/%d selected draft length k=%d", step_idx + 1, max_new_tokens, k
             )
 
-            result = self._decode_step(generated, k, distiller=distiller)
+            result = self._decode_step(generated, k, distiller=distiller, rng=rng)
             self._step_results.append(result)
             self.cache.step()
 
@@ -148,7 +160,14 @@ class SpeculativeDecoder:
                 ).unsqueeze(0)
                 generated = torch.cat([generated, new_ids], dim=1)
             else:
+                consec_zero += 1
                 logger.debug("Decode step %d accepted no draft tokens", step_idx + 1)
+                if consec_zero >= max_consec_zero:
+                    logger.warning(
+                        "Stopping after %d consecutive steps with zero accepted tokens",
+                        max_consec_zero,
+                    )
+                    break
 
             # Stop if EOS produced
             if generated.shape[1] and self._is_eos(generated[0, -1]):
@@ -182,6 +201,14 @@ class SpeculativeDecoder:
         }
 
     # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
+
+    def clear_step_results(self) -> None:
+        """Clear accumulated step results after collecting metrics."""
+        self._step_results.clear()
+
+    # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
@@ -198,6 +225,7 @@ class SpeculativeDecoder:
         context: torch.Tensor,
         k: int,
         distiller=None,
+        rng=None,
     ) -> StepResult:
         ctx_list = context[0].tolist()
 
@@ -243,12 +271,16 @@ class SpeculativeDecoder:
 
         # 5. Acceptance / rejection
         logger.debug("Running acceptance test for %d draft token(s)", len(draft_tokens))
-        accepted, rejected_at = self._accept_reject(draft_tokens, target_logits, translated_probs)
+        accepted, rejected_at = self._accept_reject(
+            draft_tokens, target_logits, translated_probs, rng=rng
+        )
         logger.info("Acceptance result: accepted=%d rejected_at=%d", len(accepted), rejected_at)
         accepted_count = len(accepted)
 
         # 6. Bonus token from residual distribution at rejection point
-        bonus = self._residual_sample(target_logits, translated_probs, rejected_at)
+        bonus = self._residual_sample(
+            target_logits, translated_probs, rejected_at, rng=rng
+        )
         if bonus is not None:
             logger.debug("Sampled residual bonus token: %d", bonus)
             accepted = accepted + [bonus]
@@ -295,6 +327,7 @@ class SpeculativeDecoder:
         draft_tokens: list[int],
         target_logits: torch.Tensor,
         translated_probs: torch.Tensor | None,
+        rng: torch.Generator | None = None,
     ) -> tuple[list[int], int]:
         """
         Standard speculative decoding acceptance test.
@@ -326,7 +359,11 @@ class SpeculativeDecoder:
                 tok,
                 accept_prob,
             )
-            if torch.rand(1).item() < accept_prob:
+            if rng is not None:
+                draw = torch.rand(1, generator=rng).item()
+            else:
+                draw = torch.rand(1).item()
+            if draw < accept_prob:
                 accepted.append(tok)
             else:
                 logger.info(
@@ -342,6 +379,7 @@ class SpeculativeDecoder:
         target_logits: torch.Tensor,
         translated_probs: torch.Tensor | None,
         rejected_at: int,
+        rng: torch.Generator | None = None,
     ) -> int | None:
         """Sample one bonus token from the residual distribution at rejection point."""
         # The bonus token comes from target_logits[rejected_at] (or last position if all accepted)
@@ -358,14 +396,20 @@ class SpeculativeDecoder:
             residual = F.relu(p - q)
             if residual.sum() > 1e-8:
                 residual = residual / residual.sum()
-                token = torch.multinomial(residual, 1).item()
+                if rng is not None:
+                    token = torch.multinomial(residual, 1, generator=rng).item()
+                else:
+                    token = torch.multinomial(residual, 1).item()
                 logger.debug(
                     "Residual sample from positive mass at position %d: token=%d", pos, token
                 )
                 return token
             logger.debug("Residual mass empty at position %d; falling back to target", pos)
 
-        token = torch.multinomial(p, 1).item()
+        if rng is not None:
+            token = torch.multinomial(p, 1, generator=rng).item()
+        else:
+            token = torch.multinomial(p, 1).item()
         logger.debug(
             "Residual sample from target distribution at position %d: token=%d", pos, token
         )
