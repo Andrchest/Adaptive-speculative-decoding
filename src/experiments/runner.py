@@ -712,7 +712,7 @@ ABLATION_SUITE = [
     ExperimentConfig(
         name="11_full_system",
         use_rule1=True,
-        use_lattice=True,
+        use_lattice=False,
         use_translator=True,
         use_online_distil=True,
         use_replay=True,

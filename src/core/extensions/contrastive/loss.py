@@ -52,6 +52,15 @@ def infonce_loss(
     if len(positive_ids) == 0 or len(negative_ids) == 0:
         return torch.tensor(0.0, device=anchor_logits.device)
 
+    drafter_vocab = anchor_logits.shape[-1]
+    valid_pos = positive_ids < drafter_vocab
+    anchor_logits = anchor_logits[valid_pos]
+    positive_ids = positive_ids[valid_pos]
+    negative_ids = negative_ids[negative_ids < drafter_vocab]
+
+    if len(positive_ids) == 0 or len(negative_ids) == 0:
+        return torch.tensor(0.0, device=anchor_logits.device)
+
     m = len(positive_ids)
 
     # Use log-softmax scores as similarity
@@ -121,16 +130,15 @@ class ContrastiveLoss(torch.nn.Module):
         # Project target probs back to drafter space via mapping
         drafter_vocab = draft_logits.shape[-1]
         target_in_drafter = torch.zeros(k, drafter_vocab, device=draft_logits.device)
-        valid = target_to_draft_mapping >= 0
+        valid = (target_to_draft_mapping >= 0) & (target_to_draft_mapping < drafter_vocab)
         d_idx = target_to_draft_mapping[valid]
         t_idx = torch.where(valid)[0]
-        # Out-of-place assignment to avoid in-place modification of a
-        # tensor that may participate in autograd.
-        target_in_drafter = target_in_drafter.scatter(
-            1,
-            d_idx.unsqueeze(0).expand(k, -1),
-            target_probs[:, t_idx],
-        )
+        if valid.any():
+            target_in_drafter = target_in_drafter.scatter(
+                1,
+                d_idx.unsqueeze(0).expand(k, -1),
+                target_probs[:, t_idx],
+            )
 
         # Both distributions must be normalized over the SAME support
         # (the Rule1-mappable subset) for the KL to be well-defined.
@@ -142,9 +150,7 @@ class ContrastiveLoss(torch.nn.Module):
             drafter_masked_log, dim=-1, keepdim=True
         )
         target_masked = target_in_drafter[valid_mask].view(k, -1)
-        target_masked = target_masked / target_masked.sum(
-            dim=-1, keepdim=True
-        ).clamp(min=1e-8)
+        target_masked = target_masked / target_masked.sum(dim=-1, keepdim=True).clamp(min=1e-8)
 
         kl = F.kl_div(
             drafter_masked_log,

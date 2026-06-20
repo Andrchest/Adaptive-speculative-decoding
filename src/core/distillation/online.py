@@ -170,9 +170,7 @@ class OnlineDistiller:
                 drafter_masked_log, dim=-1, keepdim=True
             )
             target_masked = target_in_drafter[:, direct_mask]  # (k, M)
-            target_masked = target_masked / target_masked.sum(
-                dim=-1, keepdim=True
-            ).clamp(min=1e-8)
+            target_masked = target_masked / target_masked.sum(dim=-1, keepdim=True).clamp(min=1e-8)
             kl = F.kl_div(
                 drafter_masked_log,
                 target_masked,
@@ -263,13 +261,14 @@ class OnlineDistiller:
         valid = mapping >= 0
         d_idx = torch.where(valid)[0]  # (M,)
         t_idx = mapping[d_idx]  # (M,)
+        valid_t = t_idx < target_probs.shape[-1]
+        d_idx = d_idx[valid_t]
+        t_idx = t_idx[valid_t]
         drafter_proj[:, d_idx] = target_probs[:, t_idx]
 
         return drafter_proj
 
-    def _get_target_to_draft_mapping(
-        self, target_vocab_size: int, device=None
-    ) -> torch.Tensor:
+    def _get_target_to_draft_mapping(self, target_vocab_size: int, device=None) -> torch.Tensor:
         """
         Build a tensor mapping target vocab indices → drafter vocab indices.
 
@@ -280,9 +279,7 @@ class OnlineDistiller:
         mapping = self.translator.rule1._mapping  # (drafter_vocab,) → target_vocab
         # mapping[d] = t means drafter token d maps to target token t
         # We need the inverse: target → drafter
-        t2d = torch.full(
-            (target_vocab_size,), -1, dtype=torch.long, device=device
-        )
+        t2d = torch.full((target_vocab_size,), -1, dtype=torch.long, device=device)
         d_indices = torch.where(mapping >= 0)[0]
         t_indices = mapping[d_indices]
         t2d[t_indices] = d_indices.to(device)

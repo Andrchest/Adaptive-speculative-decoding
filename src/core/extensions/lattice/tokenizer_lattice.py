@@ -29,6 +29,7 @@ import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
+
 try:
     import networkx as nx
 
@@ -75,7 +76,6 @@ class TokenizerLattice:
         )
 
         # Lattice cache: target_string → list of drafter-token-id paths
-        # Each "path" is a list of drafter token ids whose strings concatenate to target_string
         self._lattice_cache: dict[str, list[list[int]]] = {}
         self._last_access: dict[str, float] = {}
         self._max_cache = max_cache_size
@@ -83,22 +83,71 @@ class TokenizerLattice:
         # Precomputed match index for fast DP: target_string → [(start, end, d_id)]
         self._match_index = self._build_match_index()
 
-        # Match tensors kept on CPU; lazily moved to GPU on first exact_map_logits call
-        self._match_tensors: dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
-        self._match_device: torch.device | None = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        # Build valid mappings
         filtered_str_to_ids: dict[str, list[int]] = {}
         for t_str, t_ids in self._build_str_to_ids().items():
             matches = self._match_index.get(t_str)
             if matches is None:
                 continue
             filtered_str_to_ids[t_str] = t_ids
-            m = torch.tensor(
-                matches,
-                dtype=torch.long,
-                device='cuda' if torch.cuda.is_available() else 'cpu'
-            )
-            self._match_tensors[t_str] = (m[:, 0], m[:, 1], m[:, 2])
         self._str_to_ids = filtered_str_to_ids
+
+        # =========================================================
+        # Global Vectorized DP Data Structures
+        # =========================================================
+        self._valid_strs = list(self._str_to_ids.keys())
+        self._N = len(self._valid_strs)
+        self._str_to_idx = {s: i for i, s in enumerate(self._valid_strs)}
+
+        if self._N > 0:
+            self._max_L = max(len(s) for s in self._valid_strs)
+        else:
+            self._max_L = 0
+
+        # Compute flat 1D offsets to tightly pack the DAG states of all strings
+        node_offsets = []
+        current_offset = 0
+        for s in self._valid_strs:
+            node_offsets.append(current_offset)
+            current_offset += len(s) + 1
+
+        self._num_nodes = current_offset
+        self._zero_nodes = torch.tensor(node_offsets, dtype=torch.long)
+
+        final_nodes = [offset + len(s) for offset, s in zip(node_offsets, self._valid_strs)]
+        self._final_nodes = torch.tensor(final_nodes, dtype=torch.long)
+
+        # Group matches over ALL strings strictly by their `end` character offset.
+        # This inherently ensures valid topological sort in the parallel DP.
+        edges_by_end = {j: ([], [], []) for j in range(1, self._max_L + 1)}
+        for s, ids in self._str_to_ids.items():
+            i = self._str_to_idx[s]
+            offset = node_offsets[i]
+            matches = self._match_index.get(s, [])
+            for start, end, d_id in matches:
+                edges_by_end[end][0].append(offset + start)
+                edges_by_end[end][1].append(offset + end)
+                edges_by_end[end][2].append(d_id)
+
+        self._edges_by_end = {}
+        for j in range(1, self._max_L + 1):
+            if len(edges_by_end[j][0]) > 0:
+                self._edges_by_end[j] = (
+                    torch.tensor(edges_by_end[j][0], dtype=torch.long),
+                    torch.tensor(edges_by_end[j][1], dtype=torch.long),
+                    torch.tensor(edges_by_end[j][2], dtype=torch.long),
+                )
+
+        self._target_to_str_idx = torch.zeros(self.target_size, dtype=torch.long)
+        self._target_mask = torch.zeros(self.target_size, dtype=torch.bool)
+
+        for s, ids in self._str_to_ids.items():
+            i = self._str_to_idx[s]
+            for t_id in ids:
+                self._target_to_str_idx[t_id] = i
+                self._target_mask[t_id] = True
+
+        self._dp_device: torch.device | None = None
 
         logger.info(
             "TokenizerLattice initialized: drafter_vocab=%d target_vocab=%d max_cache=%d",
@@ -115,8 +164,6 @@ class TokenizerLattice:
         """
         Return all valid drafter tokenisation paths for *target_string*.
         Each path is a list of drafter token ids.
-
-        Uses LRU eviction to keep hot entries longer.
         """
         if target_string in self._lattice_cache:
             self._last_access[target_string] = time.time()
@@ -147,12 +194,7 @@ class TokenizerLattice:
     ) -> torch.Tensor:
         """
         Compute the exact probability mass assigned by the drafter to a
-        given target token using forward DP over character positions.
-
-        Replaces exponential path enumeration with O(n²) DP where n is the
-        string length. Uses precomputed match index from _build_match_index().
-
-        P(target_token) = Σ_paths Π_{token in path} drafter_probs[token]
+        given target token. P(target_token) = Σ_paths Π_{token in path} drafter_probs[token]
         """
         t_str = self._target_vocab.get(target_token_id, "")
         if not t_str:
@@ -166,7 +208,6 @@ class TokenizerLattice:
         fwd = torch.zeros(n + 1, device=drafter_probs.device, dtype=drafter_probs.dtype)
         fwd[0] = 1.0
 
-        # Process matches sorted by start position (already sorted from _build_match_index)
         for start, end, d_id in matches:
             if fwd[start] > 0:
                 fwd[end] += fwd[start] * drafter_probs[d_id]
@@ -179,17 +220,10 @@ class TokenizerLattice:
         target_probs: torch.Tensor,  # (target_vocab,)
     ) -> torch.Tensor:
         """
-        Compute the KL divergence KL(target || lattice_approx) over the
-        target vocabulary.
-
+        Compute the KL divergence KL(target || lattice_approx) over the target vocabulary.
         This drives the lattice-aware distillation loss.
         """
-        target_vocab_size = target_probs.shape[-1]
-        lattice_probs = torch.zeros(
-            target_vocab_size, device=drafter_probs.device, dtype=drafter_probs.dtype
-        )
-        for t_idx in range(target_vocab_size):
-            lattice_probs[t_idx] = self.forward(drafter_probs, t_idx)
+        lattice_probs = self._compute_lattice_probs(drafter_probs.unsqueeze(0)).squeeze(0)
 
         # Normalise (may not sum to 1 if drafter can't cover all target tokens)
         lattice_probs = lattice_probs / lattice_probs.sum().clamp(min=1e-8)
@@ -198,66 +232,77 @@ class TokenizerLattice:
         return kl
 
     def exact_map_logits(self, drafter_logits: torch.Tensor) -> torch.Tensor:
-        logger.debug("Lattice: exact_map_logits")
-
-        device = drafter_logits.device
-
-        # Lazily move match tensors to target device (once, not per-string)
-        if self._match_device != device:
-            logger.debug(f'Devices does not match: Logits device - {device}, match tensors - {self._match_device}')
-            self._match_tensors = {
-                k: (s.to(device), e.to(device), d.to(device))
-                for k, (s, e, d) in self._match_tensors.items()
-            }
-            self._match_device = device
-            logger.debug(f'Translation complete, all tensors were moved to {self._match_device}')
-
         squeeze = drafter_logits.dim() == 1
         if squeeze:
             drafter_logits = drafter_logits.unsqueeze(0)
 
-        k = drafter_logits.shape[0]
-        target_size = self.target_size
         drafter_probs = F.softmax(drafter_logits.float(), dim=-1)
-        result = torch.zeros(k, target_size, device=device)
-
-        for step in range(k):
-            dp = drafter_probs[step]
-
-            logger.debug(len(self._str_to_ids.items()))
-            for t_str, t_ids in self._str_to_ids.items():
-                starts, ends, d_ids = self._match_tensors[t_str]
-                n = len(t_str)
-                fwd = torch.zeros(n + 1, device=device, dtype=dp.dtype)
-                fwd[0] = 1.0
-
-                for pos in range(n):
-                    mask = starts == pos
-                    if mask.any():
-                        fwd.index_add_(0, ends[mask], fwd[pos] * dp[d_ids[mask]])
-
-                prob = fwd[-1]
-                if prob > 0:
-                    result[step, t_ids] = prob
-
-        logger.debug("Lattice: end exact_map_logits")
+        target_probs = self._compute_lattice_probs(drafter_probs)
 
         if squeeze:
-            return result.squeeze(0)
-        return result
+            return target_probs.squeeze(0)
+        return target_probs
+
+    def _compute_lattice_probs(self, drafter_probs: torch.Tensor) -> torch.Tensor:
+        """
+        Global parallelized DP step vectorizing exact prob assignments across all possible target
+        tokens universally. It bypasses python iteration overheads natively.
+        """
+        device = drafter_probs.device
+
+        # Lazy host-to-device transfers once
+        if getattr(self, "_dp_device", None) != device:
+            self._zero_nodes = self._zero_nodes.to(device)
+            self._final_nodes = self._final_nodes.to(device)
+            self._target_to_str_idx = self._target_to_str_idx.to(device)
+            self._target_mask = self._target_mask.to(device)
+            self._edges_by_end_dev = {}
+            for j, (starts, ends, d_ids) in self._edges_by_end.items():
+                self._edges_by_end_dev[j] = (starts.to(device), ends.to(device), d_ids.to(device))
+            self._dp_device = device
+
+        k = drafter_probs.shape[0]
+
+        if self._N == 0:
+            return torch.zeros(k, self.target_size, device=device, dtype=drafter_probs.dtype)
+
+        # Flat tensor structure dramatically cuts down VRAM layout padding needs to a few Megabytes at most
+        fwd = torch.zeros(k, self._num_nodes, device=device, dtype=drafter_probs.dtype)
+        fwd[:, self._zero_nodes] = 1.0
+
+        drafter_vocab = drafter_probs.shape[-1]
+
+        for j in range(1, self._max_L + 1):
+            if j not in self._edges_by_end_dev:
+                continue
+            flat_starts, flat_ends, d_ids = self._edges_by_end_dev[j]
+
+            # Runtime safety: filter d_ids out-of-bounds for the actual
+            # drafter_probs tensor (model vocab may differ from tokenizer vocab)
+            valid = d_ids < drafter_vocab
+            if not valid.any():
+                continue
+
+            edge_probs = drafter_probs[:, d_ids[valid]]
+            edge_fwd = fwd[:, flat_starts[valid]]
+            edge_vals = edge_fwd * edge_probs
+
+            fwd = fwd.clone()
+            fwd.index_add_(1, flat_ends[valid], edge_vals)
+
+        # Recover mappings cleanly per token basis respectively
+        string_probs = fwd[:, self._final_nodes]
+        target_probs = string_probs[:, self._target_to_str_idx]
+        target_probs = target_probs * self._target_mask.unsqueeze(0)
+
+        return target_probs
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
     def _build_match_index(self) -> dict[str, list[tuple[int, int, int]]]:
-        """Precompute drafter token matches for fast forward DP.
-
-        For each target string, find all drafter token substrings and their
-        character positions. Returns a sorted list of (start, end, d_id) tuples.
-        Sorting is by (start, end) so the forward DP processes matches in
-        topological order.
-        """
+        """Precompute drafter token matches for fast DP, filtered by drafter_size."""
         match_index: dict[str, list[tuple[int, int, int]]] = {}
         for t_idx in range(self.target_size):
             t_str = self._target_vocab.get(t_idx, "")
@@ -268,18 +313,15 @@ class TokenizerLattice:
             for i in range(n):
                 for j in range(i + 1, n + 1):
                     sub = t_str[i:j]
-                    if sub in self._drafter_by_string:
-                        matches.append((i, j, self._drafter_by_string[sub]))
+                    d_id = self._drafter_by_string.get(sub)
+                    if d_id is not None and d_id < self.drafter_size:
+                        matches.append((i, j, d_id))
             if matches:
                 match_index[t_str] = matches
         return match_index
 
     def _build_str_to_ids(self) -> dict[str, list[int]]:
-        """Map each unique non-empty string to its target token ids.
-
-        Used for deduplication in exact_map_logits: compute probability once
-        per unique string, then broadcast to all token ids sharing that string.
-        """
+        """Map each unique non-empty string to its target token ids."""
         str_to_ids: dict[str, list[int]] = {}
         for t_idx, t_str in self._target_vocab.items():
             if t_str:
@@ -298,7 +340,6 @@ class TokenizerLattice:
     def _enumerate_paths(self, target_str: str) -> list[list[int]]:
         """
         DP over character positions to find all valid drafter tokenisations.
-
         dp[i] = list of partial paths reaching offset i
         """
         n = len(target_str)
