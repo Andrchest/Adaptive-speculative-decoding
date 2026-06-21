@@ -60,7 +60,11 @@ class SpeedupPredictor(nn.Module):
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
         """Returns predicted speedup per k: (K_max,) or (B, K_max)."""
-        return self.net(hidden)
+        out = self.net(hidden)
+        if out.isnan().any() or out.isinf().any():
+            logger.warning("SpeedupPredictor output contains NaN/Inf — zeroing them")
+            out = torch.nan_to_num(out, nan=0.0, posinf=10.0, neginf=-10.0)
+        return out
 
     def select_k(self, hidden: torch.Tensor) -> int:
         """Return the k with the highest predicted speedup."""
@@ -126,13 +130,10 @@ class SpeedupPredictor(nn.Module):
                 batch_size, self.k_max, device=device, dtype=torch.bool
             )
             for i, s in enumerate(samples):
-                # draft_len is 1-indexed; k_idx is 0-indexed.
-                # Guard against draft_len <= 0 (shouldn't happen, but
-                # defensive: previously draft_len=0 wrote into the LAST
-                # column via min(-1, k_max-1) = -1).
                 if s.draft_len >= 1:
                     k_idx = min(s.draft_len - 1, self.k_max - 1)
-                    target[i, k_idx] = s.speedup
+                    speedup = min(max(s.speedup, 0.0), 10.0)
+                    target[i, k_idx] = speedup
                     obs_mask[i, k_idx] = True
 
             if not obs_mask.any():
@@ -143,9 +144,12 @@ class SpeedupPredictor(nn.Module):
             # MSE only on observed (sample, k) positions.
             loss = F.mse_loss(pred[obs_mask], target[obs_mask])
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
             self._optimizer.step()
             total_loss += loss.item()
             n_valid_steps += 1
+
+            self._find_invalid_weights()
 
         mean_loss = total_loss / max(n_valid_steps, 1)
         logger.info(
@@ -157,6 +161,14 @@ class SpeedupPredictor(nn.Module):
         )
         return mean_loss
 
+    def _find_invalid_weights(self) -> None:
+        for name, param in self.net.named_parameters():
+            if torch.isnan(param).any():
+                logger.warning("NaN found in %s — reinitializing", name)
+                param.data.copy_(torch.randn_like(param) * 0.01)
+            if torch.isinf(param).any():
+                logger.warning("Inf found in %s — reinitializing", name)
+                param.data.copy_(torch.randn_like(param) * 0.01)
 
 class AdaptiveDraftController:
     """
@@ -204,11 +216,12 @@ class AdaptiveDraftController:
         if self._last_start is None or self._last_k is None:
             return
         elapsed = time.perf_counter() - self._last_start
-        if elapsed > 0:
-            tps = accepted_count / elapsed
-            speedup = tps / max(self.baseline_tps, 1e-6)
-            if self._last_hidden is not None:
-                self.predictor.record(self._last_hidden, self._last_k, speedup)
+        elapsed = max(elapsed, 1e-6)  # avoid division by zero
+        tps = accepted_count / elapsed
+        speedup = tps / max(self.baseline_tps, 1e-6)
+        speedup = min(max(speedup, 0.0), 10.0)  # clamp to prevent training instability
+        if self._last_hidden is not None:
+            self.predictor.record(self._last_hidden, self._last_k, speedup)
             logger.debug(
                 "AdaptiveDraftController: k=%d accepted=%d tps=%.1f speedup=%.2f",
                 self._last_k,

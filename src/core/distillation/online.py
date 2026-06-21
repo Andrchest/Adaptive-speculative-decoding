@@ -110,6 +110,7 @@ class OnlineDistiller:
         else None.
         """
         loss = self._compute_loss(draft_logits, target_logits, draft_tokens, accepted_mask)
+        logger.debug(f'Loss {loss}')
         if loss is None:
             return None
 

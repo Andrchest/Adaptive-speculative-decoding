@@ -126,6 +126,22 @@ class DraftModel:
             logits_to_return = torch.stack(all_logits, dim=0)  # (k, vocab)
 
         logger.info("Draft complete: generated %d token(s)", len(tokens))
+
+        # Sanitize returned logits: NaN/Inf breaks the entire downstream
+        # chain (translation, acceptance test, residual sampling).
+        # The model producing NaN is abnormal — log a clear warning.
+        if logits_to_return.isnan().any() or logits_to_return.isinf().any():
+            n_nan = logits_to_return.isnan().sum().item()
+            n_inf = logits_to_return.isinf().sum().item()
+            logger.warning(
+                "Drafter produced %d NaN + %d Inf logits out of %d — "
+                "this indicates a model-level issue (fp16 instability, "
+                "corrupt weights, or incompatible tokenizer). "
+                "Zeroing them to prevent downstream crashes.",
+                n_nan, n_inf, logits_to_return.numel(),
+            )
+            logits_to_return = torch.nan_to_num(logits_to_return, nan=0.0, posinf=1e6, neginf=-1e6)
+
         return tokens, logits_to_return
 
     @staticmethod
@@ -134,14 +150,22 @@ class DraftModel:
     ) -> torch.Tensor:
         """
         Sample (or argmax) the next token from ``logits`` of shape (1, V).
+        Falls back to argmax if logits contain NaN/Inf.
 
         Returns a tensor of shape (1,) so that ``.unsqueeze(0)`` yields
         (1, 1) for concatenation with the running context.
         """
         if greedy:
             return logits.argmax(dim=-1)  # (1,)
+
+        if logits.isnan().any() or logits.isinf().any():
+            logger.warning(
+                "Drafter logits contain NaN/Inf at sampling step — "
+                "falling back to argmax. This indicates a model-level issue."
+            )
+            return logits.nan_to_num(nan=0.0, posinf=1e6, neginf=-1e6).argmax(dim=-1)
+
         probs = F.softmax(logits.float() / max(temperature, 1e-6), dim=-1)  # (1, V)
-        # multinomial returns (1, 1); squeeze the last dim to match argmax shape.
         return torch.multinomial(probs, 1).squeeze(-1)  # (1,)
 
     def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
