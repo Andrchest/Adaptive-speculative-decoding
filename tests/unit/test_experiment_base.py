@@ -278,3 +278,81 @@ class TestBaselineExperiment:
         assert cfg.use_rule2 is True
         assert cfg.use_lattice is False
         assert cfg.use_online_distil is False
+
+
+# ---------------------------------------------------------------------------
+# GPU memory and time metrics (always present in summary)
+# ---------------------------------------------------------------------------
+
+
+class TestAlwaysPresentMetrics:
+    """Verify that GPU memory and time metrics are always in summary."""
+
+    def test_gpu_mem_peak_and_mean(self) -> None:
+        from benchmarks.metrics.collector import BenchmarkCollector
+
+        c = BenchmarkCollector("metrics_test")
+        c._gpu_mem_samples = [1.0, 2.5, 3.0, 2.0]
+
+        with c.record_sequence(prompt_len=10) as rec:
+            rec.add_step(draft_len=5, accepted=3)
+
+        summary = c.summary()
+        assert summary["gpu_mem_peak_gb"] == 3.0
+        assert summary["gpu_mem_mean_gb"] == pytest.approx(2.125)
+
+    def test_gpu_mem_empty(self) -> None:
+        from benchmarks.metrics.collector import BenchmarkCollector
+
+        c = BenchmarkCollector("empty_test")
+        with c.record_sequence(prompt_len=10) as rec:
+            rec.add_step(draft_len=5, accepted=3)
+
+        summary = c.summary()
+        assert summary["gpu_mem_peak_gb"] == 0.0
+        assert summary["gpu_mem_mean_gb"] == 0.0
+
+    def test_time_metrics_always_present(self) -> None:
+        from benchmarks.metrics.collector import BenchmarkCollector
+
+        c = BenchmarkCollector("time_test")
+        with c.record_sequence(prompt_len=10) as rec:
+            rec.add_step(draft_len=5, accepted=3)
+
+        summary = c.summary()
+        assert "wall_time_total_s" in summary
+        assert "wall_time_mean_s" in summary
+        assert summary["wall_time_total_s"] > 0
+        assert summary["wall_time_mean_s"] > 0
+
+    def test_all_core_metrics_present(self) -> None:
+        """Every experiment run must always produce these metrics."""
+        from benchmarks.metrics.collector import BenchmarkCollector
+
+        c = BenchmarkCollector("core_test")
+        c._gpu_mem_samples = [0.5, 1.5]
+        with c.record_sequence(prompt_len=10) as rec:
+            rec.add_step(draft_len=5, accepted=3)
+
+        summary = c.summary()
+        required = [
+            "acceptance_rate",
+            "gpu_mem_peak_gb",
+            "gpu_mem_mean_gb",
+            "wall_time_total_s",
+            "wall_time_mean_s",
+            "tokens_per_sec",
+        ]
+        for key in required:
+            assert key in summary, f"Missing required metric: {key}"
+    def test_get_config(self) -> None:
+        from experiments.built_in import BaselineExperiment
+
+        exp = BaselineExperiment()
+        cfg = exp.get_config()
+        assert isinstance(cfg, ExperimentConfig)
+        assert cfg.name == "01_baseline"
+        assert cfg.use_rule1 is True
+        assert cfg.use_rule2 is True
+        assert cfg.use_lattice is False
+        assert cfg.use_online_distil is False

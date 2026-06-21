@@ -526,6 +526,14 @@ class BaseExperiment(abc.ABC):
         # Load models
         drafter, target = runner._build_models(cfg)
 
+        # GPU memory tracking: collect samples during setup
+        mem_samples: list[float] = []
+        if torch.cuda.is_available():
+            mem_samples.append(
+                torch.cuda.memory_allocated(runner.device) / 1024**3
+            )
+            logger.info("GPU memory after models: %.2f GB", mem_samples[-1])
+
         # Build components
         build_ctx = BuildContext(
             device=runner.device,
@@ -570,11 +578,19 @@ class BaseExperiment(abc.ABC):
         # Load dataset
         prompts = runner._load_dataset(cfg)
 
+        # GPU memory: after all components built
+        if torch.cuda.is_available():
+            mem_samples.append(
+                torch.cuda.memory_allocated(runner.device) / 1024**3
+            )
+            logger.info("GPU memory after setup: %.2f GB", mem_samples[-1])
+
         # Benchmark collector
         from benchmarks.metrics.collector import BenchmarkCollector
 
         name = getattr(cfg, "name", self.meta.name)
         collector = BenchmarkCollector(name=name)
+        collector._gpu_mem_samples = mem_samples
 
         # MLflow setup
         runner._setup_mlflow(cfg)
@@ -598,6 +614,12 @@ class BaseExperiment(abc.ABC):
 
         for i, (input_ids, prompt_len) in enumerate(prompts):
             input_ids = input_ids.to(runner.device)
+
+            # GPU memory: at each prompt (captures per-sequence peaks)
+            if torch.cuda.is_available():
+                mem_samples.append(
+                    torch.cuda.memory_allocated(runner.device) / 1024**3
+                )
 
             # Router selection (if applicable)
             if router is not None:
@@ -636,6 +658,12 @@ class BaseExperiment(abc.ABC):
 
         # Hooks: after decode
         self.on_after_decode(decode_ctx)
+
+        # GPU memory: after all decoding complete
+        if torch.cuda.is_available():
+            mem_samples.append(
+                torch.cuda.memory_allocated(runner.device) / 1024**3
+            )
 
         # Collect metrics
         summary = collector.summary()
