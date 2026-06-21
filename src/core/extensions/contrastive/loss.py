@@ -166,7 +166,7 @@ class ContrastiveLoss(torch.nn.Module):
                 dtype=torch.long,
                 device=draft_logits.device,
             )
-            nll = F.cross_entropy(draft_logits[acc_idx], acc_tokens)
+            nll = F.cross_entropy(draft_logits[acc_idx].float(), acc_tokens)
         else:
             nll = torch.tensor(0.0, device=draft_logits.device)
 

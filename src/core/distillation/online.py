@@ -190,7 +190,7 @@ class OnlineDistiller:
                 device=draft_logits.device,
             )
             nll = F.cross_entropy(
-                draft_logits[accepted_indices],
+                draft_logits[accepted_indices].float(),
                 acc_tokens,
             )
         else:

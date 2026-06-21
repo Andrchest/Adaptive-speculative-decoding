@@ -311,7 +311,6 @@ class SpeculativeDecoder:
             distill=(distiller is not None),
             temperature=self.temperature,
         )
-        logger.debug(f'Drafter generated {k} tokens: {draft_tokens_drafter} | Logits {draft_logits}')
 
         # 3. Translate drafter logits to target vocab space to obtain ``q``.
         #    Apply the decoder's temperature to the drafter logits BEFORE
@@ -325,7 +324,6 @@ class SpeculativeDecoder:
             with torch.no_grad():
                 t_eff = max(self.temperature, 1e-6)
                 translated_probs = self.translator.translate(draft_logits / t_eff)
-                logger.debug(f'Translated probs: {translated_probs}')
                 # Defensive alignment to the translator's declared target
                 # vocab size (which may differ from a target model's actual
                 # lm_head dim by a few padded rows for OPT/GPT-2 — we'll
@@ -344,14 +342,13 @@ class SpeculativeDecoder:
         draft_tokens_target = self._translate_draft_tokens(
             draft_tokens_drafter, translated_probs
         )
-        logger.debug(f'Translated tokens: {draft_tokens_target}')
 
         # 5. Target verifies the (target-vocab) draft tokens in one pass.
         logger.info(
             "Running target verification for %d draft token(s)", len(draft_tokens_target)
         )
         target_logits = self.target.verify(context, draft_tokens_target)
-        logger.debug(f'Target logits: {target_logits}')
+
         # target_logits: (k+1, target_vocab_size) — the +1 is the bonus token
 
         # Re-align translated_probs to the target_logits width (defensive:

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 
+import torch
+
 from experiments.base import BaseExperiment, BuildContext, ExperimentMeta
 from experiments.runner import ExperimentConfig
 
@@ -63,6 +65,10 @@ class OnlineDistillExperiment(BaseExperiment):
             ),
         )
         drafter.model = get_peft_model(drafter.model, config)
+        for p in drafter.model.parameters():
+            if p.requires_grad:
+                p.data = p.data.float() # will cast to fp32
+
         trainable = sum(p.numel() for p in drafter.model.parameters() if p.requires_grad)
         total = sum(p.numel() for p in drafter.model.parameters())
         logger.info(
@@ -87,6 +93,8 @@ class OnlineDistillExperiment(BaseExperiment):
         cfg = ctx.config
         if getattr(cfg, "use_lora", False):
             self._apply_lora(drafter, cfg)
+        else:
+            drafter.prepare_for_training(torch.float32)
 
         drafter.model.train()
         if not getattr(cfg, "use_lora", False):

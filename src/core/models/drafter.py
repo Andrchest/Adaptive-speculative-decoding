@@ -29,7 +29,7 @@ class DraftModel:
         self,
         model_name_or_path: str,
         device: str = "cuda",
-        dtype: torch.dtype = torch.float16,
+        dtype: torch.dtype = torch.float32,
         **model_kwargs,
     ) -> None:
         logger.info("Loading drafter tokenizer from %s", model_name_or_path)
@@ -37,13 +37,29 @@ class DraftModel:
         logger.info("Loading drafter model from %s on %s", model_name_or_path, device)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
-            dtype=dtype,
+            torch_dtype=dtype,
             device_map=device,
             **model_kwargs,
         )
         self.model.eval()
         self.device = device
         logger.info("Drafter model ready: %s", model_name_or_path)
+
+    def prepare_for_training(self, dtype: torch.dtype = torch.float32) -> None:
+        """
+        Upcast the drafter to a training-stable dtype.
+
+        Full-parameter fine-tuning directly on fp16 weights is unstable:
+        Adam's default eps=1e-8 underflows to 0 in float16, so for any
+        parameter whose exp_avg_sq is also small, the update denominator
+        sqrt(exp_avg_sq) + eps rounds to exactly 0, producing a 0/0 = NaN
+        step that corrupts the whole weight tensor on the very next
+        forward pass. fp32 eps=1e-8 is well within representable
+        precision, so this removes the failure mode entirely.
+        """
+        if self.model.dtype != dtype:
+            logger.info("Upcasting drafter %s -> %s for training", self.model.dtype, dtype)
+            self.model = self.model.to(dtype)
 
     def draft(
         self,
