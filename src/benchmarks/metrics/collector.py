@@ -185,6 +185,7 @@ class BenchmarkCollector:
             "wall_time_total_s": total_wall_time,
             "wall_time_mean_s": _mean([r.wall_time_s for r in self._records]),
             "gpu_mem_peak_gb": max(self._gpu_mem_samples, default=0.0),
+            "gpu_mem_mean_gb": _mean(self._gpu_mem_samples) if self._gpu_mem_samples else 0.0,
         }
         if speedup is not None:
             result["wall_clock_speedup"] = speedup

@@ -106,6 +106,22 @@ See `src/experiments/templates/minimal_template.py` and `research/README.md` for
 The project uses a Strategy-pattern experiment framework: each experiment is an
 independent class that overrides `build_*` methods and `on_*` hooks.
 
+### Results and Metrics
+
+Every experiment always produces:
+- **`acceptance_rate`** — average acceptance rate across all prompts
+- **`tokens_per_sec`** — overall throughput (total tokens / total time)
+- **`gpu_mem_peak_gb`** — peak GPU memory (GB) during the run
+- **`gpu_mem_mean_gb`** — average GPU memory (GB) during the run
+- **`wall_time_total_s`** / **`wall_time_mean_s`** — total and average decode time
+
+Conditional metrics (only when features are enabled):
+- `wall_clock_speedup` — when a baseline is set
+- `mean_kl_divergence`, `training_loss_mean/std` — when distillation is on
+- `router` — when dynamic routing is used
+
+Results are saved as JSON (`results/<name>.json`) and CSV (`results/comparison_table.csv`).
+
 ### Built-in Experiments (Ablation Suite)
 
 11 experiments reproducing the original flag-based suite:
