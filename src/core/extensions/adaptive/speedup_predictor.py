@@ -80,6 +80,7 @@ class SpeedupPredictor(nn.Module):
         n_steps: int = 64,
         batch_size: int = 32,
         lr: float = 1e-3,
+        rng: torch.Generator | None = None,
     ) -> float:
         """
         Fit on collected samples; returns mean loss.
@@ -91,6 +92,10 @@ class SpeedupPredictor(nn.Module):
         unobserved ``k``, which contaminates the regression target and
         breaks ``select_k`` (it would return whichever column happened
         to get the most non-zero observations, not the genuinely best k).
+
+        Parameters
+        ----------
+        rng : optional torch.Generator for deterministic sampling.
         """
         if len(self._buffer) < batch_size:
             logger.debug(
@@ -107,7 +112,12 @@ class SpeedupPredictor(nn.Module):
         n_valid_steps = 0
 
         for _ in range(n_steps):
-            indices = torch.randint(len(self._buffer), (batch_size,))
+            if rng is not None:
+                indices = torch.randint(
+                    len(self._buffer), (batch_size,), generator=rng
+                )
+            else:
+                indices = torch.randint(len(self._buffer), (batch_size,))
             samples = [self._buffer[i] for i in indices.tolist()]
 
             hidden_batch = torch.stack([s.hidden for s in samples]).to(device)

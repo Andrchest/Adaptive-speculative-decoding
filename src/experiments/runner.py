@@ -673,6 +673,9 @@ class ExperimentRunner:
 
         # Free GPU memory before returning
         logger.info("Freeing GPU memory before return")
+        # Clean up UniversalDrafter hooks to prevent memory leaks
+        if "universal" in locals() and universal is not None:
+            universal.remove_hooks()
         del drafter, target, translator, decoder, cache, distiller, router, collector
         import gc
 
