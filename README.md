@@ -35,6 +35,11 @@ Adaptive-speculative-decoding/
 │   │   ├── distillation/     # Online distillation
 │   │   └── extensions/       # Experimental modules
 │   ├── experiments/          # Experiment runner & ablation suite
+│   │   ├── base.py           # BaseExperiment (Strategy pattern)
+│   │   ├── runner.py         # ExperimentRunner (orchestrator)
+│   │   ├── suites.py         # ABLATION_SUITE, discovery
+│   │   ├── built_in/         # 10 built-in experiments
+│   │   └── templates/        # Copy-paste template for researchers
 │   ├── benchmarks/           # Metrics collection
 │   ├── config/               # Configuration
 │   ├── utils/                # Shared utilities
@@ -52,7 +57,30 @@ Adaptive-speculative-decoding/
 
 ## 🔬 Research Tracks
 
-Each team member works on their own research track (separate branch):
+Each team member works on their own research track (separate branch).
+Experiments use a **Strategy pattern** — each experiment is a self-contained
+`BaseExperiment` subclass in `research/<name>/experiments/`.
+
+### Creating a New Experiment (for researchers)
+
+```bash
+# 1. Create your research directory
+mkdir -p research/<your_name>/experiments
+
+# 2. Copy the template
+cp src/experiments/templates/minimal_template.py \
+   research/<your_name>/experiments/my_idea.py
+
+# 3. Edit: change meta, get_config(), optional build_* / on_* overrides
+
+# 4. Run
+eu run python src/main.py --research          # all research experiments
+eu run python src/main.py --experiment my_idea  # single experiment
+```
+
+See `src/experiments/templates/minimal_template.py` and `research/README.md` for details.
+
+### Research Team Members
 
 | Member | Branch | Direction |
 |--------|--------|-----------|
@@ -73,15 +101,33 @@ Each team member works on their own research track (separate branch):
 - **Docker** — reproducible environments (CUDA 12.4)
 - **MLflow** — experiment tracking
 
-## 📋 Ablation Suite
+## 📋 Experiment Runner
 
-The project includes a configurable ablation suite for comparing system components:
+The project uses a Strategy-pattern experiment framework: each experiment is an
+independent class that overrides `build_*` methods and `on_*` hooks.
+
+### Built-in Experiments (Ablation Suite)
+
+11 experiments reproducing the original flag-based suite:
 
 ```bash
-uv run python src/main.py --list          # list all experiments
-uv run python src/main.py --smoke         # run smoke test
-uv run python src/main.py --suite ablation  # run full suite
+uv run python src/main.py --list              # list all 11 experiments
+uv run python src/main.py --smoke             # run smoke test (1 sample, tiny models)
+uv run python src/main.py --suite ablation    # run all 11 ablation experiments
+uv run python src/main.py --experiment 01_baseline   # run one experiment
+uv run python src/main.py --research           # run all research experiments
+uv run python src/main.py --list --research    # list research experiments only
 ```
+
+### Architecture
+
+| File | Purpose |
+|------|---------|
+| `src/experiments/base.py` | `BaseExperiment` ABC, `BuildContext`, `DecodeContext` |
+| `src/experiments/runner.py` | `ExperimentRunner` orchestrator, `ExperimentConfig` |
+| `src/experiments/suites.py` | `ABLATION_SUITE`, `discover_experiments()` |
+| `src/experiments/built_in/` | 10 built-in experiment classes |
+| `src/experiments/templates/` | `minimal_template.py` for researchers |
 
 ## 🐳 Docker
 

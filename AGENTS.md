@@ -60,6 +60,48 @@ research/                # Per-researcher work area
 | Imports | `ruff` | isort + no unused |
 | Pre-commit | `pre-commit` | all hooks auto-run |
 
+## 🧪 Experiment Architecture
+
+Experiments use a **Strategy pattern**: each experiment is a `BaseExperiment` subclass.
+
+### Creating a New Experiment
+
+1. Create `research/<name>/experiments/<file>.py`
+2. Subclass `BaseExperiment` and override `get_config()` plus any `build_*` methods
+3. Register the class in `__all__`
+4. Run: `python src/main.py --research` or `--experiment <name>`
+
+**Never** modify `src/experiments/` shared code for new experiments. Copy
+`src/experiments/templates/minimal_template.py` as a starting point.
+
+### Key Classes
+
+| Class | Location | Purpose |
+|-------|----------|---------|
+| `BaseExperiment` | `src/experiments/base.py` | ABC for all experiments |
+| `ExperimentRunner` | `src/experiments/runner.py` | Orchestrator (models, datasets, persistence) |
+| `ExperimentConfig` | `src/experiments/runner.py` | Configuration dataclass |
+| `ABLATION_SUITE` | `src/experiments/suites.py` | Standard 11-experiment ablation |
+| `discover_experiments()` | `src/experiments/suites.py` | Auto-discover built-in + research |
+
+### Built-in Experiments
+
+All live in `src/experiments/built_in/` and correspond to the original
+flag-based `ABLATION_SUITE`.  New experiments should extend these rather
+than duplicate their logic.
+
+### CLI
+
+```bash
+python src/main.py --suite ablation       # Run all 11 ablation experiments
+python src/main.py --experiment 01_baseline  # Run one experiment
+python src/main.py --research              # Run all research experiments
+python src/main.py --list                  # List all experiments
+python src/main.py --list --research       # List research experiments only
+python src/main.py --smoke                 # Quick smoke test
+python src/main.py --research --tiny -n 5  # Fast iteration
+```
+
 ## 🗣 Communication
 
 - Ask questions in PR comments
