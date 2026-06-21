@@ -12,18 +12,16 @@ from __future__ import annotations
 
 import sys
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import numpy as np
 import torch
 
 sys.path.insert(0, "src")
 
 from benchmarks.metrics.collector import BenchmarkCollector, StepRecord
 from core.decoder.speculative import SpeculativeDecoder
-from core.extensions.lattice.tokenizer_lattice import TokenizerLattice
 from core.extensions.adaptive.speedup_predictor import SpeedupPredictor
-
+from core.extensions.lattice.tokenizer_lattice import TokenizerLattice
 
 # ------------------------------------------------------------------
 # P3: TPS metric — overall vs mean-of-means
@@ -267,12 +265,13 @@ class TestLRUCache:
 class TestRandomization:
     """Verify seeds are set for all random generators."""
 
-    def test_seeds_are_set_in_runner(self):
-        """Runner should set random.seed, np.random.seed, torch.manual_seed."""
+    def test_seeds_are_set_in_base_experiment(self):
+        """BaseExperiment.run() should set random.seed, np.random.seed, torch.manual_seed."""
         import inspect
-        from experiments.runner import ExperimentRunner
 
-        source = inspect.getsource(ExperimentRunner._run_one)
+        from experiments.base import BaseExperiment
+
+        source = inspect.getsource(BaseExperiment.run)
         assert "random.seed" in source, "Missing random.seed() call"
         assert "np.random.seed" in source, "Missing np.random.seed() call"
         assert "torch.manual_seed" in source, "Missing torch.manual_seed() call"
@@ -297,14 +296,14 @@ class TestRandomization:
         sig = inspect.signature(SpeedupPredictor.train_on_buffer)
         assert "rng" in sig.parameters, "train_on_buffer should accept rng"
 
-    def test_runner_passes_rng_to_generate(self):
-        """Runner should pass torch_rng to decoder.generate()."""
+    def test_base_experiment_passes_rng_to_generate(self):
+        """BaseExperiment.run() should pass torch_rng to decoder.generate()."""
         import inspect
 
-        source = inspect.getsource(
-            __import__("experiments.runner", fromlist=["ExperimentRunner"]).ExperimentRunner._run_one
-        )
-        assert "rng=torch_rng" in source, "Runner should pass rng to decoder.generate()"
+        from experiments.base import BaseExperiment
+
+        source = inspect.getsource(BaseExperiment.run)
+        assert "rng=torch_rng" in source, "BaseExperiment.run() should pass rng to decoder.generate()"
 
 
 # ------------------------------------------------------------------
