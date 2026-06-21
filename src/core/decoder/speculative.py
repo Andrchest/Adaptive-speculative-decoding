@@ -570,7 +570,7 @@ class SpeculativeDecoder:
             if s > 1e-8:
                 residual = residual / s
                 if rng is not None:
-                    token = torch.multinomial(residual, 1, generator=rng).item()
+                    token = torch.multinomial(residual.cpu(), 1, generator=rng).item()
                 else:
                     token = torch.multinomial(residual, 1).item()
                 logger.debug(
@@ -582,7 +582,7 @@ class SpeculativeDecoder:
             )
 
         if rng is not None:
-            token = torch.multinomial(p, 1, generator=rng).item()
+            token = torch.multinomial(p.cpu(), 1, generator=rng).item()
         else:
             token = torch.multinomial(p, 1).item()
         logger.debug(
