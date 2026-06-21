@@ -50,6 +50,21 @@ types:
 - **Types**: `mypy` — all public APIs must be typed
 - **Tests**: `pytest` — all new features need tests
 
+### Creating Research Experiments
+
+The experiment framework uses a **Strategy pattern** — each experiment is a
+`BaseExperiment` subclass in `research/<username>/experiments/`.
+
+**Steps:**
+
+1. `mkdir -p research/<your_name>/experiments`
+2. `cp src/experiments/templates/minimal_template.py research/<your_name>/experiments/my_idea.py`
+3. Edit: override `get_config()`, optional `build_*`/`on_*` methods
+4. Register your class in `__all__` at the bottom of the file
+5. Run: `python src/main.py --research`
+
+See `src/experiments/templates/minimal_template.py` and `research/README.md` for full details.
+
 ### Pull Requests
 
 1. Branch from `main`

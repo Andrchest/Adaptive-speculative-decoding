@@ -10,11 +10,20 @@ Examples:
     # Run a single named experiment
     python src/main.py --experiment 04_+online_distil
 
+    # Run all research experiments
+    python src/main.py --research
+
+    # List research experiments only
+    python src/main.py --list --research
+
     # Quick smoke test (1 sample, tiny models)
     python src/main.py --smoke
 
     # List available experiments
     python src/main.py --list
+
+    # Run with tiny models for fast testing
+    python src/main.py --suite ablation --tiny -n 1
 """
 
 import logging
@@ -35,13 +44,69 @@ logging.basicConfig(
 for noisy in ("urllib3", "httpx", "requests", "transformers", "huggingface_hub"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 
-from experiments.runner import ABLATION_SUITE, ExperimentConfig, ExperimentRunner
+from experiments import (  # noqa: E402
+    ABLATION_SUITE,
+    BaseExperiment,
+    ExperimentRunner,
+    discover_experiments,
+    discover_research_experiments,
+)
 
 logger = logging.getLogger(__name__)
 console = Console()
 
 
-def main(
+class _SmokeTestExperiment(BaseExperiment):
+    """Minimal smoke test: baseline config with tiny models and 1 sample."""
+
+    def __init__(self) -> None:
+        from experiments.base import ExperimentMeta
+        from experiments.runner import ExperimentConfig
+
+        super().__init__(
+            ExperimentMeta(
+                name="smoke_test",
+                description="Smoke test (1 sample, tiny models)",
+                tags=["smoke"],
+            )
+        )
+        self._config_class = ExperimentConfig
+
+    def get_config(self):
+        return self._config_class(
+            name="smoke_test",
+            drafter_model_path="facebook/opt-125m",
+            target_model_path="facebook/opt-350m",
+            dataset="gsm8k",
+            max_samples=1,
+            max_new_tokens=32,
+            mlflow_experiment="",
+        )
+
+
+def _apply_overrides(
+    experiments: list[BaseExperiment],
+    *,
+    tiny_models: bool = False,
+    max_samples: int = 0,
+    max_new_tokens: int = 0,
+    no_mlflow: bool = False,
+) -> None:
+    """Apply CLI overrides to experiment configs in-place."""
+    for exp in experiments:
+        if tiny_models:
+            exp.set_config_override("drafter_model_path", "facebook/opt-125m")
+            exp.set_config_override("target_model_path", "facebook/opt-350m")
+            exp.set_config_override("max_new_tokens", 32)
+        if max_samples > 0:
+            exp.set_config_override("max_samples", max_samples)
+        if max_new_tokens > 0:
+            exp.set_config_override("max_new_tokens", max_new_tokens)
+        if no_mlflow:
+            exp.set_config_override("mlflow_experiment", "")
+
+
+def main(  # noqa: C901
     suite: Annotated[
         Literal["ablation", "cache", "dataset"] | None,
         typer.Option("--suite", "-s", help="Run a pre-defined experiment suite"),
@@ -86,6 +151,14 @@ def main(
         bool,
         typer.Option("--tiny", "-t", help="Use tiny models (opt-125m/opt-350m) for fast testing"),
     ] = False,
+    research: Annotated[
+        bool,
+        typer.Option(
+            "--research",
+            "-r",
+            help="Run only research experiments (from research/*/experiments/)",
+        ),
+    ] = False,
 ) -> None:
     """Adaptive Speculative Decoding — experiment runner."""
     logger.info(
@@ -94,92 +167,105 @@ def main(
         experiment,
         smoke,
         list_experiments,
-        max_samples,
-        max_new_tokens,
+        max_samples or 0,
+        max_new_tokens or 0,
     )
 
+    # --- List experiments ---
     if list_experiments:
         logger.info("Listing available experiments")
-        console.print("[bold]Available experiments:[/bold]")
-        for cfg in ABLATION_SUITE:
-            console.print(f"  {cfg.name}")
+        if research:
+            all_exps = discover_research_experiments()
+            console.print("[bold]Research experiments:[/bold]\n")
+        else:
+            all_exps = discover_experiments()
+            console.print("[bold]Available experiments:[/bold]\n")
+        for exp in all_exps:
+            tags = f" [{', '.join(exp.meta.tags)}]" if exp.meta.tags else ""
+            desc = f" — {exp.meta.description}" if exp.meta.description else ""
+            console.print(f"  [cyan]{exp.meta.name}[/]{tags}{desc}")
+        if not all_exps:
+            if research:
+                console.print(
+                    "  [dim](no research experiments found — "
+                    "create research/<name>/experiments/*.py)[/dim]"
+                )
+            else:
+                console.print("  [dim](no experiments found)[/dim]")
         return
 
     # --- Smoke test ---
     if smoke:
         logger.info("Starting smoke test run")
-        configs = [
-            ExperimentConfig(
-                name="smoke_test",
-                drafter_model_path="facebook/opt-125m",
-                target_model_path="facebook/opt-350m",
-                dataset="gsm8k",
-                max_samples=1,
-                max_new_tokens=32,
-                mlflow_experiment="" if no_mlflow else "adaptive_speculative_smoke",
-            )
-        ]
-        ExperimentRunner(configs, output_dir=output_dir, device=device).run_all()
+        experiments = [_SmokeTestExperiment()]
+        runner = ExperimentRunner(experiments=experiments, output_dir=output_dir, device=device)
+        logger.info("Running smoke test")
+        results = runner.run_all()
         logger.info("Smoke test run finished")
+        _print_summary(results)
         return
 
-    # --- Suite ---
-    if suite == "ablation":
+    # --- Select experiments ---
+    if research:
+        logger.info("Discovering research experiments")
+        experiments = discover_research_experiments()
+        if not experiments:
+            logger.error("No research experiments found")
+            console.print(
+                "[red]No research experiments found.[/red]\n"
+                "[dim]Create research/<name>/experiments/<file>.py and add __all__ = [YourClass][/dim]"
+            )
+            sys.exit(1)
+        logger.info("Found %d research experiment(s)", len(experiments))
+    elif suite == "ablation":
         logger.info("Selected ablation suite with %d experiments", len(ABLATION_SUITE))
-        configs = ABLATION_SUITE
+        experiments = list(ABLATION_SUITE)
     elif suite == "cache":
         logger.info("Selected cache suite")
-        from experiments.cache_ablation import CACHE_SUITE
+        from experiments.suites import CACHE_SUITE
 
-        configs = CACHE_SUITE
+        experiments = list(CACHE_SUITE)
     elif suite == "dataset":
         logger.info("Selected dataset suite")
-        from experiments.dataset_ablation import DATASET_SUITE
+        from experiments.suites import DATASET_SUITE
 
-        configs = DATASET_SUITE
+        experiments = list(DATASET_SUITE)
     elif experiment:
         logger.info("Selected single experiment: %s", experiment)
-        matching = [c for c in ABLATION_SUITE if c.name == experiment]
+        all_exps = discover_experiments()
+        matching = [e for e in all_exps if e.meta.name == experiment]
         if not matching:
             logger.error("No experiment named %r", experiment)
             console.print(f"[red]No experiment named {experiment!r}[/red]")
             sys.exit(1)
-        configs = matching
+        experiments = matching
     else:
         logger.error("No experiment selection provided")
         console.print(
-            "[red]Specify --suite, --experiment, or --smoke. Use --list to see options.[/red]"
+            "[red]Specify --suite, --experiment, --research, or --smoke. Use --list to see options.[/red]"
         )
         sys.exit(1)
 
-    if no_mlflow:
-        logger.info("MLflow logging disabled")
-        for cfg in configs:
-            cfg.mlflow_experiment = ""
+    # --- Apply CLI overrides ---
+    _apply_overrides(
+        experiments,
+        tiny_models=tiny_models,
+        max_samples=max_samples or 0,
+        max_new_tokens=max_new_tokens or 0,
+        no_mlflow=no_mlflow,
+    )
 
-    # --- Tiny models override ---
-    if tiny_models:
-        logger.info("Overriding to tiny models: opt-125m/opt-350m")
-        for cfg in configs:
-            cfg.drafter_model_path = "facebook/opt-125m"
-            cfg.target_model_path = "facebook/opt-350m"
-            cfg.max_new_tokens = min(cfg.max_new_tokens, 32) if cfg.max_new_tokens else 32
-
-    # Apply CLI overrides
-    if max_samples is not None and max_samples > 0:
-        logger.info("Overriding max_samples to %d", max_samples)
-        for cfg in configs:
-            cfg.max_samples = max_samples
-    if max_new_tokens is not None and max_new_tokens > 0:
-        logger.info("Overriding max_new_tokens to %d", max_new_tokens)
-        for cfg in configs:
-            cfg.max_new_tokens = max_new_tokens
-
-    runner = ExperimentRunner(configs, output_dir=output_dir, device=device)
-    logger.info("Running %d experiment(s)", len(configs))
+    # --- Run ---
+    runner = ExperimentRunner(experiments=experiments, output_dir=output_dir, device=device)
+    logger.info("Running %d experiment(s)", len(experiments))
     results = runner.run_all()
     logger.info("All experiments finished")
 
+    _print_summary(results)
+
+
+def _print_summary(results: list[dict]) -> None:
+    """Print a comparison table to the console."""
     console.print("\n[bold]=== Final Comparison ===[/bold]")
     console.print(f"{'Experiment':<30} {'Acc Rate':>10} {'TPS':>10} {'Speedup':>10}")
     console.print("-" * 65)
