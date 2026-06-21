@@ -29,6 +29,81 @@ research/<username>/
 
 ---
 
+## Built-in Experiments (Ablation Suite)
+
+The project ships with **11 built-in experiments** that reproduce the original
+flag-based ablation suite.  They form a dependency chain — each experiment
+adds one or more components on top of its predecessor.
+
+| # | ID | Name | Description | Key Components |
+|---|----|------|-------------|----------------|
+| 1 | `01_baseline` | Baseline | Core speculative decoding: Rule 1 (exact match) + Rule 2 (heuristic redistribution) + LRU N-gram cache. No distillation, no lattice. | `use_rule1`, `use_rule2`, `NgramCache(LRU)` |
+| 2 | `02_+lattice` | Lattice | Replaces approximate Rule 2 with exact dynamic-programming lattice mapping. More accurate token translation at higher compute cost. | `TokenizerLattice` (DP), `use_rule1` |
+| 3 | `03_+translator` | Translator | Adds a learned Transformer-based translator (lightweight encoder) alongside the lattice, operating in hybrid mode. | `TranslatorModel`, `lattice`, `translator_weight=0.3` |
+| 4 | `04_+online_distil` | Online Distillation | Enables online distillation during decoding — the drafter is trained on-the-fly via KL divergence + N-gram NLL loss using accepted/rejected draft tokens as signal. Optionally uses LoRA adapters. | `OnlineDistiller`, `KL + N-gram NLL`, optional LoRA |
+| 5 | `05_+replay_fifo` | Replay (FIFO) | Wraps online distillation with a FIFO replay buffer. Periodically replays old traces for more stable training. | `ReplayBuffer(FIFO)`, `OnlineDistiller` |
+| 6 | `06_+replay_prio` | Replay (Prioritized) | Same as FIFO replay but samples by `(1 − acceptance_rate)` to focus on hard-to-draft tokens. | `ReplayBuffer(prioritized)`, `OnlineDistiller` |
+| 7 | `07_+contrastive` | Contrastive | Adds contrastive rejection learning: rejected draft tokens become hard negatives in an InfoNCE loss, pushing the drafter away from tokens the target model rejects. | `ContrastiveLoss (InfoNCE)`, `OnlineDistiller` |
+| 8 | `08_+speedup_adapt` | Adaptive Drafting | Dynamically selects draft length `k` per step. A small MLP predictor estimates tokens/sec speedup for each candidate `k`; the controller picks `argmax(speedup)`. | `SpeedupPredictor`, `AdaptiveDraftController` |
+| 9 | `09_+routing` | Dynamic Router | Multi-drafter routing: a lightweight MLP maps prompt embeddings to drafter indices from a pool of drafters (0.5B / 1.5B / 7B), selecting the most efficient drafter per prompt. | `DynamicRouter`, `RouterModel`, 3 drafter specs |
+| 10 | `10_+universal` | Universal Drafter | A single drafter model trained to draft for multiple target LLM families. Learnable target-specific embeddings are injected at each transformer layer via forward hooks. | `UniversalDrafter`, target embeddings, adapter |
+| 11 | `11_full_system` | Full System | All components enabled simultaneously: learned translator + online distillation + prioritized replay + contrastive loss + adaptive drafting + dynamic routing + universal drafter. | Everything above |
+
+### Dependency Chain
+
+```
+01_baseline
+  ├── 02_+lattice
+  │     └── 03_+translator
+  ├── 04_+online_distil
+  │     ├── 05_+replay_fifo
+  │     ├── 06_+replay_prio
+  │     └── 07_+contrastive
+  ├── 08_+speedup_adapt
+  ├── 09_+routing
+  ├── 10_+universal
+  └── 11_full_system  (depends on: translator, replay_prio, contrastive, speedup_adapt, routing, universal)
+```
+
+### Component Matrix
+
+Every experiment composes the same set of core modules.  The table below shows
+which component each experiment enables (`✓`) and where it remains disabled (`—`).
+
+| Component | Module | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 |
+|-----------|--------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| Rule 1 (exact match) | `core.translation.rules` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Rule 2 (heuristic) | `core.translation.rules` | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| N-gram Cache (LRU) | `core.cache.ngram` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| TokenizerLattice (DP) | `core.extensions.lattice.tokenizer_lattice` | — | ✓ | ✓ | — | — | — | — | — | — | — | — |
+| Learned Translator | `core.extensions.translator.model` | — | — | ✓ | — | — | — | — | — | — | — | ✓ |
+| Online Distiller | `core.distillation.online` | — | — | — | ✓ | ✓ | ✓ | ✓ | — | — | — | ✓ |
+| Replay Buffer | `core.extensions.replay.buffer` | — | — | — | — | ✓ | ✓ | — | — | — | — | ✓ |
+| Contrastive Loss | `core.extensions.contrastive.loss` | — | — | — | — | — | — | ✓ | — | — | — | ✓ |
+| Adaptive Drafting | `core.extensions.adaptive.speedup_predictor` | — | — | — | — | — | — | — | ✓ | — | — | ✓ |
+| Dynamic Router | `core.extensions.routing.router` | — | — | — | — | — | — | — | — | ✓ | — | ✓ |
+| Universal Drafter | `core.extensions.multitarget.universal_drafter` | — | — | — | — | — | — | — | — | — | ✓ | ✓ |
+
+**Legend:** `✓` = enabled, `—` = disabled
+
+### Running Built-in Experiments
+
+```bash
+# List all
+python src/main.py --list
+
+# Run a specific experiment
+python src/main.py --experiment 01_baseline
+
+# Run the full ablation suite
+python src/main.py --suite ablation
+
+# Quick smoke test (1 sample, tiny models)
+python src/main.py --smoke
+```
+
+---
+
 ## Creating a New Experiment
 
 The experiment framework uses a **Strategy pattern**: each experiment is a
