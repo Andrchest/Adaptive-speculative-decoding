@@ -58,7 +58,7 @@ class RoutingExperiment(BaseExperiment):
         )
 
         d_input = ctx.drafter.model.config.hidden_size
-        router_model = RouterModel(d_input=d_input, n_drafters=3)
+        router_model = RouterModel(d_input=d_input, n_drafters=3).to(ctx.device)
 
         specs = [
             DrafterSpec(
@@ -83,7 +83,7 @@ class RoutingExperiment(BaseExperiment):
 
         def embedder(x):
             out = ctx.drafter.model(x, output_hidden_states=True)
-            return out.hidden_states[-1][0].mean(dim=0)
+            return out.hidden_states[-1][0].mean(dim=0).float()
 
         router = DynamicRouter(
             drafter_specs=specs,

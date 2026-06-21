@@ -602,7 +602,13 @@ class BaseExperiment(abc.ABC):
             # Router selection (if applicable)
             if router is not None:
                 selected_drafter, _selected_idx = router.select_drafter(input_ids)
-                decoder.drafter = selected_drafter
+                if selected_drafter is not None:
+                    decoder.drafter = selected_drafter
+                else:
+                    logger.warning(
+                        "Router selected a None drafter (index %d); keeping current drafter",
+                        _selected_idx,
+                    )
 
             with collector.record_sequence(prompt_len=prompt_len) as seq_rec:
                 decoder.generate(
