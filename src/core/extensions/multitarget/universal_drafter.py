@@ -207,6 +207,11 @@ class UniversalDrafter(nn.Module):
                 self._hooks.append(h)
 
     def remove_hooks(self) -> None:
+        if not hasattr(self, "_hooks") or self._hooks is None:
+            return
         for h in self._hooks:
-            h.remove()
+            try:
+                h.remove()
+            except RuntimeError:
+                pass  # hook already removed
         self._hooks = []

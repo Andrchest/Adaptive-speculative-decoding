@@ -196,10 +196,32 @@ class ExperimentRunner:
                 logger.info("Clearing GPU memory from previous experiment")
                 self._clear_gpu_memory()
 
-            result = self._run_one(cfg)
-            results.append(result)
-            self._save_result(result)
-            logger.info("Finished experiment %d/%d: %s", index, len(self.configs), cfg.name)
+            try:
+                result = self._run_one(cfg)
+                results.append(result)
+                self._save_result(result)
+                logger.info("Finished experiment %d/%d: %s", index, len(self.configs), cfg.name)
+            except Exception as e:
+                logger.error(
+                    "Experiment %d/%d (%s) FAILED: %s",
+                    index, len(self.configs), cfg.name, e
+                )
+                import traceback
+                traceback.print_exc()
+                failed_result = {
+                    "config": asdict(cfg),
+                    "metrics": {
+                        "error": True,
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                    },
+                }
+                results.append(failed_result)
+                self._save_result(failed_result)
+                logger.info(
+                    "Experiment %d/%d (%s) saved as FAILED",
+                    index, len(self.configs), cfg.name,
+                )
 
             # Free GPU memory before next experiment
             logger.info("Releasing GPU memory after experiment %d", index)
@@ -216,8 +238,15 @@ class ExperimentRunner:
         """
         logger.info("Running experiment config: %s", cfg.name)
         import torch
+        import random as _random
+        import numpy as np
 
         torch.manual_seed(cfg.seed)
+        _random.seed(cfg.seed)
+        np.random.seed(cfg.seed)
+        # Create a deterministic RNG for sampling operations
+        torch_rng = torch.Generator()
+        torch_rng.manual_seed(cfg.seed)
         logger.info("Set random seed: %s", cfg.seed)
 
         # --- Build components ---
@@ -588,6 +617,7 @@ class ExperimentRunner:
                     max_new_tokens=cfg.max_new_tokens,
                     adaptive_length_fn=adaptive_fn,
                     distiller=distiller,
+                    rng=torch_rng,
                 )
                 # Reconstruct step records from decoder stats
                 for sr in decoder._step_results[-cfg.max_new_tokens :]:
