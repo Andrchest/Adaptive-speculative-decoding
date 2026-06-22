@@ -16,6 +16,7 @@ Supports:
 from __future__ import annotations
 
 import logging
+from collections import deque
 
 import torch
 import torch.nn.functional as F
@@ -60,11 +61,13 @@ class OnlineDistiller:
         self._accum_count = 0
         self._step_count = 0
 
-        # Running stats
-        self.losses: list[float] = []
-        self.kl_losses: list[float] = []
-        self.nll_losses: list[float] = []
-        self.cont_losses: list[float] = []
+        # Running stats — bounded deques to prevent unbounded memory growth.
+        # maxlen=10000 covers ~800 steps at accum_steps=8, more than enough
+        # for any practical experiment. Summaries use [-100:] windows.
+        self.losses: deque[float] = deque(maxlen=10000)
+        self.kl_losses: deque[float] = deque(maxlen=10000)
+        self.nll_losses: deque[float] = deque(maxlen=10000)
+        self.cont_losses: deque[float] = deque(maxlen=10000)
 
         # Optional contrastive loss module (set by runner when use_contrastive=True)
         self._contrastive_loss = None  # ContrastiveLoss | None
@@ -230,12 +233,15 @@ class OnlineDistiller:
         self._accum_loss = torch.tensor(0.0)
         self._accum_count = 0
         self._step_count += 1
+        # deque slicing not supported in Python 3.12; use list() for the recent window
+        kl_recent = list(self.kl_losses)[-self.accum_steps:]
+        nll_recent = list(self.nll_losses)[-self.accum_steps:]
         logger.info(
             "Weight update step=%d loss=%.6f kl=%.6f nll=%.6f",
             self._step_count,
             loss_val,
-            sum(self.kl_losses[-self.accum_steps :]) / max(self.accum_steps, 1),
-            sum(self.nll_losses[-self.accum_steps :]) / max(self.accum_steps, 1),
+            sum(kl_recent) / max(len(kl_recent), 1),
+            sum(nll_recent) / max(len(nll_recent), 1),
         )
         return loss_val
 
@@ -289,12 +295,17 @@ class OnlineDistiller:
     def training_stats(self) -> dict:
         if not self.losses:
             return {}
+        # deque doesn't support slicing in Python 3.12; convert to list
+        losses_list = list(self.losses)
+        kl_list = list(self.kl_losses)
+        nll_list = list(self.nll_losses)
         stats: dict = {
             "update_steps": self._step_count,
-            "mean_loss": sum(self.losses[-100:]) / len(self.losses[-100:]),
-            "mean_kl": sum(self.kl_losses[-100:]) / max(1, len(self.kl_losses[-100:])),
-            "mean_nll": sum(self.nll_losses[-100:]) / max(1, len(self.nll_losses[-100:])),
+            "mean_loss": sum(losses_list[-100:]) / max(len(losses_list[-100:]), 1),
+            "mean_kl": sum(kl_list[-100:]) / max(len(kl_list[-100:]), 1),
+            "mean_nll": sum(nll_list[-100:]) / max(len(nll_list[-100:]), 1),
         }
         if self.cont_losses:
-            stats["mean_contrastive"] = sum(self.cont_losses[-100:]) / len(self.cont_losses[-100:])
+            cont_list = list(self.cont_losses)
+            stats["mean_contrastive"] = sum(cont_list[-100:]) / max(len(cont_list[-100:]), 1)
         return stats

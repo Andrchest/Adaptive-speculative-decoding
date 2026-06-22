@@ -67,6 +67,7 @@ class ReplayExperiment(OnlineDistillExperiment):
             buffer=buf,
             replay_every=getattr(cfg, "replay_every", 32),
             replay_batch=getattr(cfg, "replay_batch", 8),
+            target_model=ctx.target,  # for recomputing target_logits during replay
         )
         logger.info(
             "ReplayDistiller ready: strategy=%s capacity=%d",

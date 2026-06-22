@@ -204,8 +204,24 @@ class BenchmarkCollector:
         )
         return result
 
+    def clear(self) -> None:
+        """Release all collected records and samples.
+
+        Call this after the experiment is fully complete to free memory
+        from DecodeRecord / StepRecord objects. Does NOT clear the
+        baseline_tps or name.
+        """
+        self._records.clear()
+        self._gpu_mem_samples.clear()
+        self._loss_samples.clear()
+        self._kl_samples.clear()
+
     def compare(self, other: BenchmarkCollector) -> dict:
-        """Return delta metrics between self and other."""
+        """Return delta metrics between self and other.
+
+        Both collectors' records remain intact after comparison;
+        call ``clear()`` explicitly when done.
+        """
         a = self.summary()
         b = other.summary()
         keys = [

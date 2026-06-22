@@ -665,14 +665,22 @@ class BaseExperiment(abc.ABC):
         # Hooks: after decode
         self.on_after_decode(decode_ctx)
 
+        # Cleanup: remove forward hooks from UniversalDrafter to break
+        # reference cycles and free CUDA allocator pressure.
+        if hasattr(drafter, "cleanup"):  # _UniversalDrafterAdapter has cleanup()
+            drafter.cleanup()
+        elif hasattr(drafter, "remove_hooks"):  # bare UniversalDrafter
+            drafter.remove_hooks()
+
         # GPU memory: after all decoding complete
         if torch.cuda.is_available():
             mem_samples.append(
                 torch.cuda.memory_allocated(runner.device) / 1024**3
             )
 
-        # Collect metrics
+        # Collect metrics (final summary — collector is cleared after this)
         summary = collector.summary()
+        collector.clear()  # free memory from DecodeRecord/StepRecord objects
 
         # Add distiller stats
         if distiller is not None:

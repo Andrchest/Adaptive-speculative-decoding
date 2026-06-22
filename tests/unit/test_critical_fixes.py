@@ -728,6 +728,7 @@ def test_replay_re_runs_drafter_forward():
     )
     drafter_model = FakeDrafterModel(V, seed=6)
     drafter = FakeDrafterWrapper(drafter_model, tok)
+    target_model = FakeTargetModel(V, drafter_model, tok)  # shared FakeDrafterModel
     optimizer = torch.optim.SGD(drafter_model.parameters(), lr=1e-3)
     # Use a high accum_steps so the replay's 2 step calls do NOT
     # trigger an _update_weights (which would call optimizer.step()
@@ -737,7 +738,10 @@ def test_replay_re_runs_drafter_forward():
         optimizer=optimizer, accum_steps=100,
     )
     buf = ReplayBuffer(capacity=4, strategy="fifo")
-    replay = ReplayDistiller(distiller=distiller, buffer=buf, replay_every=1, replay_batch=2)
+    replay = ReplayDistiller(
+        distiller=distiller, buffer=buf, replay_every=1,
+        replay_batch=2, target_model=target_model,
+    )
 
     # Manually craft a Trace where the SAME token id appears at both an
     # accepted and a rejected position (this would expose the C6 bug
@@ -745,23 +749,15 @@ def test_replay_re_runs_drafter_forward():
     prompt_ids = [0, 1, 2]
     # draft_tokens has duplicate id 5 at positions 0 (accepted) and 2 (rejected)
     draft_tokens = [5, 4, 5]
-    # accepted: only position 0; rejected: position 1 is accepted here for test
-    # variety, position 2 is rejected. Actually let's make it: pos 0
-    # accepted, pos 1 accepted, pos 2 rejected (so 2 accepted, 1 rejected).
     accepted_tokens = [5, 4]  # ids at positions 0 and 1
     rejected_tokens = [5]     # id at position 2 (DUPLICATE of pos 0!)
-
     k = len(draft_tokens)
-    # Build target_logits (k, V) — random
-    target_logits = torch.randn(k, V)
-    # Build draft_logits (k, V) — we DON'T need grad here, the replay
-    # will re-run the drafter forward. But the Trace requires this field.
-    draft_logits = torch.randn(k, V)
 
+    # Trace no longer stores logits (memory fix). Replay recomputes
+    # them via forward passes over prompt_ids + draft_tokens.
     trace = Trace(
         prompt_ids=prompt_ids,
-        draft_logits=draft_logits,
-        target_logits=target_logits,
+        prompt_len=len(prompt_ids),
         draft_tokens=draft_tokens,
         accepted_tokens=accepted_tokens,
         rejected_tokens=rejected_tokens,

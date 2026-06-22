@@ -46,6 +46,10 @@ class _UniversalDrafterAdapter:
         with torch.no_grad():
             return self.universal.draft(context, k, target_name=self._target_model_path)
 
+    def cleanup(self) -> None:
+        """Remove forward hooks to break reference cycles."""
+        self.universal.remove_hooks()
+
 
 class FullSystemExperiment(BaseExperiment):
     """Full system with all components enabled.
@@ -198,6 +202,7 @@ class FullSystemExperiment(BaseExperiment):
             buffer=buf,
             replay_every=getattr(cfg, "replay_every", 32),
             replay_batch=getattr(cfg, "replay_batch", 8),
+            target_model=ctx.target,  # for recomputing target_logits during replay
         )
         logger.info("Full distiller ready: online + contrastive + replay(prioritized)")
         return replay_distiller
@@ -269,11 +274,9 @@ class FullSystemExperiment(BaseExperiment):
         from core.extensions.multitarget.universal_drafter import UniversalDrafter
 
         cfg = ctx.config
-        target_names = [
-            "Qwen/Qwen2.5-7B-Instruct",
-            "Qwen/Qwen2.5-14B-Instruct",
-            "Qwen/Qwen2.5-32B-Instruct",
-        ]
+        # Use the config's target_model_path as the target family name.
+        # This allows --tiny override (e.g. facebook/opt-350m) to work.
+        target_names = [cfg.target_model_path]
         universal = UniversalDrafter(
             base_model_name=cfg.drafter_model_path,
             target_names=target_names,

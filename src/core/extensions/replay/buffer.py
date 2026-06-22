@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import random
+from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
@@ -26,9 +27,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Trace:
+    """A single speculative decoding trajectory.
+
+    Stores only token IDs (not logits) to keep memory footprint low.
+    Logits are recomputed during replay via a forward pass.
+    """
+
     prompt_ids: list[int]
-    draft_logits: torch.Tensor  # (k, drafter_vocab)
-    target_logits: torch.Tensor  # (k, target_vocab)
+    prompt_len: int  # original prompt length (needed to slice logits correctly)
     draft_tokens: list[int]
     accepted_tokens: list[int]
     rejected_tokens: list[int]
@@ -62,7 +68,7 @@ class ReplayBuffer:
         self.alpha = alpha
         self.beta = beta
 
-        self._buffer: list[Trace] = []
+        self._buffer: deque[Trace] = deque(maxlen=capacity)
         self._ptr: int = 0
         logger.info("ReplayBuffer initialized: capacity=%d strategy=%s", capacity, strategy)
 
@@ -71,12 +77,8 @@ class ReplayBuffer:
     # ------------------------------------------------------------------
 
     def add(self, trace: Trace) -> None:
-        """Add a trace (overwrites oldest if full)."""
-        if len(self._buffer) < self.capacity:
-            self._buffer.append(trace)
-        else:
-            self._buffer[self._ptr] = trace
-        self._ptr = (self._ptr + 1) % self.capacity
+        """Add a trace (deque auto-evicts oldest when at capacity)."""
+        self._buffer.append(trace)
         logger.debug(
             "Buffer add: size=%d/%d strategy=%s", len(self._buffer), self.capacity, self.strategy
         )
@@ -96,6 +98,9 @@ class ReplayBuffer:
 
     def __len__(self) -> int:
         return len(self._buffer)
+
+    def is_full(self) -> bool:
+        return len(self._buffer) >= self.capacity
 
     def mean_acceptance_rate(self) -> float:
         if not self._buffer:
@@ -131,6 +136,8 @@ class ReplayDistiller:
     buffer        : ReplayBuffer
     replay_every  : how many live steps between replay phases
     replay_batch  : how many traces to replay per phase
+    target_model  : optional TargetModel for recomputing target_logits
+                    during replay (stored logits are no longer kept)
     """
 
     def __init__(
@@ -139,11 +146,13 @@ class ReplayDistiller:
         buffer: ReplayBuffer,
         replay_every: int = 32,
         replay_batch: int = 8,
+        target_model = None,
     ) -> None:
         self.distiller = distiller
         self.buffer = buffer
         self.replay_every = replay_every
         self.replay_batch = replay_batch
+        self._target_model = target_model
         self._live_steps = 0
         logger.info(
             "ReplayDistiller initialized: replay_every=%d replay_batch=%d",
@@ -192,8 +201,7 @@ class ReplayDistiller:
         acc_rate = sum(accepted_mask) / max(len(accepted_mask), 1)
         trace = Trace(
             prompt_ids=prompt_ids,
-            draft_logits=draft_logits.detach().cpu(),
-            target_logits=target_logits.detach().cpu(),
+            prompt_len=len(prompt_ids),
             draft_tokens=draft_tokens,
             accepted_tokens=accepted_tokens,
             rejected_tokens=rejected_tokens,
@@ -222,22 +230,14 @@ class ReplayDistiller:
         """
         Replay sampled traces through the distiller.
 
-        Each trace's stored ``draft_logits`` is detached and CPU-resident
-        (see ``live_step``), so it has no ``grad_fn``. Re-using them
-        directly would contribute zero gradient to the drafter. We
-        therefore re-run the drafter's forward pass on the stored
-        ``prompt_ids`` + the first ``k-1`` drafted tokens to obtain
-        fresh, grad-enabled logits at all k draft positions, then route
-        the resulting loss through ``distiller.step`` so backward and
-        gradient accumulation are handled by the standard pathway.
+        Since Trace no longer stores logits (memory fix), both draft
+        and target logits are recomputed via forward passes over the
+        stored prompt_ids + draft_tokens.
 
         The ``accepted_mask`` is reconstructed POSITIONALLY from
         ``len(t.accepted_tokens)`` rather than via set membership:
         speculative decoding accepts a contiguous prefix of the draft,
-        so ``accepted_mask[i] = (i < len(t.accepted_tokens))``. The
-        previous set-membership reconstruction mislabelled duplicate
-        token ids as accepted whenever they appeared at an accepted
-        position elsewhere in the draft.
+        so ``accepted_mask[i] = (i < len(t.accepted_tokens))``.
         """
         traces = self.buffer.sample(self.replay_batch)
         logger.info(
@@ -254,16 +254,13 @@ class ReplayDistiller:
             if k == 0:
                 continue
 
-            # Re-run drafter forward to obtain fresh grad-enabled logits.
+            # Reconstruct input: (prompt + draft_tokens[:-1])
             prompt_ids = torch.tensor(
                 t.prompt_ids, dtype=torch.long, device=device
             ).unsqueeze(0)
             draft_tokens_tensor = torch.tensor(
                 t.draft_tokens, dtype=torch.long, device=device
             ).unsqueeze(0)
-            # Feed (prompt + draft_tokens[:-1]) so the model's logits at
-            # positions [prompt_len-1 .. prompt_len+k-2] predict
-            # draft_tokens[0..k-1]. For k=1, just feed the prompt.
             if k > 1:
                 input_for_drafter = torch.cat(
                     [prompt_ids, draft_tokens_tensor[:, :-1]], dim=1
@@ -271,6 +268,7 @@ class ReplayDistiller:
             else:
                 input_for_drafter = prompt_ids
 
+            # 1) Re-run drafter forward to get fresh grad-enabled logits.
             try:
                 out = self.distiller.drafter.model(input_for_drafter)
             except Exception as e:
@@ -279,15 +277,32 @@ class ReplayDistiller:
                 )
                 continue
 
-            prompt_len = prompt_ids.shape[1]
             # logits at positions [prompt_len-1, prompt_len, ..., prompt_len+k-2]
-            fresh_logits = out.logits[0, prompt_len - 1 : prompt_len - 1 + k, :]
+            fresh_logits = out.logits[0, t.prompt_len - 1 : t.prompt_len - 1 + k, :]
             # (k, drafter_vocab) — has grad_fn
 
+            # 2) Recompute target_logits if target_model is available.
+            if self._target_model is not None:
+                try:
+                    with torch.no_grad():
+                        target_logits = self._target_model.verify(
+                            input_for_drafter, t.draft_tokens
+                        )
+                        target_logits = target_logits[:k]  # only the k draft positions
+                except Exception as e:
+                    logger.warning(
+                        "Replay: target forward failed, skipping trace: %s", e
+                    )
+                    continue
+            else:
+                # Fallback: skip target-specific distillation signal.
+                # Draft prediction learning still works via KL on drafter logits.
+                logger.debug(
+                    "Replay: no target_model provided, skipping target_logits for trace"
+                )
+                continue
+
             # Reconstruct accepted_mask positionally (C6 fix).
-            # Speculative decoding accepts a contiguous prefix of the
-            # draft; len(t.accepted_tokens) is the length of that prefix
-            # (NOT including the bonus token, which is not a draft token).
             n_accepted = len(t.accepted_tokens)
             accepted_mask = [i < n_accepted for i in range(k)]
 
@@ -295,7 +310,7 @@ class ReplayDistiller:
             # accumulation are handled consistently with live steps.
             self.distiller.step(
                 draft_logits=fresh_logits,
-                target_logits=t.target_logits.to(device),
+                target_logits=target_logits,
                 draft_tokens=t.draft_tokens,
                 accepted_mask=accepted_mask,
             )

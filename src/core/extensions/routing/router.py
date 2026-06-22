@@ -19,11 +19,16 @@ Training:
 from __future__ import annotations
 
 import logging
+from collections import deque
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+if TYPE_CHECKING:
+    from torch import Tensor
 
 logger = logging.getLogger(__name__)
 
@@ -92,9 +97,16 @@ class DynamicRouter:
         self.embedder = embedder
         self.n_drafters = len(drafter_specs)
 
-        # Training buffer
-        self._train_X: list[torch.Tensor] = []
-        self._train_y: list[int] = []
+        # Training buffer — bounded deque to prevent unbounded memory growth.
+        # maxlen=5000 covers typical experiment sizes; oldest samples drop
+        # off automatically when the buffer fills.
+        self._train_X: deque[torch.Tensor] = deque(maxlen=5000)
+        self._train_y: deque[int] = deque(maxlen=5000)
+
+        # Lazy cache: rebuild torch.Tensor batch only when data changes.
+        self._cached_X: torch.Tensor | None = None
+        self._cached_y: list[int] | None = None
+        self._cache_dirty: bool = True
 
     # ------------------------------------------------------------------
     # Inference
@@ -132,7 +144,7 @@ class DynamicRouter:
         drafter_idx: int,
         acceptance_rate: float,
     ) -> None:
-        """Store a training observation."""
+        """Store a training observation (oldest dropped when buffer is full)."""
         if self.embedder is None:
             return
         with torch.no_grad():
@@ -140,19 +152,34 @@ class DynamicRouter:
         efficiency = self.specs[drafter_idx].efficiency_score(acceptance_rate)
         self._train_X.append(emb.cpu())
         self._train_y.append(drafter_idx)
+        self._cache_dirty = True  # invalidate cached batch
+
+    def _get_train_batch(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Lazy-compute the (X, y) training batch from deque buffers.
+
+        The result is cached and only recomputed when new data is recorded.
+        """
+        if not self._cache_dirty and self._cached_X is not None:
+            assert self._cached_y is not None
+            return self._cached_X, torch.tensor(self._cached_y, dtype=torch.long)
+
+        self._cached_X = torch.stack(list(self._train_X))
+        self._cached_y = list(self._train_y)
+        self._cache_dirty = False
+        return self._cached_X, torch.tensor(self._cached_y, dtype=torch.long)
 
     def train_router(
         self,
         n_epochs: int = 10,
         lr: float = 1e-3,
     ) -> float:
-        """Train the router on collected observations."""
+        """Train the router on collected observations (uses lazy caching)."""
         if self.router is None or not self._train_X:
             return 0.0
 
         device = next(self.router.parameters()).device
-        X = torch.stack(self._train_X).to(device)
-        y = torch.tensor(self._train_y, dtype=torch.long, device=device)
+        X, y = self._get_train_batch()
+        X, y = X.to(device), y.to(device)
 
         opt = torch.optim.Adam(self.router.parameters(), lr=lr)
         total_loss = 0.0

@@ -145,6 +145,9 @@ class UniversalDrafter(nn.Module):
         the forward hooks registered in ``_register_hooks``. We must
         NOT apply it again here — doing so would double the target bias
         at the final position and produce systematically wrong logits.
+
+        Memory note: hidden_states tensors are explicitly deleted after
+        each forward pass to reduce CUDA allocator pressure.
         """
         if target_name is not None:
             self.set_target(target_name)
@@ -155,15 +158,20 @@ class UniversalDrafter(nn.Module):
 
         for _ in range(k):
             out = self.base_model(cur, output_hidden_states=True)
+            # Extract what we need BEFORE discarding the full output.
             # last_hidden already has the target adapter applied via the
-            # per-layer forward hooks. Re-applying the adapter here would
-            # double the bias at the final position.
-            last_hidden = out.hidden_states[-1]  # (1, seq, d)
+            # per-layer forward hooks.
+            last_hidden = out.hidden_states[-1].clone()  # (1, seq, d)
             logits = self.base_model.lm_head(last_hidden[:, -1, :])  # (1, vocab)
             all_logits.append(logits.squeeze(0))
             next_tok = logits.argmax(dim=-1)
             tokens.append(next_tok.item())
             cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
+
+            # Explicitly release forward-pass activations immediately.
+            # This reduces pressure on the CUDA caching allocator.
+            del out
+            del last_hidden
 
         return tokens, torch.stack(all_logits, dim=0)  # (k, vocab)
 

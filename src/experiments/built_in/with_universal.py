@@ -87,11 +87,9 @@ class UniversalDrafterExperiment(BaseExperiment):
         from core.extensions.multitarget.universal_drafter import UniversalDrafter
 
         cfg = ctx.config
-        target_names = [
-            "Qwen/Qwen2.5-7B-Instruct",
-            "Qwen/Qwen2.5-14B-Instruct",
-            "Qwen/Qwen2.5-32B-Instruct",
-        ]
+        # Use the config's target_model_path as the target family name.
+        # This allows --tiny override (e.g. facebook/opt-350m) to work.
+        target_names = [cfg.target_model_path]
         universal = UniversalDrafter(
             base_model_name=cfg.drafter_model_path,
             target_names=target_names,
