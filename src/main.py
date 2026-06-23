@@ -238,6 +238,10 @@ def main(  # noqa: C901
         str | None,
         typer.Option("--target-model", help="Path to the target model (overrides --tiny)"),
     ] = None,
+    hf_cache: Annotated[
+        str | None,
+        typer.Option("--hf-cache", help="Persistent directory for HuggingFace model cache"),
+    ] = None,
     research: Annotated[
         bool,
         typer.Option(
@@ -252,6 +256,12 @@ def main(  # noqa: C901
     _setup_logging(log_level)
 
     logger = logging.getLogger(__name__)
+
+    # --- Set persistent HuggingFace cache directory ---
+    if hf_cache:
+        import os as _os
+        _os.environ["HF_HOME"] = hf_cache
+        logger.info("HF_HOME set to: %s", hf_cache)
 
     # --- Set global log level BEFORE any experiment runs ---
     import experiments.runner as _rl_mod
