@@ -147,16 +147,32 @@ def _apply_overrides(
     experiments: list[BaseExperiment],
     *,
     tiny_models: bool = False,
+    drafter_model: str | None = None,
+    target_model: str | None = None,
     max_samples: int = 0,
     max_new_tokens: int = 0,
     no_mlflow: bool = False,
 ) -> None:
-    """Apply CLI overrides to experiment configs in-place."""
+    """
+    Apply CLI overrides to experiment configs in-place.
+
+    Override hierarchy (highest wins):
+      --drafter-model / --target-model  >  --tiny  >  experiment config defaults
+    """
     for exp in experiments:
+        # --tiny provides defaults, but explicit --drafter-model / --target-model
+        # override them
         if tiny_models:
             exp.set_config_override("drafter_model_path", "facebook/opt-125m")
             exp.set_config_override("target_model_path", "facebook/opt-350m")
             exp.set_config_override("max_new_tokens", 32)
+
+        # Explicit model paths always win (even over --tiny)
+        if drafter_model:
+            exp.set_config_override("drafter_model_path", drafter_model)
+        if target_model:
+            exp.set_config_override("target_model_path", target_model)
+
         if max_samples > 0:
             exp.set_config_override("max_samples", max_samples)
         if max_new_tokens > 0:
@@ -214,6 +230,14 @@ def main(  # noqa: C901
         bool,
         typer.Option("--tiny", "-t", help="Use tiny models (opt-125m/opt-350m) for fast testing"),
     ] = False,
+    drafter_model: Annotated[
+        str | None,
+        typer.Option("--drafter-model", help="Path to the drafter model (overrides --tiny)"),
+    ] = None,
+    target_model: Annotated[
+        str | None,
+        typer.Option("--target-model", help="Path to the target model (overrides --tiny)"),
+    ] = None,
     research: Annotated[
         bool,
         typer.Option(
@@ -323,6 +347,8 @@ def main(  # noqa: C901
     _apply_overrides(
         experiments,
         tiny_models=tiny_models,
+        drafter_model=drafter_model,
+        target_model=target_model,
         max_samples=max_samples or 0,
         max_new_tokens=max_new_tokens or 0,
         no_mlflow=no_mlflow,
