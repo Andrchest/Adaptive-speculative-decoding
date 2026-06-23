@@ -393,7 +393,7 @@ def _print_summary(results: list[dict]) -> None:
         console.print(
             f"  {rank:<4}"
             f"[cyan]{name}[/]" if len(name) <= 24 else f"  {rank:<4}[cyan]{name[:24]}[/]",
-            f"{acc:>6.1f}%",
+            f"{acc*100:>6.1f}%",
             f"{tps:>7.1f}",
             f"{wall:>9.3f}",
             f"{avg_acc:>5.2f}/5.0",
