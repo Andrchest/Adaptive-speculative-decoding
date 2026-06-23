@@ -34,6 +34,8 @@ import abc
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+
+
 if TYPE_CHECKING:
     # Avoid circular imports at runtime; these are only used in type hints.
     from benchmarks.metrics.collector import BenchmarkCollector
@@ -609,11 +611,38 @@ class BaseExperiment(abc.ABC):
         self.on_before_decode(decode_ctx)
 
         # Decode loop
-        max_new_tokens = getattr(cfg, "max_new_tokens", 128)
+        import experiments.runner as _rl_mod  # type: ignore
+        _ll = getattr(_rl_mod, "_log_level", "QUIET")
+        # Use tqdm for QUIET/NORMAL mode, simple loop otherwise
+        _use_tqdm = _ll in ("QUIET", "NORMAL")
+        _verbose_mode = (_ll == "VERBOSE")
         log_every = getattr(cfg, "log_every", 50)
 
-        for i, (input_ids, prompt_len) in enumerate(prompts):
+        # Import tqdm if needed
+        if _use_tqdm:
+            try:
+                from tqdm import tqdm as _tqdm
+                _tqdm_available = True
+            except ImportError:
+                _tqdm_available = False
+        else:
+            _tqdm_available = False
+
+        # Wrap prompts with tqdm or plain enumerate
+        if _tqdm_available:
+            _prompt_iter = _tqdm(
+                enumerate(prompts),
+                total=len(prompts),
+                desc=f"{self.meta.name[:20]}",
+                leave=False,
+                ncols=70,
+            )
+        else:
+            _prompt_iter = enumerate(prompts)
+
+        for i, (input_ids, prompt_len) in _prompt_iter:
             input_ids = input_ids.to(runner.device)
+            max_new_tokens = getattr(cfg, "max_new_tokens", 128)
 
             # GPU memory: at each prompt (captures per-sequence peaks)
             if torch.cuda.is_available():
@@ -652,7 +681,7 @@ class BaseExperiment(abc.ABC):
             self.on_decode_step(decode_ctx, decoder.stats(), i)
 
             # Progress logging
-            if i % log_every == 0:
+            if _verbose_mode and i % log_every == 0:
                 partial = collector.summary()
                 logger.info(
                     "Progress [%d/%d] acc=%.3f tps=%.1f",
@@ -661,6 +690,13 @@ class BaseExperiment(abc.ABC):
                     partial.get("acceptance_rate", 0),
                     partial.get("tokens_per_sec", 0),
                 )
+            # Update tqdm bar in QUIET/NORMAL mode
+            if _use_tqdm and _tqdm_available:
+                partial = collector.summary()
+                _prompt_iter.set_postfix({
+                    "acc": f"{partial.get('acceptance_rate', 0):.3f}",
+                    "tps": f"{partial.get('tokens_per_sec', 0):.1f}",
+                })
 
         # Hooks: after decode
         self.on_after_decode(decode_ctx)
@@ -693,6 +729,11 @@ class BaseExperiment(abc.ABC):
 
         # Extra metrics hook
         summary = self.on_extra_metrics(summary)
+
+        # Print end summary to console
+        _cl = getattr(_rl_mod, "_log_level", "QUIET")
+        if _cl != "QUIET":
+            collector.print_end_summary(summary)
 
         # MLflow final logging
         runner._log_mlflow_final(cfg, summary)

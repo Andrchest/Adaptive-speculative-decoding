@@ -28,18 +28,77 @@ Examples:
 
 import logging
 import sys
+from enum import Enum
 from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(message)s",
-    datefmt="[%H:%M:%S]",
-    handlers=[RichHandler(rich_tracebacks=True, show_path=True)],
-)
+
+class LogLevel(str, Enum):
+    QUIET = "QUIET"      # tqdm progress only + summary at end
+    NORMAL = "NORMAL"    # + warning/error
+    VERBOSE = "VERBOSE"  # + all info (legacy behavior)
+
+    def to_logging_level(self) -> int:
+        mapping = {"QUIET": logging.WARNING, "NORMAL": logging.WARNING, "VERBOSE": logging.DEBUG}
+        return mapping[self.value]
+
+
+# --- Global logging setup ---
+_log_level: LogLevel = LogLevel.QUIET
+
+class _SourceFilter(logging.Filter):
+    """Allow only our own source loggers through."""
+    _ALLOWED = {"src"}
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not self._ALLOWED:
+            return True
+        name = record.name
+        return any(n == name or name.startswith(n + ".") for n in self._ALLOWED)
+
+
+def _setup_logging(level: LogLevel) -> None:
+    global _log_level
+    _log_level = level
+
+    level_num = level.to_logging_level()
+    logging.basicConfig(
+        level=level_num,
+        format="%(message)s",
+        datefmt="[%H:%M:%S]",
+        handlers=[RichHandler(rich_tracebacks=True, show_path=True)],
+    )
+    for noisy in ("urllib3", "httpx", "requests", "transformers", "huggingface_hub"):
+        logging.getLogger(noisy).setLevel(logging.CRITICAL)
+    # Restrict to our own modules
+    logging.getLogger("src").addFilter(_SourceFilter())
+
+
+# --- Progress helpers (for QUIET/NORMAL mode) ---
+
+import os as _os
+
+def _has_tty() -> bool:
+    return _os.isatty(1)
+
+
+def _init_progress(total: int, desc: str = "") -> object:
+    """Return a tqdm progress object or a no-op when stderr is not a tty."""
+    try:
+        from tqdm import tqdm as _tqdm
+        if _has_tty():
+            return _tqdm(total=total, desc=desc or None, leave=False, ncols=80)
+    except ImportError:
+        pass
+    # Fallback: no-op
+    class _NoOp:
+        def __init__(self, *a, **k):
+            pass
+        def update(self, n=1): pass
+        def close(self): pass
+    return _NoOp()
 
 for noisy in ("urllib3", "httpx", "requests", "transformers", "huggingface_hub"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
@@ -131,6 +190,10 @@ def main(  # noqa: C901
         str,
         typer.Option("--device", "-d", help="torch device"),
     ] = "cuda",
+    log_level: Annotated[
+        LogLevel,
+        typer.Option("--log-level", help="Verbosity: QUIET (tqdm), NORMAL, or VERBOSE (all logs)"),
+    ] = LogLevel.QUIET,
     no_mlflow: Annotated[
         bool,
         typer.Option("--no-mlflow", help="Disable MLflow logging"),
@@ -161,14 +224,24 @@ def main(  # noqa: C901
     ] = False,
 ) -> None:
     """Adaptive Speculative Decoding — experiment runner."""
+    # --- Setup logging ---
+    _setup_logging(log_level)
+
+    logger = logging.getLogger(__name__)
+
+    # --- Set global log level BEFORE any experiment runs ---
+    import experiments.runner as _rl_mod
+    _rl_mod._log_level = log_level.value
+    logger.info("Global _log_level set to: %s", log_level.value)
     logger.info(
-        "Parsed arguments: suite=%s experiment=%s smoke=%s list=%s max_samples=%d max_new_tokens=%d",
+        "Parsed arguments: suite=%s experiment=%s smoke=%s list=%s max_samples=%d max_new_tokens=%d log_level=%s",
         suite,
         experiment,
         smoke,
         list_experiments,
         max_samples or 0,
         max_new_tokens or 0,
+        log_level.value,
     )
 
     # --- List experiments ---
@@ -254,6 +327,9 @@ def main(  # noqa: C901
         max_new_tokens=max_new_tokens or 0,
         no_mlflow=no_mlflow,
     )
+    # Set log_level on each experiment config
+    for exp in experiments:
+        exp.set_config_override("log_level", log_level.value)
 
     # --- Run ---
     runner = ExperimentRunner(experiments=experiments, output_dir=output_dir, device=device)
@@ -265,18 +341,79 @@ def main(  # noqa: C901
 
 
 def _print_summary(results: list[dict]) -> None:
-    """Print a comparison table to the console."""
-    console.print("\n[bold]=== Final Comparison ===[/bold]")
-    console.print(f"{'Experiment':<30} {'Acc Rate':>10} {'TPS':>10} {'Speedup':>10}")
-    console.print("-" * 65)
-    for r in results:
+    """Print a comprehensive comparison table to the console."""
+    if not results:
+        return
+
+    console.print("\n")
+    console.print("[bold]" + "=" * 70 + "[/]")
+    console.print("[bold]  Final Comparison[/]")
+    console.print("[bold]" + "=" * 70 + "[/]")
+
+    # Sort by wall_time_total_s (fastest first)
+    sorted_results = sorted(
+        results,
+        key=lambda r: r["metrics"].get("wall_time_total_s", float("inf"))
+    )
+
+    # Find fastest and slowest for badges
+    fastest = sorted_results[0]
+    slowest = sorted_results[-1]
+    fastest_tps = max(r["metrics"].get("tokens_per_sec", 0) for r in sorted_results)
+
+    # Header
+    console.print(
+        "  " + f'{"#":<4}'
+        + f'{"Experiment":<24} '
+        + f'{"Acc":>7} '
+        + f'{"TPS":>7} '
+        + f'{"Wall(s)":>9} '
+        + f'{"Acc/Avg":>10} '
+        + f'{"GPU(GB)":>10} '
+        + f'{"Status":<10}'
+    )
+    console.print("[dim]" + "─" * 90 + "[/]")
+
+    for rank, r in enumerate(sorted_results, 1):
         m = r["metrics"]
+        name = r["config"]["name"]
+        acc = m.get("acceptance_rate", 0)
+        tps = m.get("tokens_per_sec", 0)
+        wall = m.get("wall_time_total_s", 0)
+        avg_acc = m.get("avg_accepted_tokens", 0)
+        gpu = m.get("gpu_mem_peak_gb", 0)
+
+        # Determine badge
+        badge = ""
+        if r is fastest:
+            badge = "⚡ Fastest"
+        elif r is slowest:
+            badge = "🐌 Slowest"
+
         console.print(
-            f"{r['config']['name']:<30}"
-            f"  {m.get('acceptance_rate', 0):.3f}"
-            f"  {m.get('tokens_per_sec', 0):8.1f}"
-            f"  {m.get('wall_clock_speedup', 0):8.2f}x"
+            f"  {rank:<4}"
+            f"[cyan]{name}[/]" if len(name) <= 24 else f"  {rank:<4}[cyan]{name[:24]}[/]",
+            f"{acc:>6.1f}%",
+            f"{tps:>7.1f}",
+            f"{wall:>9.3f}",
+            f"{avg_acc:>5.2f}/5.0",
+            f"{gpu:>10.2f}",
+            f"{badge:<10}",
         )
+
+    console.print("[bold]" + "=" * 70 + "[/]")
+
+    # Results file paths
+    result_files = []
+    for r in sorted_results:
+        name = r["config"]["name"]
+        result_files.append(f"results/{name}.json")
+
+    console.print(f"  Results: {', '.join(result_files[:5])}")
+    if len(result_files) > 5:
+        console.print(f"  ... and {len(result_files) - 5} more")
+    console.print(f"  CSV:     results/comparison_table.csv")
+    console.print("[bold]" + "=" * 70 + "[/]")
 
 
 if __name__ == "__main__":

@@ -20,10 +20,15 @@ Tracks all metrics defined in the spec:
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +208,115 @@ class BenchmarkCollector:
             result.get("cache_hit_rate", 0),
         )
         return result
+
+    def print_end_summary(self, result: dict) -> None:
+        """Print a detailed summary block after each experiment.
+
+        Called once per experiment, after collector.summary() is computed.
+        Uses rich for colored table output (falls back to plain print if
+        rich is unavailable).
+        """
+        try:
+            from rich.console import Console
+            from rich.table import Table
+            from rich.panel import Panel
+            from rich.text import Text
+
+            console = Console(file=sys.stderr)
+        except ImportError:
+            # Fallback: plain text
+            lines = self._format_summary_plain(result)
+            for line in lines:
+                sys.stderr.write(line + "\n")
+            sys.stderr.write("\n")
+            return
+
+        # Build the summary panel
+        lines = []
+        lines.append(f"  Experiment: {self.name}")
+        lines.append("")
+
+        # --- Duration ---
+        wall_total = result.get("wall_time_total_s", 0)
+        wall_mean = result.get("wall_time_mean_s", 0)
+        n_seq = result.get("n_sequences", 0)
+        lines.append(f"  Duration: {wall_total:.3f}s  ({wall_mean:.3f}s per sample, {n_seq} sequences)")
+
+        # --- Throughput ---
+        tps = result.get("tokens_per_sec", 0)
+        avg_tps = result.get("avg_tokens_per_sec", 0)
+        total_tokens = result.get("total_new_tokens", 0)
+        lines.append(f"  Throughput: {tps:.1f} tok/s  (avg {avg_tps:.1f} tok/s, {total_tokens} tokens)")
+
+        # --- Acceptance ---
+        acc_rate = result.get("acceptance_rate", 0)
+        avg_acc = result.get("avg_accepted_tokens", 0)
+        avg_draft = result.get("avg_draft_length", 0)
+        lines.append(f"  Acceptance: {acc_rate:.1%}  ({avg_acc:.2f}/{avg_draft:.2f} avg accepted / draft)")
+
+        # --- Cache ---
+        cache_hit = result.get("cache_hit_rate", 0)
+        lines.append(f"  Cache hit:  {cache_hit:.1%}")
+
+        # --- GPU ---
+        gpu_peak = result.get("gpu_mem_peak_gb", 0)
+        gpu_mean = result.get("gpu_mem_mean_gb", 0)
+        lines.append(f"  GPU: peak={gpu_peak:.2f} GB  mean={gpu_mean:.2f} GB")
+
+        # --- Loss metrics (if distillation active) ---
+        if "training_loss_mean" in result:
+            loss_mean = result["training_loss_mean"]
+            loss_std = result.get("training_loss_std", 0)
+            kl = result.get("mean_kl_divergence", 0)
+            lines.append(f"  Loss: mean={loss_mean:.2f}  kl={kl:.2f}")
+
+        # --- Status ---
+        sep = "─" * 55
+        lines.append(f"  {sep}")
+        lines.append("  ✓ Experiment complete")
+
+        panel_text = "\n".join(lines)
+        panel = Panel(
+            panel_text,
+            title="[bold]Experiment Summary[/]",
+            subtitle="[dim]" + self.name + "[/]",
+            border_style="bright_green",
+            padding=(0, 2),
+        )
+        console.print(panel)
+        console.print()
+
+    def _format_summary_plain(self, result: dict) -> list[str]:
+        """Plain-text summary (no rich dependency)."""
+        wall_total = result.get("wall_time_total_s", 0)
+        wall_mean = result.get("wall_time_mean_s", 0)
+        n_seq = result.get("n_sequences", 0)
+        tps = result.get("tokens_per_sec", 0)
+        avg_tps = result.get("avg_tokens_per_sec", 0)
+        total_tokens = result.get("total_new_tokens", 0)
+        acc_rate = result.get("acceptance_rate", 0)
+        avg_acc = result.get("avg_accepted_tokens", 0)
+        avg_draft = result.get("avg_draft_length", 0)
+        cache_hit = result.get("cache_hit_rate", 0)
+        gpu_peak = result.get("gpu_mem_peak_gb", 0)
+        gpu_mean = result.get("gpu_mem_mean_gb", 0)
+
+        lines = []
+        lines.append(f"\n{'=' * 55}")
+        lines.append(f"  Experiment: {self.name}")
+        lines.append(f"  Duration: {wall_total:.3f}s  ({wall_mean:.3f}s per sample, {n_seq} sequences)")
+        lines.append(f"  Throughput: {tps:.1f} tok/s  (avg {avg_tps:.1f} tok/s, {total_tokens} tokens)")
+        lines.append(f"  Acceptance: {acc_rate:.1%}  ({avg_acc:.2f}/{avg_draft:.2f} avg accepted / draft)")
+        lines.append(f"  Cache hit:  {cache_hit:.1%}")
+        lines.append(f"  GPU: peak={gpu_peak:.2f} GB  mean={gpu_mean:.2f} GB")
+        if "training_loss_mean" in result:
+            loss_mean = result["training_loss_mean"]
+            kl = result.get("mean_kl_divergence", 0)
+            lines.append(f"  Loss: mean={loss_mean:.2f}  kl={kl:.2f}")
+        lines.append(f"  {'─' * 55}")
+        lines.append("  ✓ Experiment complete")
+        lines.append(f"{'=' * 55}\n")
+        return lines
 
     def clear(self) -> None:
         """Release all collected records and samples.

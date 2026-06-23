@@ -27,6 +27,10 @@ import torch
 
 logger = logging.getLogger(__name__)
 
+# Global log level, set by main.py before experiments run.
+# Possible values: "QUIET", "NORMAL", "VERBOSE"
+_log_level: str = "QUIET"
+
 try:
     import mlflow
 
@@ -117,6 +121,7 @@ class ExperimentConfig:
     mlflow_experiment: str = "adaptive_speculative"
     mlflow_tracking_uri: str = "sqlite:///mlflow.db"
     log_every: int = 50
+    log_level: str = "QUIET"  # QUIET | NORMAL | VERBOSE
     seed: int = 42
 
 
