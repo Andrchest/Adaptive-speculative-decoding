@@ -112,21 +112,31 @@ class OnlineDistiller:
         Returns the combined loss value if a weight update was performed,
         else None.
         """
-        loss = self._compute_loss(draft_logits, target_logits, draft_tokens, accepted_mask)
-        logger.debug(f'Loss {loss}')
-        if loss is None:
+        # Defensive: wrap the entire distillation step in try/except to handle
+        # unexpected CUDA errors gracefully (e.g. index-out-of-bounds, OOM).
+        # This prevents a single distillation error from crashing the entire experiment.
+        try:
+            loss = self._compute_loss(draft_logits, target_logits, draft_tokens, accepted_mask)
+            logger.debug(f'Loss {loss}')
+            if loss is None:
+                return None
+
+            (loss / self.accum_steps).backward()
+            # Detach immediately after backward to free the computation graph.
+            # Storing only the scalar loss value on CPU to avoid GPU memory leaks.
+            loss_scalar = loss.detach().item()
+            self._accum_loss = self._accum_loss + torch.tensor(loss_scalar, dtype=torch.float32)
+            self._accum_count += 1
+
+            if self._accum_count >= self.accum_steps:
+                return self._update_weights()
             return None
-
-        (loss / self.accum_steps).backward()
-        # Detach immediately after backward to free the computation graph.
-        # Storing only the scalar loss value on CPU to avoid GPU memory leaks.
-        loss_scalar = loss.detach().item()
-        self._accum_loss = self._accum_loss + torch.tensor(loss_scalar, dtype=torch.float32)
-        self._accum_count += 1
-
-        if self._accum_count >= self.accum_steps:
-            return self._update_weights()
-        return None
+        except Exception as e:
+            logger.warning(
+                "Distillation step failed: %s — skipping distillation for this step",
+                e,
+            )
+            return None
 
     # ------------------------------------------------------------------
     # Internals
@@ -148,6 +158,15 @@ class OnlineDistiller:
         if not any(accepted_mask):
             logger.debug("No accepted tokens, skipping distillation loss")
             return None
+
+        # Handle 3D logits (e.g. (k, 1, Vd)) — squeeze intermediate dims
+        if draft_logits.dim() == 3 and draft_logits.shape[1] == 1:
+            draft_logits = draft_logits.squeeze(1)
+        if target_logits.dim() == 3 and target_logits.shape[1] == 1:
+            target_logits = target_logits.squeeze(1)
+
+        # Compute accepted indices for diagnostics
+        accepted_indices = [i for i, a in enumerate(accepted_mask) if a]
 
         # Translate target logits back to drafter vocab for KL comparison
         # (We use the inverse of Rule1: direct-mapped tokens only)
@@ -185,7 +204,6 @@ class OnlineDistiller:
             kl = torch.tensor(0.0, device=draft_logits.device)
 
         # --- N-gram NLL loss (accepted tokens) ---
-        accepted_indices = [i for i, a in enumerate(accepted_mask) if a]
         if accepted_indices:
             acc_tokens = torch.tensor(
                 [draft_tokens[i] for i in accepted_indices],
@@ -271,7 +289,14 @@ class OnlineDistiller:
         valid_t = t_idx < target_probs.shape[-1]
         d_idx = d_idx[valid_t]
         t_idx = t_idx[valid_t]
-        drafter_proj[:, d_idx] = target_probs[:, t_idx]
+
+        # --- FIX: use explicit loop to avoid CUDA fancy-indexing issues ---
+        # The original `drafter_proj[:, d_idx] = target_probs[:, t_idx]`
+        # can trigger CUDA OOM or index-out-of-bounds on certain GPU/PyTorch
+        # combinations. Using per-row assignment which is safer.
+        if d_idx.numel() > 0:
+            for b in range(k):
+                drafter_proj[b, d_idx] = target_probs[b, t_idx]
 
         return drafter_proj
 

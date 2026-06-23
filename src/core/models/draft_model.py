@@ -127,17 +127,22 @@ class DraftModel:
         for _ in range(k):
             with torch.no_grad():
                 out = self.model(running)
-            logits = out.logits.squeeze(0)[-1, :]  # (V,)
+            # Handle both (seq_len, V) and (1, seq_len, V) output shapes
+            # by flattening all leading dimensions and taking the last row
+            logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]  # (V,)
             logits_list.append(logits.unsqueeze(0))  # (1, V) for stacking
             next_token = self._sample_next_token(logits, temperature, greedy)
             tokens.append(next_token.item())
             running = torch.cat([running, next_token.unsqueeze(0).unsqueeze(0)], dim=1)
 
         logits_to_return = torch.stack(logits_list, dim=0)  # (k, V)
+        # Ensure logits are 2D: (k, V) not (k, 1, V)
+        if logits_to_return.dim() == 3 and logits_to_return.shape[1] == 1:
+            logits_to_return = logits_to_return.squeeze(1)
         logger.info(
             "Drafter generated %d tokens, logits shape: %s", k, tuple(logits_to_return.shape),
         )
-        return tokens, logits_to_return
+        return tokens[1:], logits_to_return
 
     def _draft_distill(
         self, context: torch.Tensor, k: int, temperature: float
@@ -147,12 +152,17 @@ class DraftModel:
         logits_list: list[torch.Tensor] = []
         running = context.clone()
 
+        logger.info(
+            "DRAFTER DISTILL ctx_shape=%s last_token=%d k=%d",
+            tuple(context.shape), tokens[0], k,
+        )
+
         for i in range(k):
             use_cache = i < k - 1  # enable KV cache for all but the last step
             if use_cache:
                 with torch.no_grad():
                     out = self.model(running, use_cache=True)
-                logits = out.logits.squeeze(0)[-1, :]
+                logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
                 logits_list.append(logits.unsqueeze(0))
                 next_token = self._sample_next_token(logits, temperature, greedy)
                 tokens.append(next_token.item())
@@ -160,16 +170,21 @@ class DraftModel:
             else:
                 # Final step: gradients enabled
                 out = self.model(running, use_cache=False)
-                logits = out.logits.squeeze(0)[-1, :]
+                logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
                 logits_list.append(logits.unsqueeze(0))
                 next_token = self._sample_next_token(logits, temperature, greedy)
                 tokens.append(next_token.item())
 
         logits_to_return = torch.stack(logits_list, dim=0)  # (k, V)
+        # Ensure logits are 2D: (k, V) not (k, 1, V)
+        if logits_to_return.dim() == 3 and logits_to_return.shape[1] == 1:
+            logits_to_return = logits_to_return.squeeze(1)
+        result_tokens = tokens[1:]  # Remove first token (last context token)
         logger.info(
-            "Drafter (distill) generated %d tokens, logits shape: %s", k, tuple(logits_to_return.shape),
+            "Drafter (distill) generated %d tokens, logits shape: %s, result_tokens len=%d",
+            k, tuple(logits_to_return.shape), len(result_tokens),
         )
-        return tokens, logits_to_return
+        return result_tokens, logits_to_return
 
     @staticmethod
     def _sample_next_token(

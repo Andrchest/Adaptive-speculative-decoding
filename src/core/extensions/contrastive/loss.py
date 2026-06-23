@@ -119,6 +119,12 @@ class ContrastiveLoss(torch.nn.Module):
         """
         Compute combined loss.
         """
+        # Handle 3D logits (e.g. (k, 1, Vd)) — squeeze intermediate dims
+        if draft_logits.dim() == 3 and draft_logits.shape[1] == 1:
+            draft_logits = draft_logits.squeeze(1)
+        if target_logits.dim() == 3 and target_logits.shape[1] == 1:
+            target_logits = target_logits.squeeze(1)
+
         k = len(draft_tokens)
         acc_idx = [i for i, a in enumerate(accepted_mask) if a]
         rej_idx = [i for i, a in enumerate(accepted_mask) if not a]

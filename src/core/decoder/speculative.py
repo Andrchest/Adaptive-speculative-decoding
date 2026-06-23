@@ -312,6 +312,13 @@ class SpeculativeDecoder:
             temperature=self.temperature,
         )
 
+        # Normalize drafter logits to 2D: (k, Vd).
+        # Some model families emit 3D logits (k, 1, Vd) due to device_map
+        # behavior; squeeze the intermediate dimension so all downstream
+        # modules (translator, distiller, etc.) receive clean 2D tensors.
+        if draft_logits.dim() == 3 and draft_logits.shape[1] == 1:
+            draft_logits = draft_logits.squeeze(1)
+
         # 3. Translate drafter logits to target vocab space to obtain ``q``.
         #    Apply the decoder's temperature to the drafter logits BEFORE
         #    translation so ``q`` is at the same temperature as ``p``
@@ -342,6 +349,16 @@ class SpeculativeDecoder:
         draft_tokens_target = self._translate_draft_tokens(
             draft_tokens_drafter, translated_probs
         )
+
+        # --- Defensive: truncate draft_tokens to k (can exceed k due to
+        # 3D drafter logits or mapping anomalies). This prevents IndexError
+        # in _accept_reject where translated_probs has exactly k rows.
+        if len(draft_tokens_target) != k:
+            logger.warning(
+                "Draft tokens length mismatch: got %d, expected %d — truncating",
+                len(draft_tokens_target), k,
+            )
+            draft_tokens_target = draft_tokens_target[:k]
 
         # 5. Target verifies the (target-vocab) draft tokens in one pass.
         logger.info(

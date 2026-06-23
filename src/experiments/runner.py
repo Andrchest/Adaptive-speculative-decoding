@@ -174,13 +174,22 @@ class ExperimentRunner:
 
         gc.collect()
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-            logger.info(
-                "GPU memory: %.1f MB used / %.1f MB total",
-                torch.cuda.memory_allocated() / 1e6,
-                torch.cuda.memory_reserved() / 1e6,
-            )
+            try:
+                torch.cuda.empty_cache()
+            except RuntimeError:
+                logger.warning("CUDA empty_cache failed — GPU may be in error state")
+            try:
+                torch.cuda.synchronize()
+            except RuntimeError:
+                logger.warning("CUDA synchronize failed — GPU may be in error state")
+            try:
+                logger.info(
+                    "GPU memory: %.1f MB used / %.1f MB total",
+                    torch.cuda.memory_allocated() / 1e6,
+                    torch.cuda.memory_reserved() / 1e6,
+                )
+            except RuntimeError:
+                logger.warning("Could not query GPU memory — GPU may be in error state")
 
     # ------------------------------------------------------------------
     # High-level run
