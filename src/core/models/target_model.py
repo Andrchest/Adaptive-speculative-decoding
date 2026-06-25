@@ -56,6 +56,10 @@ class TargetModel:
         )
         self.model.eval()
         self.device = device
+        # P4.2: Pre-allocated buffer for draft tokens to avoid per-step
+        # torch.tensor() allocation. Grows on demand as draft length increases.
+        self._draft_buffer: torch.Tensor | None = None
+        self._draft_buffer_size: int = 0
         logger.info("Target model ready: %s", model_name_or_path)
 
     @torch.no_grad()
@@ -75,17 +79,27 @@ class TargetModel:
             context.shape[1],
             len(draft_tokens),
         )
+        k = len(draft_tokens)
         if draft_tokens:
-            draft_tensor = torch.tensor(
-                draft_tokens, dtype=torch.long, device=context.device
-            ).unsqueeze(0)
+            # P4.2: Reuse pre-allocated buffer instead of torch.tensor() each step.
+            if self._draft_buffer is None or k > self._draft_buffer_size:
+                self._draft_buffer_size = max(k * 2, 16)  # grow with headroom
+                self._draft_buffer = torch.zeros(
+                    (1, self._draft_buffer_size),
+                    dtype=torch.long,
+                    device=context.device,
+                )
+            # Copy list into GPU buffer via a small tensor (avoids GPU alloc).
+            self._draft_buffer[0, :k].copy_(
+                torch.tensor(draft_tokens, dtype=torch.long)
+            )
+            draft_tensor = self._draft_buffer[:, :k]
             full_input = torch.cat([context, draft_tensor], dim=1)
         else:
             full_input = context
 
         out = self.model(full_input)
         ctx_len = context.shape[1]
-        k = len(draft_tokens)
         logits = out.logits[0, ctx_len - 1 : ctx_len + k, :]  # (k+1, vocab)
         logger.debug("Target verification logits shape: %s", tuple(logits.shape))
         return logits

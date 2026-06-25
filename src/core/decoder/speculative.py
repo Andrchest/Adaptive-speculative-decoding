@@ -27,6 +27,28 @@ from core.cache.ngram import NgramCache
 from core.translation.vocabulary import CrossVocabTranslator, _align_last_dim
 
 # ---------------------------------------------------------------------------
+# Device-agnostic RNG helpers
+# ---------------------------------------------------------------------------
+
+
+def _multinomial_with_rng(
+    probs: torch.Tensor, num_samples: int, rng: torch.Generator | None
+) -> int:
+    """
+    Run ``torch.multinomial(probs, num_samples)`` with an optional RNG,
+    handling the case where the generator lives on a different device than
+    the tensor (``torch.multinomial`` requires device match).
+
+    When devices differ, move the tensor to the generator's device for
+    sampling, then return the result. This preserves exact RNG state
+    consumption so output tokens are bit-identical to the reference.
+    """
+    if rng is not None and str(rng.device) != str(probs.device):
+        return torch.multinomial(probs.to(rng.device), num_samples, generator=rng).item()
+    return torch.multinomial(probs, num_samples, generator=rng).item()
+
+
+# ---------------------------------------------------------------------------
 # Step stats (returned per decode step for logging / adaptive drafting)
 # ---------------------------------------------------------------------------
 
@@ -141,16 +163,28 @@ class SpeculativeDecoder:
         is produced, and the per-step emission is truncated to the
         remaining budget before being appended.
         """
-        generated = input_ids.clone()
         prompt_len = input_ids.shape[1]
+        # Pre-allocate output buffer to avoid repeated torch.cat / reallocation.
+        # Only the first `pos` columns are valid; the rest is zero padding.
+        output = torch.zeros(
+            (input_ids.shape[0], prompt_len + max_new_tokens),
+            dtype=input_ids.dtype,
+            device=input_ids.device,
+        )
+        output[:, :prompt_len] = input_ids
+        pos = prompt_len  # write cursor
         max_consec_zero = 5  # stop after N consecutive steps with 0 accepted
         consec_zero = 0
 
         for step_idx in range(max_new_tokens):
             # Stop if we've already produced the requested number of tokens.
-            new_tokens = generated.shape[1] - prompt_len
+            new_tokens = pos - prompt_len
             if new_tokens >= max_new_tokens:
                 break
+
+            # Pass only the filled portion to the model (avoids zero padding
+            # in the attention mask / positional embeddings).
+            generated = output[:, :pos]
 
             k = self._choose_draft_length(generated, adaptive_length_fn)
             logger.debug(
@@ -178,10 +212,10 @@ class SpeculativeDecoder:
                     budget,
                     emitted,
                 )
-                new_ids = torch.tensor(
-                    emitted, dtype=torch.long, device=generated.device
-                ).unsqueeze(0)
-                generated = torch.cat([generated, new_ids], dim=1)
+                # Indexed assignment into pre-allocated buffer (no torch.cat).
+                for i, tok in enumerate(emitted):
+                    output[0, pos + i] = tok
+                pos += len(emitted)
                 consec_zero = 0
             else:
                 consec_zero += 1
@@ -198,21 +232,21 @@ class SpeculativeDecoder:
                     break
 
             # Stop if EOS produced
-            if generated.shape[1] and self._is_eos(generated[0, -1]):
+            if pos > prompt_len and self._is_eos(output[0, pos - 1]):
                 logger.info(
                     "Stopping generation at step %d after EOS token (new_tokens=%d)",
                     step_idx + 1,
-                    generated.shape[1] - prompt_len,
+                    pos - prompt_len,
                 )
                 break
 
         logger.info(
             "Finished speculative generation: generated_tokens=%d steps=%d cache_hit_rate=%.3f",
-            generated.shape[1] - prompt_len,
+            pos - prompt_len,
             len(self._step_results),
             self.cache.hit_rate(),
         )
-        return generated
+        return output[:, :pos]
 
     def stats(self) -> dict:
         if not self._step_results:
@@ -304,7 +338,7 @@ class SpeculativeDecoder:
         #    the SAME distribution we use as ``q`` in the acceptance test
         #    (C1 fix: a greedy drafter + softmax-``q`` acceptance does
         #    NOT preserve the target distribution).
-        logger.info("Running drafter for k=%d temperature=%s", k, self.temperature)
+        logger.debug("Running drafter for k=%d temperature=%s", k, self.temperature)
         draft_tokens_drafter, draft_logits = self.drafter.draft(
             context,
             k,
@@ -361,7 +395,7 @@ class SpeculativeDecoder:
             draft_tokens_target = draft_tokens_target[:k]
 
         # 5. Target verifies the (target-vocab) draft tokens in one pass.
-        logger.info(
+        logger.debug(
             "Running target verification for %d draft token(s)", len(draft_tokens_target)
         )
         target_logits = self.target.verify(context, draft_tokens_target)
@@ -381,7 +415,7 @@ class SpeculativeDecoder:
         accepted, rejected_at = self._accept_reject(
             draft_tokens_target, target_logits, translated_probs, rng=rng
         )
-        logger.info(
+        logger.debug(
             "Acceptance result: accepted=%d rejected_at=%d",
             len(accepted),
             rejected_at,
@@ -407,13 +441,9 @@ class SpeculativeDecoder:
         self.cache.update_acceptance(ctx_list, accepted=accepted_count > 0)
         if accepted:
             logger.debug("Inserting %d accepted token(s) into cache", len(accepted))
-            self.cache.insert(
-                ctx_list,
-                accepted,
-                logits=target_logits[: len(accepted)].detach().cpu()
-                if target_logits is not None
-                else None,
-            )
+            # P3.4: Skip storing logits — cache hit fast-path was removed,
+            # so cached logits are never read back. Saves a .detach().cpu() sync.
+            self.cache.insert(ctx_list, accepted, logits=None)
 
         # 9. Optional online distillation.
         #    Pass the ORIGINAL drafter-vocab tokens (draft_tokens_drafter)
@@ -431,7 +461,7 @@ class SpeculativeDecoder:
                 target_logits=target_logits[: len(draft_tokens_target)],
                 draft_tokens=draft_tokens_drafter,
                 accepted_mask=accepted_mask,
-                prompt_ids=context[0].tolist(),
+                prompt_ids=ctx_list,  # reuse cached .tolist() — P3.1
             )
             logger.debug("Online distillation step complete")
 
@@ -460,26 +490,45 @@ class SpeculativeDecoder:
 
         For same-tokenizer drafter/target pairs, Rule1 maps every token
         to itself, so this is a no-op.
+
+        Optimized (P3.2): batched GPU indexing with a single .tolist()
+        instead of per-token .item() calls.
         """
         if not draft_tokens_drafter:
             return []
+
+        k = len(draft_tokens_drafter)
         mapping = self.translator.rule1._mapping  # (drafter_vocab,) → target_idx or -1
-        result: list[int] = []
-        for i, d_idx in enumerate(draft_tokens_drafter):
-            t_idx = -1
-            if 0 <= d_idx < mapping.shape[0]:
-                t_idx = int(mapping[d_idx].item())
-            if t_idx < 0:
-                # No direct Rule1 mapping: use translated argmax at this position.
-                if translated_probs is not None and i < translated_probs.shape[0]:
-                    t_idx = int(translated_probs[i].argmax().item())
-                else:
-                    # Last-resort fallback: pass through the drafter id.
-                    # target.verify may clip or raise on out-of-range ids;
-                    # this branch should only trigger in degenerate test setups.
-                    t_idx = d_idx
-            result.append(t_idx)
-        return result
+
+        # Ensure mapping is on the same device as translated_probs (or cuda).
+        device = "cuda"
+        if mapping.device.type != "cuda":
+            mapping = mapping.cuda()
+
+        # Batched lookup: map all drafter tokens at once.
+        draft_tensor = torch.tensor(
+            draft_tokens_drafter, dtype=torch.long, device=device
+        )
+        # Clamp to valid range so indexing doesn't fail on out-of-range tokens.
+        safe_indices = draft_tensor.clamp(0, mapping.shape[0] - 1)
+        mapped = mapping[safe_indices]  # (k,) — target indices or -1
+
+        # Determine which positions need fallback (mapped == -1).
+        need_fallback = mapped < 0
+
+        if need_fallback.any() and translated_probs is not None:
+            # Fill fallback positions with argmax of translated_probs.
+            fallback_mask = need_fallback & (safe_indices < translated_probs.shape[0])
+            if fallback_mask.any():
+                argmax_vals = translated_probs.argmax(dim=-1)  # (k,)
+                mapped[fallback_mask] = argmax_vals[fallback_mask]
+
+        # Remaining -1 (no probs available): pass through drafter id.
+        still_negative = mapped < 0
+        if still_negative.any():
+            mapped[still_negative] = draft_tensor[still_negative]
+
+        return mapped.tolist()  # one GPU→CPU sync
 
     def _accept_reject(
         self,
@@ -489,12 +538,24 @@ class SpeculativeDecoder:
         rng: torch.Generator | None = None,
     ) -> tuple[list[int], int]:
         """
-        Standard speculative decoding acceptance test.
+        Vectorized speculative decoding acceptance test.
 
         For each position i:
           p(x) = target_prob(draft_tokens[i] | context + draft[:i])
           q(x) = translated drafter prob (or uniform 1/V fallback)
           Accept with prob min(1, p/q).
+
+        Optimizations over the scalar loop:
+          - One batched softmax over the entire (k, V) target logit tensor
+            instead of k separate softmax calls.
+          - Gather p[tok_i] and q[tok_i] via advanced indexing.
+          - Acceptance probabilities computed as a single vector operation.
+          - Random draws consumed one-by-one (``torch.rand(1)``) to preserve
+            the exact RNG consumption order of the reference implementation,
+            so output tokens are bit-identical for a given seed.
+
+        This eliminates ~k softmax kernel launches and ~2k GPU→CPU syncs
+        from the hot path (k = draft_length).
 
         Parameters
         ----------
@@ -506,51 +567,60 @@ class SpeculativeDecoder:
 
         Returns (accepted_list, first_rejection_index).
         """
-        accepted: list[int] = []
+        k = len(draft_tokens)
+        if k == 0:
+            return [], -1
+
         V = target_logits.shape[-1]
+        t_eff = max(self.temperature, 1e-6)
 
-        for i, tok in enumerate(draft_tokens):
-            t_logit = target_logits[i]  # (target_vocab,)
-            if t_logit.isnan().any() or t_logit.isinf().any():
-                logger.warning(
-                    "Target logits at acceptance position %d contain NaN/Inf — zeroing.", i
-                )
-                t_logit = torch.nan_to_num(t_logit, nan=0.0, posinf=1e6, neginf=-1e6)
-            p = F.softmax(t_logit.float() / max(self.temperature, 1e-6), dim=-1)
-            p_tok = p[tok].item()
+        # --- Batched softmax over all k positions (single kernel launch) ---
+        t_logits = target_logits[:k].float() / t_eff  # (k, V)
+        if t_logits.isnan().any() or t_logits.isinf().any():
+            logger.warning(
+                "Target logits contain NaN/Inf — replacing with safe values."
+            )
+            t_logits = torch.nan_to_num(t_logits, nan=0.0, posinf=1e6, neginf=-1e6)
+        target_probs = F.softmax(t_logits, dim=-1)  # (k, V)
 
-            if translated_probs is not None:
-                q_tok = translated_probs[i, tok].item()
-                q_tok = max(q_tok, 1e-8)
-                accept_prob = min(1.0, p_tok / q_tok)
-            else:
-                # Uniform-proposal fallback: q = 1/V.
-                # accept_prob = min(1, p_tok / (1/V)) = min(1, p_tok * V).
-                # Combined with the matching uniform residual in
-                # _residual_sample, this preserves the target distribution.
-                accept_prob = min(1.0, p_tok * V)
+        # --- Gather p[tok_i] and q[tok_i] for all positions ---
+        device = target_logits.device
+        tok_tensor = torch.tensor(draft_tokens, dtype=torch.long, device=device)
+        idx = torch.arange(k, device=device)
+        p_tok_vec = target_probs[idx, tok_tensor]  # (k,)
 
+        if translated_probs is not None:
+            q_tok_vec = translated_probs[idx, tok_tensor].clamp(min=1e-8)  # (k,)
+            accept_probs = (p_tok_vec / q_tok_vec).clamp(max=1.0)  # (k,)
+        else:
+            # Uniform-proposal fallback: q = 1/V.
+            accept_probs = (p_tok_vec * V).clamp(max=1.0)  # (k,)
+
+        # --- Sequential random draws to preserve RNG consumption order ---
+        # Each ``torch.rand(1, generator=rng)`` call advances the RNG state
+        # by exactly one draw, matching the reference implementation.
+        accepted: list[int] = []
+        for i in range(k):
+            ap = accept_probs[i].item()
             logger.debug(
                 "Acceptance token %d/%d: token=%d accept_prob=%.4f",
-                i + 1,
-                len(draft_tokens),
-                tok,
-                accept_prob,
+                i + 1, k, draft_tokens[i], ap,
             )
             if rng is not None:
                 draw = torch.rand(1, generator=rng).item()
             else:
                 draw = torch.rand(1).item()
-            if draw < accept_prob:
-                accepted.append(tok)
+            if draw < ap:
+                accepted.append(draft_tokens[i])
             else:
-                logger.info(
-                    "Rejected draft token %d: token=%d accept_prob=%.4f", i + 1, tok, accept_prob
+                logger.debug(
+                    "Rejected draft token %d: token=%d accept_prob=%.4f",
+                    i + 1, draft_tokens[i], ap,
                 )
                 return accepted, i
 
-        logger.info("All %d draft token(s) accepted", len(draft_tokens))
-        return accepted, -1  # all accepted
+        logger.debug("All %d draft token(s) accepted", k)
+        return accepted, -1
 
     def _residual_sample(
         self,
@@ -603,10 +673,7 @@ class SpeculativeDecoder:
             s = residual.sum()
             if s > 1e-8:
                 residual = residual / s
-                if rng is not None:
-                    token = torch.multinomial(residual.cpu(), 1, generator=rng).item()
-                else:
-                    token = torch.multinomial(residual, 1).item()
+                token = _multinomial_with_rng(residual, 1, rng)
                 logger.debug(
                     "Residual sample at position %d: token=%d", pos, token
                 )
@@ -615,10 +682,7 @@ class SpeculativeDecoder:
                 "Residual mass empty at position %d; falling back to target", pos
             )
 
-        if rng is not None:
-            token = torch.multinomial(p.cpu(), 1, generator=rng).item()
-        else:
-            token = torch.multinomial(p, 1).item()
+        token = _multinomial_with_rng(p, 1, rng)
         logger.debug(
             "Bonus sample from target distribution at position %d: token=%d", pos, token
         )

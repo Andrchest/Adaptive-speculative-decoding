@@ -106,7 +106,7 @@ class DraftModel:
         practice — use temperature=1.0 (or any > 0) for correct
         speculative sampling.
         """
-        logger.info(
+        logger.debug(
             "Drafter generating %d tokens with temperature=%.2f distill=%s",
             k, temperature, distill,
         )
@@ -119,68 +119,122 @@ class DraftModel:
     def _draft_impl(
         self, context: torch.Tensor, k: int, temperature: float
     ) -> tuple[list[int], torch.Tensor]:
+        """
+        Autoregressively generate k tokens using KV cache.
+
+        Instead of re-processing the entire context at each step, we:
+          1. Run a single forward pass on the full context to obtain
+             ``past_key_values`` (the KV cache).
+          2. For each of the k steps, feed only the newly sampled token
+             together with the cached key/value states.
+
+        This reduces the drafter's per-step complexity from O(seq_len²)
+        to O(seq_len) and eliminates all ``context.clone()`` / ``torch.cat``
+        allocations in the hot loop.
+        """
         greedy = temperature <= 1e-6
-        tokens = [context.squeeze(0).tolist()[-1]]  # last token of context
+        result_tokens: list[int] = []
         logits_list: list[torch.Tensor] = []
-        running = context.clone()
+
+        # Initial forward pass: process the full context and obtain KV cache.
+        with torch.no_grad():
+            out = self.model(context, use_cache=True)
+        past_key_values = out.past_key_values
 
         for _ in range(k):
-            with torch.no_grad():
-                out = self.model(running)
-            # Handle both (seq_len, V) and (1, seq_len, V) output shapes
-            # by flattening all leading dimensions and taking the last row
+            # Extract logits from the last position.
             logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]  # (V,)
             logits_list.append(logits.unsqueeze(0))  # (1, V) for stacking
             next_token = self._sample_next_token(logits, temperature, greedy)
-            tokens.append(next_token.item())
-            running = torch.cat([running, next_token.unsqueeze(0).unsqueeze(0)], dim=1)
+            result_tokens.append(next_token.item())
+
+            # Forward pass on the single new token using the KV cache.
+            with torch.no_grad():
+                out = self.model(
+                    next_token.unsqueeze(0).unsqueeze(0),
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+                past_key_values = out.past_key_values
 
         logits_to_return = torch.stack(logits_list, dim=0)  # (k, V)
         # Ensure logits are 2D: (k, V) not (k, 1, V)
         if logits_to_return.dim() == 3 and logits_to_return.shape[1] == 1:
             logits_to_return = logits_to_return.squeeze(1)
-        logger.info(
+        logger.debug(
             "Drafter generated %d tokens, logits shape: %s", k, tuple(logits_to_return.shape),
         )
-        return tokens[1:], logits_to_return
+        return result_tokens, logits_to_return
 
     def _draft_distill(
         self, context: torch.Tensor, k: int, temperature: float
     ) -> tuple[list[int], torch.Tensor]:
-        greedy = temperature <= 1e-6
-        tokens = [context.squeeze(0).tolist()[-1]]
-        logits_list: list[torch.Tensor] = []
-        running = context.clone()
+        """
+        Distillation-aware drafting with KV cache.
 
-        logger.info(
-            "DRAFTER DISTILL ctx_shape=%s last_token=%d k=%d",
-            tuple(context.shape), tokens[0], k,
+        Steps 0..k-2 use KV cache under ``torch.no_grad()`` to avoid
+        retaining activations.  The final step (k-1) runs with gradients
+        enabled so the distiller can backpropagate through the model
+        parameters.
+
+        Because the cached key/value states are created under ``no_grad``,
+        they must not be passed into the gradient-enabled final forward
+        pass (the autograd graph would be corrupted).  Instead we do a
+        single full-sequence forward without cache for the last step.
+        This is acceptable because it happens only once per draft.
+        """
+        greedy = temperature <= 1e-6
+        result_tokens: list[int] = []
+        logits_list: list[torch.Tensor] = []
+        sampled_tokens: list[torch.Tensor] = []
+
+        logger.debug(
+            "DRAFTER DISTILL ctx_shape=%s k=%d",
+            tuple(context.shape), k,
         )
 
-        for i in range(k):
-            use_cache = i < k - 1  # enable KV cache for all but the last step
-            if use_cache:
-                with torch.no_grad():
-                    out = self.model(running, use_cache=True)
-                logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
-                logits_list.append(logits.unsqueeze(0))
-                next_token = self._sample_next_token(logits, temperature, greedy)
-                tokens.append(next_token.item())
-                running = torch.cat([running, next_token.unsqueeze(0).unsqueeze(0)], dim=1)
-            else:
-                # Final step: gradients enabled
-                out = self.model(running, use_cache=False)
-                logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
-                logits_list.append(logits.unsqueeze(0))
-                next_token = self._sample_next_token(logits, temperature, greedy)
-                tokens.append(next_token.item())
+        # --- Steps 0..k-2: KV cache + no_grad ---
+        with torch.no_grad():
+            out = self.model(context, use_cache=True)
+        past_key_values = out.past_key_values
+
+        for i in range(k - 1):
+            logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
+            logits_list.append(logits.unsqueeze(0))
+            next_token = self._sample_next_token(logits, temperature, greedy)
+            result_tokens.append(next_token.item())
+            sampled_tokens.append(next_token)
+
+            with torch.no_grad():
+                out = self.model(
+                    next_token.unsqueeze(0).unsqueeze(0),
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+                past_key_values = out.past_key_values
+
+        # --- Step k-1: gradients enabled, no cache ---
+        # Reconstruct the full input: context + all sampled tokens.
+        if sampled_tokens:
+            full_input = torch.cat(
+                [context] + [t.unsqueeze(0).unsqueeze(0) for t in sampled_tokens],
+                dim=1,
+            )
+        else:
+            full_input = context
+
+        out = self.model(full_input, use_cache=False)
+        # Logits for the last sampled position (position k-1 relative to context end).
+        logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
+        logits_list.append(logits.unsqueeze(0))
+        next_token = self._sample_next_token(logits, temperature, greedy)
+        result_tokens.append(next_token.item())
 
         logits_to_return = torch.stack(logits_list, dim=0)  # (k, V)
         # Ensure logits are 2D: (k, V) not (k, 1, V)
         if logits_to_return.dim() == 3 and logits_to_return.shape[1] == 1:
             logits_to_return = logits_to_return.squeeze(1)
-        result_tokens = tokens[1:]  # Remove first token (last context token)
-        logger.info(
+        logger.debug(
             "Drafter (distill) generated %d tokens, logits shape: %s, result_tokens len=%d",
             k, tuple(logits_to_return.shape), len(result_tokens),
         )
