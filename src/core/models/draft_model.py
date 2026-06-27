@@ -90,49 +90,51 @@ class DraftModel:
         else:
             return self._draft_distill(context, k, temperature)
 
-    def _draft_impl_kv(
-        self,
-        context: torch.Tensor,
-        k: int,
-        temperature: float,
-        past_key_values=None,
-        past_len: int = 0,
-        cached_logits: torch.Tensor | None = None,
-    ) -> tuple[list[int], torch.Tensor, object]:
-        """
-        Autoregressively generate k tokens.
-
-        KV cache is built fresh inside this call (no external reuse) to avoid
-        dimension-mismatch bugs with transformers 5.x DynamicCache.
-        """
+    def _draft_impl_kv(self, context, k, temperature, past_key_values=None, past_len=0, cached_logits=None):
         greedy = temperature <= 1e-6
-        result_tokens: list[int] = []
-        logits_list: list[torch.Tensor] = []
+        result_tokens, logits_list = [], []
 
-        # Full context forward to build a fresh KV cache
-        out = self.model(context, use_cache=True)
+        if cached_logits is not None:
+            logits = cached_logits.squeeze(0) if cached_logits.dim() > 1 else cached_logits
+            out_pkv = past_key_values
+            next_token = self._sample_next_token(logits, temperature, greedy)
+            result_tokens.append(next_token.item())
+            logits_list.append(logits.unsqueeze(0))
+            new_input = next_token.unsqueeze(0).unsqueeze(0)
+            remaining = k - 1
+        elif past_key_values is not None and past_len > 0:
+            new_input = context[:, past_len:]   # only the unseen tail
+            out = self.model(new_input, past_key_values=past_key_values, use_cache=True)
+            out_pkv = out.past_key_values
+            logits = out.logits[:, -1, :].squeeze(0)
+            next_token = self._sample_next_token(logits, temperature, greedy)
+            result_tokens.append(next_token.item())
+            logits_list.append(logits.unsqueeze(0))
+            new_input = next_token.unsqueeze(0).unsqueeze(0)
+            remaining = k - 1
+        else:
+            out = self.model(context, use_cache=True)
+            out_pkv = out.past_key_values
+            logits = out.logits[:, -1, :].squeeze(0)
+            next_token = self._sample_next_token(logits, temperature, greedy)
+            result_tokens.append(next_token.item())
+            logits_list.append(logits.unsqueeze(0))
+            new_input = next_token.unsqueeze(0).unsqueeze(0)
+            remaining = k - 1
 
-        for _ in range(k):
-            logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
+        for _ in range(remaining):
+            out = self.model(new_input, past_key_values=out_pkv, use_cache=True)
+            out_pkv = out.past_key_values
+            logits = out.logits[:, -1, :].squeeze(0)
             logits_list.append(logits.unsqueeze(0))
             next_token = self._sample_next_token(logits, temperature, greedy)
             result_tokens.append(next_token.item())
-
-            out = self.model(
-                next_token.unsqueeze(0).unsqueeze(0),
-                past_key_values=out.past_key_values,
-                use_cache=True,
-            )
+            new_input = next_token.unsqueeze(0).unsqueeze(0)
 
         logits_to_return = torch.stack(logits_list, dim=0)
         if logits_to_return.dim() == 3 and logits_to_return.shape[1] == 1:
             logits_to_return = logits_to_return.squeeze(1)
-
-        logger.debug(
-            "Drafter generated %d tokens (KV cache reuse), logits shape: %s",
-            k, tuple(logits_to_return.shape),
-        )
-        return result_tokens, logits_to_return, out.past_key_values
+        return result_tokens, logits_to_return, out_pkv
 
     def _draft_distill(
         self, context: torch.Tensor, k: int, temperature: float
