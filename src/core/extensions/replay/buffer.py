@@ -285,7 +285,7 @@ class ReplayDistiller:
             if self._target_model is not None:
                 try:
                     with torch.no_grad():
-                        target_logits = self._target_model.verify(
+                        target_logits, _ = self._target_model.verify(
                             input_for_drafter, t.draft_tokens
                         )
                         target_logits = target_logits[:k]  # only the k draft positions

@@ -105,12 +105,15 @@ class PlainModelProfile:
 _original_decode_step = None
 
 
-def _profiled_decode_step(self, context, k, distiller=None, rng=None):
+def _profiled_decode_step(self, context, k, ctx_list=None, drafter_ctx=None, distiller=None, rng=None):
     """Instrumented version of SpeculativeDecoder._decode_step."""
     from dataclasses import dataclass, field
     from core.decoder.speculative import StepResult as _StepResult
 
-    ctx_list = context[0].tolist()
+    if ctx_list is None:
+        ctx_list = context[0].tolist()
+    if drafter_ctx is None:
+        drafter_ctx = context
 
     # Phase 1: cache lookup
     t0 = time.perf_counter()
@@ -120,7 +123,7 @@ def _profiled_decode_step(self, context, k, distiller=None, rng=None):
     # Phase 2: drafter forward
     t0 = time.perf_counter()
     draft_tokens_drafter, draft_logits = self.drafter.draft(
-        context, k, distill=(distiller is not None), temperature=self.temperature
+        drafter_ctx, k, distill=(distiller is not None), temperature=self.temperature
     )
     draft_ms = (time.perf_counter() - t0) * 1000
 
@@ -146,9 +149,11 @@ def _profiled_decode_step(self, context, k, distiller=None, rng=None):
     draft_tokens_target = self._translate_draft_tokens(draft_tokens_drafter, translated_probs)
     translate_ms = (time.perf_counter() - t0) * 1000
 
-    # Phase 4: target verify
+    # Phase 4: target verify (with KV cache)
     t0 = time.perf_counter()
-    target_logits = self.target.verify(context, draft_tokens_target)
+    target_logits, self._target_kv = self.target.verify(
+        context, draft_tokens_target, past_key_values=getattr(self, '_target_kv', None)
+    )
     verify_ms = (time.perf_counter() - t0) * 1000
 
     if translated_probs is not None:
@@ -166,13 +171,19 @@ def _profiled_decode_step(self, context, k, distiller=None, rng=None):
     bonus = self._residual_sample(target_logits, translated_probs, rejected_at, rng=rng)
     rs_ms = (time.perf_counter() - t0) * 1000
 
+    accepted_count = len(accepted)  # before bonus — matches main decoder
+
+    # Truncate target KV cache to keep only verified prefix
+    kv_keep = context.shape[1] + accepted_count
+    if self._target_kv is not None:
+        try:
+            from core.models.target_model import _truncate_pkv
+            self._target_kv = _truncate_pkv(self._target_kv, kv_keep)
+        except (TypeError, IndexError):
+            self._target_kv = None
+
     if bonus is not None:
         accepted = accepted + [bonus]
-
-    accepted_count = len(accepted) - (1 if bonus is not None and rejected_at >= 0 else 0)
-    # accepted_count was already returned by _accept_reject; bonus is extra
-    if bonus is None:
-        accepted_count = len(accepted)
 
     # Update cache
     self.cache.update_acceptance(ctx_list, accepted=accepted_count > 0)
@@ -354,12 +365,12 @@ def run_profiled_experiment(
     max_consec_zero = 5
     consec_zero = 0
 
+    generated = prompts[0][0].clone().to(device) if prompts else None
+    if generated is None:
+        return profile
+    prompt_len = generated.shape[1]
+
     for step_idx in range(max_new_tokens):
-        # Clone for generation
-        generated = prompts[0][0].clone().to(device) if prompts else None
-        if generated is None:
-            break
-        prompt_len = generated.shape[1]
         new_tokens = generated.shape[1] - prompt_len
         if new_tokens >= max_new_tokens:
             break

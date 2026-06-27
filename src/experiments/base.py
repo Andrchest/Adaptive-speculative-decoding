@@ -34,8 +34,6 @@ import abc
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-
-
 if TYPE_CHECKING:
     # Avoid circular imports at runtime; these are only used in type hints.
     from benchmarks.metrics.collector import BenchmarkCollector
@@ -577,6 +575,9 @@ class BaseExperiment(abc.ABC):
             draft_length=draft_length,
         )
 
+        if adaptive_fn is not None:
+            decoder._adaptive_controller_ref = adaptive_fn
+
         # Load dataset
         prompts = runner._load_dataset(cfg)
 
@@ -596,6 +597,30 @@ class BaseExperiment(abc.ABC):
 
         # MLflow setup
         runner._setup_mlflow(cfg)
+
+        # Measure plain target baseline TPS for speedup computation.
+        # Uses HF model.generate() with KV cache to avoid OOM.
+        baseline_tps = 0.0
+        try:
+            pid, plen = prompts[0]
+            pid = pid.to(runner.device)
+            plain_col = BenchmarkCollector(name="__plain_baseline__")
+            n_bl = min(32, getattr(cfg, "max_new_tokens", 128))
+            with torch.no_grad(), plain_col.record_sequence(prompt_len=plen) as rec:
+                out = target.model.generate(
+                    pid,
+                    max_new_tokens=n_bl,
+                    do_sample=False,
+                    pad_token_id=target.tokenizer.eos_token_id,
+                    use_cache=True,
+                )
+                new_tokens = max(0, out.shape[1] - pid.shape[1])
+                rec.add_step(draft_len=1, accepted=new_tokens)
+            baseline_tps = plain_col.summary()["tokens_per_sec"]
+            collector.set_baseline_tps(baseline_tps)
+            logger.info("Plain target baseline TPS: %.1f tok/s", baseline_tps)
+        except Exception:
+            logger.warning("Baseline TPS measurement failed — speedup will not be reported", exc_info=True)
 
         # Decode context
         decode_ctx = DecodeContext(
@@ -672,7 +697,7 @@ class BaseExperiment(abc.ABC):
                 for sr in decoder._step_results[-max_new_tokens:]:
                     seq_rec.add_step(
                         draft_len=sr.draft_length,
-                        accepted=sr.accepted_count,
+                        accepted=len(sr.accepted_tokens),
                         cache_hit=sr.cache_hit,
                     )
             decoder._step_results.clear()
