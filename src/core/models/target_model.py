@@ -258,7 +258,7 @@ class TargetModel:
                 )
             # Copy draft tokens to GPU buffer — single small transfer
             self._draft_buffer[0, :k].copy_(
-                torch.tensor(draft_tokens, dtype=torch.long)
+                torch.tensor(draft_tokens, dtype=torch.long, device=context.device)
             )
             draft_tensor = self._draft_buffer[:, :k]
         else:

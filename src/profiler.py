@@ -25,14 +25,14 @@ import pstats
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Any, Annotated
+from typing import Annotated
 
 import numpy as np
 import torch
 import typer
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -107,7 +107,6 @@ _original_decode_step = None
 
 def _profiled_decode_step(self, context, k, ctx_list=None, drafter_ctx=None, distiller=None, rng=None):
     """Instrumented version of SpeculativeDecoder._decode_step."""
-    from dataclasses import dataclass, field
     from core.decoder.speculative import StepResult as _StepResult
 
     if ctx_list is None:
@@ -122,7 +121,7 @@ def _profiled_decode_step(self, context, k, ctx_list=None, drafter_ctx=None, dis
 
     # Phase 2: drafter forward
     t0 = time.perf_counter()
-    draft_tokens_drafter, draft_logits = self.drafter.draft(
+    draft_tokens_drafter, draft_logits, _ = self.drafter.draft(
         drafter_ctx, k, distill=(distiller is not None), temperature=self.temperature
     )
     draft_ms = (time.perf_counter() - t0) * 1000
@@ -161,7 +160,7 @@ def _profiled_decode_step(self, context, k, ctx_list=None, drafter_ctx=None, dis
 
     # Phase 5: accept/reject
     t0 = time.perf_counter()
-    accepted, rejected_at = self._accept_reject(
+    accepted, rejected_at = self._accept_reject_gpu(
         draft_tokens_target, target_logits, translated_probs, rng=rng
     )
     ar_ms = (time.perf_counter() - t0) * 1000
@@ -269,9 +268,9 @@ def run_profiled_experiment(
     max_new_tokens: int,
 ) -> ExperimentProfile:
     """Run one experiment with detailed profiling."""
+    from core.decoder.speculative import SpeculativeDecoder
     from experiments.base import BuildContext
-    from experiments.runner import ExperimentConfig, ExperimentRunner
-    from core.decoder.speculative import SpeculativeDecoder, StepResult
+    from experiments.runner import ExperimentRunner
 
     profile = ExperimentProfile(name=exp.meta.name)
 
@@ -431,7 +430,7 @@ def profile_plain_target(
     max_new_tokens: int,
 ) -> PlainModelProfile:
     """Profile the target model running alone (no speculative decoding)."""
-    from transformers import AutoTokenizer, AutoModelForCausalLM
+    from transformers import AutoModelForCausalLM, AutoTokenizer
 
     profile = PlainModelProfile(name=f"plain_target_{target_path.split('/')[-1]}")
     profile.n_prompts = max_samples
@@ -655,7 +654,6 @@ def main(
 ):
     """Profile Adaptive Speculative Decoding experiments."""
     from experiments import ABLATION_SUITE, discover_experiments
-    from experiments.runner import ExperimentRunner
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     console.print(Panel(

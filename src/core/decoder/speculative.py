@@ -328,11 +328,12 @@ class SpeculativeDecoder:
                 )
                 with torch.no_grad():
                     from core.models.target_model import _to_cache
+                    need_hidden = hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None
                     try:
                         bonus_out = self.drafter.model(
                             bonus_tensor,
                             past_key_values=_to_cache(self._drafter_kv),
-                            output_hidden_states=True,
+                            output_hidden_states=need_hidden,
                             use_cache=True,
                         )
                     except RuntimeError as e:
