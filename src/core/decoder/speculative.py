@@ -101,6 +101,11 @@ class SpeculativeDecoder:
         # Target KV cache state
         self._target_kv = None
 
+        self._same_vocab = (
+            translator.rule1.drafter_size == translator.rule1.target_size and
+            translator.rule1._valid_mask.all()
+        )
+
     # ------------------------------------------------------------------
     # Public
     # ------------------------------------------------------------------
@@ -279,7 +284,10 @@ class SpeculativeDecoder:
         if draft_logits is not None:
             with torch.no_grad():
                 t_eff = max(self.temperature, 1e-6)
-                translated_probs = self.translator.translate(draft_logits / t_eff)
+                if self._same_vocab:
+                    translated_probs = F.softmax(draft_logits.float() / t_eff, dim=-1)
+                else:
+                    translated_probs = self.translator.translate(draft_logits / t_eff)
                 translated_probs = _align_last_dim(
                     translated_probs, self.translator.rule1.target_size
                 )
@@ -369,7 +377,7 @@ class SpeculativeDecoder:
                 self._target_kv = _truncate_pkv(self._target_kv, kv_keep)
             except (TypeError, IndexError):
                 self._target_kv = None
-            self.target.reset_kv_state()  # fresh KV attempt per prompt (P0: sticky False fix)
+            # self.target.reset_kv_state()  # fresh KV attempt per prompt (P0: sticky False fix)
 
         # 9. Update cache stats + acceptance EMA (lookup removed for speed).
         self.cache.update_acceptance(ctx_list, accepted=accepted_count > 0)
