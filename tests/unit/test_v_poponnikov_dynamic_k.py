@@ -25,6 +25,18 @@ def _load_research_module():
     return module
 
 
+def _load_comparison_module():
+    root = pathlib.Path(__file__).resolve().parents[2]
+    path = root / "research" / "v.poponnikov" / "notebooks" / "dynamic_k_comparison.py"
+    spec = importlib.util.spec_from_file_location("v_poponnikov_dynamic_k_comparison", path)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class _FakeOutput:
     def __init__(self, logits: torch.Tensor) -> None:
         self.logits = logits
@@ -180,3 +192,29 @@ def test_research_experiment_configs_are_valid() -> None:
         assert isinstance(cfg, ExperimentConfig)
         assert cfg.use_speedup_adaptive is True
         assert "v.poponnikov" in experiment.meta.tags
+
+
+def test_dynamic_k_comparison_csv_keeps_research_metrics(tmp_path) -> None:
+    module = _load_comparison_module()
+    results = [
+        {
+            "config": {"name": "01_baseline"},
+            "metrics": {"tokens_per_sec": 10.0, "acceptance_rate": 0.5},
+        },
+        {
+            "config": {"name": "stochastic_consensus_k"},
+            "metrics": {
+                "tokens_per_sec": 12.0,
+                "consensus_k_mean_selected_k": 3.5,
+                "consensus_k_k_distribution": {1: 2, 3: 4},
+            },
+        },
+    ]
+    path = tmp_path / "dynamic_k_comparison.csv"
+
+    module.write_union_csv(results, path)
+
+    text = path.read_text(encoding="utf-8")
+    assert "tokens_per_sec" in text
+    assert "consensus_k_mean_selected_k" in text
+    assert '"{""1"": 2, ""3"": 4}"' in text

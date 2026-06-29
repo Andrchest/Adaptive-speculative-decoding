@@ -165,6 +165,40 @@ python src/main.py --experiment 01_baseline --tiny -n 5 --max-new-tokens 32 --no
 python src/main.py --experiment 08_+speedup_adapt --tiny -n 5 --max-new-tokens 32 --no-mlflow
 ```
 
+Comparison with plots:
+
+Notebook workflow for online IDEs without terminal access:
+
+1. Open `research/v.poponnikov/notebooks/dynamic_k_comparison.ipynb`.
+2. Run the cells from top to bottom.
+3. Keep the tiny smoke run enabled first.
+4. After the smoke run succeeds, set `RUN_REAL = True` in the real Qwen
+   comparison cell and run it.
+
+Command-line workflow:
+
+```powershell
+$env:PYTHONPATH = "src"
+.\.venv\Scripts\python.exe research\v.poponnikov\notebooks\dynamic_k_comparison.py `
+  --tiny `
+  --samples 5 `
+  --max-new-tokens 32 `
+  --device cuda
+```
+
+This runs `01_baseline`, `08_+speedup_adapt`, `stochastic_consensus_k`, and
+`latent_regime_k` in one comparison pass. Results are written to
+`research/v.poponnikov/results/dynamic_k_comparison/`, including
+`dynamic_k_comparison.csv`. Plots are written to
+`research/v.poponnikov/plots/dynamic_k_comparison/`.
+
+To regenerate plots from existing JSON results without rerunning models:
+
+```powershell
+$env:PYTHONPATH = "src"
+.\.venv\Scripts\python.exe research\v.poponnikov\notebooks\dynamic_k_comparison.py --plot-only
+```
+
 ## Open Questions
 
 - Which stochastic perturbation gives the best signal-to-cost ratio: sampling
