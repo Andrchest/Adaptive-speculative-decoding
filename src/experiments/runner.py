@@ -27,6 +27,10 @@ import torch
 
 logger = logging.getLogger(__name__)
 
+# Global log level, set by main.py before experiments run.
+# Possible values: "QUIET", "NORMAL", "VERBOSE"
+_log_level: str = "QUIET"
+
 try:
     import mlflow
 
@@ -117,6 +121,7 @@ class ExperimentConfig:
     mlflow_experiment: str = "adaptive_speculative"
     mlflow_tracking_uri: str = "sqlite:///mlflow.db"
     log_every: int = 50
+    log_level: str = "QUIET"  # QUIET | NORMAL | VERBOSE
     seed: int = 42
 
 
@@ -174,13 +179,22 @@ class ExperimentRunner:
 
         gc.collect()
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-            logger.info(
-                "GPU memory: %.1f MB used / %.1f MB total",
-                torch.cuda.memory_allocated() / 1e6,
-                torch.cuda.memory_reserved() / 1e6,
-            )
+            try:
+                torch.cuda.empty_cache()
+            except RuntimeError:
+                logger.warning("CUDA empty_cache failed — GPU may be in error state")
+            try:
+                torch.cuda.synchronize()
+            except RuntimeError:
+                logger.warning("CUDA synchronize failed — GPU may be in error state")
+            try:
+                logger.info(
+                    "GPU memory: %.1f MB used / %.1f MB total",
+                    torch.cuda.memory_allocated() / 1e6,
+                    torch.cuda.memory_reserved() / 1e6,
+                )
+            except RuntimeError:
+                logger.warning("Could not query GPU memory — GPU may be in error state")
 
     # ------------------------------------------------------------------
     # High-level run

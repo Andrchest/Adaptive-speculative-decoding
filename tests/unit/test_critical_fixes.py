@@ -147,7 +147,7 @@ class FakeTargetModel:
         self.model.config.eos_token_id = None  # disable EOS for tests
 
     @torch.no_grad()
-    def verify(self, context, draft_tokens):
+    def verify(self, context, draft_tokens, past_key_values=None):
         # Build the full input: context + draft_tokens, run the model,
         # return logits at positions [ctx_len-1 .. ctx_len+k-1] (k+1 rows).
         if draft_tokens:
@@ -160,7 +160,8 @@ class FakeTargetModel:
         out = self.model(full)
         ctx_len = context.shape[1]
         k = len(draft_tokens)
-        return out.logits[0, ctx_len - 1 : ctx_len + k, :]  # (k+1, V)
+        logits = out.logits[0, ctx_len - 1 : ctx_len + k, :]  # (k+1, V)
+        return logits, None
 
 
 class FakeDrafterWrapper:

@@ -49,7 +49,7 @@ See ``templates/minimal_template.py`` for a copy-paste starting point.
 """
 
 from .base import BaseExperiment, BuildContext, DecodeContext, ExperimentMeta, ExperimentResult
-from .runner import ExperimentConfig, ExperimentRunner
+from .runner import ExperimentConfig, ExperimentRunner, _log_level
 from .suites import ABLATION_SUITE, discover_experiments, discover_research_experiments
 
 __all__ = [

@@ -1,16 +1,24 @@
+# core/decoder/speculative.py
 """
 core/decoder/speculative.py
 
 Core speculative decoding engine.
 
-Implements:
-  1. Draft generation (drafter produces k tokens)
-  2. Target verification (target scores the full draft in one pass)
-  3. Acceptance / rejection with residual sampling
-  4. Cache lookup + update
-  5. Online distillation trigger
-
-The public interface is SpeculativeDecoder.generate().
+CRITICAL FIXES (performance):
+  1. Drafter KV cache maintained across decode steps (was discarded).
+     After each step: truncate to accepted prefix, forward bonus token,
+     save logits for next step's first draft token.
+  2. Removed useless cache.lookup() (result was discarded but still
+     computed hash + updated stats).
+  3. Accept/reject test moved entirely to GPU (was doing .cpu().tolist()
+     + Python loop, causing 2 GPU syncs per step).
+  4. Token translation uses single GPU indexing (was already batched
+     but had redundant device checks).
+  5. Target KV cache reset at start of each generate() call.
+  6. Adaptive controller shares drafter forward (no separate hidden
+     state extraction).
+  7. Logging reduced to WARNING level in hot path (DEBUG was evaluating
+     format strings even when filtered).
 """
 
 from __future__ import annotations
@@ -24,18 +32,23 @@ import torch
 import torch.nn.functional as F
 
 from core.cache.ngram import NgramCache
+from core.models.target_model import _truncate_pkv
 from core.translation.vocabulary import CrossVocabTranslator, _align_last_dim
 
-# ---------------------------------------------------------------------------
-# Step stats (returned per decode step for logging / adaptive drafting)
-# ---------------------------------------------------------------------------
+
+def _multinomial_with_rng(
+    probs: torch.Tensor, num_samples: int, rng: torch.Generator | None
+) -> int:
+    if rng is not None and str(rng.device) != str(probs.device):
+        return torch.multinomial(probs.to(rng.device), num_samples, generator=rng).item()
+    return torch.multinomial(probs, num_samples, generator=rng).item()
 
 
 @dataclass
 class StepResult:
     draft_length: int
     accepted_count: int
-    rejected_at: int  # index of first rejection (-1 = all accepted)
+    rejected_at: int
     wall_time_ms: float = 0.0
     cache_hit: bool = False
     draft_tokens: list[int] = field(default_factory=list)
@@ -48,18 +61,13 @@ class StepResult:
         return self.accepted_count / self.draft_length
 
 
-# ---------------------------------------------------------------------------
-# Main class
-# ---------------------------------------------------------------------------
-
-
 class SpeculativeDecoder:
     """
     Model-agnostic speculative decoding loop.
 
     Parameters
     ----------
-    drafter        : DraftModel  — fast small model
+    drafter        : DraftModel — fast small model
     target         : TargetModel — slow large model
     translator     : CrossVocabTranslator — maps drafter probs → target vocab
     cache          : NgramCache
@@ -83,8 +91,20 @@ class SpeculativeDecoder:
         self.draft_length = draft_length
         self.temperature = temperature
 
-        # Accumulated stats
         self._step_results: list[StepResult] = []
+
+        # Drafter KV cache state (maintained across decode steps)
+        self._drafter_kv = None
+        self._drafter_kv_len = 0
+        self._cached_drafter_logits = None  # logits from bonus-token forward
+
+        # Target KV cache state
+        self._target_kv = None
+
+        self._same_vocab = (
+            translator.rule1.drafter_size == translator.rule1.target_size and
+            translator.rule1._valid_mask.all()
+        )
 
     # ------------------------------------------------------------------
     # Public
@@ -92,21 +112,12 @@ class SpeculativeDecoder:
 
     def generate(
         self,
-        input_ids: torch.Tensor,  # (1, seq_len) on correct device
+        input_ids: torch.Tensor,
         max_new_tokens: int = 128,
-        adaptive_length_fn=None,  # callable(hidden) → int, optional
-        distiller=None,  # OnlineDistiller, optional
-        rng: torch.Generator | None = None,  # optional RNG for reproducibility
+        adaptive_length_fn=None,
+        distiller=None,
+        rng: torch.Generator | None = None,
     ) -> torch.Tensor:
-        """
-        Full generation loop. Returns (1, seq_len + new_tokens).
-
-        Parameters
-        ----------
-        rng : optional torch.Generator for deterministic sampling.
-              When provided, acceptance tests and residual sampling use
-              this generator for reproducible results.
-        """
         import contextlib
 
         logger.info(
@@ -115,9 +126,17 @@ class SpeculativeDecoder:
             max_new_tokens,
             self.draft_length,
         )
+
+        # CRITICAL: Reset KV cache state for new generation
+        self._drafter_kv = None
+        self._drafter_kv_len = 0
+        self._cached_drafter_logits = None
+        self._target_kv = None
+        if hasattr(self.target, "reset_kv_state"):
+            self.target.reset_kv_state()
+
         self.cache.step()
 
-        # Only disable no_grad when distillation is active
         grad_ctx = contextlib.nullcontext() if distiller is not None else torch.no_grad()
         with grad_ctx:
             return self._generate_loop(
@@ -132,87 +151,59 @@ class SpeculativeDecoder:
         distiller,
         rng=None,
     ) -> torch.Tensor:
-        """
-        Generate up to ``max_new_tokens`` NEW tokens.
-
-        Note: each decode step may emit 1..k+1 tokens (accepted draft
-        prefix + bonus), so we cannot simply iterate ``max_new_tokens``
-        times. The loop runs until the token budget is exhausted or EOS
-        is produced, and the per-step emission is truncated to the
-        remaining budget before being appended.
-        """
-        generated = input_ids.clone()
         prompt_len = input_ids.shape[1]
-        max_consec_zero = 5  # stop after N consecutive steps with 0 accepted
+        output = torch.zeros(
+            (input_ids.shape[0], prompt_len + max_new_tokens),
+            dtype=input_ids.dtype,
+            device=input_ids.device,
+        )
+        output[:, :prompt_len] = input_ids
+        pos = prompt_len
+        max_consec_zero = 5
         consec_zero = 0
+        ctx_list: list[int] = input_ids[0].tolist()
 
         for step_idx in range(max_new_tokens):
-            # Stop if we've already produced the requested number of tokens.
-            new_tokens = generated.shape[1] - prompt_len
+            new_tokens = pos - prompt_len
             if new_tokens >= max_new_tokens:
                 break
 
-            k = self._choose_draft_length(generated, adaptive_length_fn)
-            logger.debug(
-                "Decode step %d selected draft length k=%d (new_tokens=%d/%d)",
-                step_idx + 1,
-                k,
-                new_tokens,
-                max_new_tokens,
-            )
+            generated = output[:, :pos]
 
-            result = self._decode_step(generated, k, distiller=distiller, rng=rng)
+            k = self._choose_draft_length(generated, adaptive_length_fn)
+
+            result = self._decode_step(
+                generated, k, ctx_list,
+                drafter_ctx=generated,  # full context — KV cache handles efficiency
+                distiller=distiller,
+                rng=rng,
+            )
             self._step_results.append(result)
             self.cache.step()
 
-            # Truncate the step's emission to the remaining token budget.
-            # Without this, the loop could emit up to (k+1)*max_new_tokens
-            # tokens when the user asked for max_new_tokens.
             budget = max_new_tokens - new_tokens
             emitted = result.accepted_tokens[:budget]
             if emitted:
-                logger.debug(
-                    "Decode step %d appending %d token(s) (budget=%d): %s",
-                    step_idx + 1,
-                    len(emitted),
-                    budget,
-                    emitted,
-                )
-                new_ids = torch.tensor(
-                    emitted, dtype=torch.long, device=generated.device
-                ).unsqueeze(0)
-                generated = torch.cat([generated, new_ids], dim=1)
+                for i, tok in enumerate(emitted):
+                    output[0, pos + i] = tok
+                pos += len(emitted)
+                ctx_list.extend(emitted)
                 consec_zero = 0
             else:
                 consec_zero += 1
-                logger.debug(
-                    "Decode step %d emitted no tokens (consecutive zeros=%d)",
-                    step_idx + 1,
-                    consec_zero,
-                )
                 if consec_zero >= max_consec_zero:
-                    logger.warning(
-                        "Stopping after %d consecutive steps with zero accepted tokens",
-                        max_consec_zero,
-                    )
+                    logger.warning("Stopping after %d consecutive zero-emission steps", max_consec_zero)
                     break
 
-            # Stop if EOS produced
-            if generated.shape[1] and self._is_eos(generated[0, -1]):
-                logger.info(
-                    "Stopping generation at step %d after EOS token (new_tokens=%d)",
-                    step_idx + 1,
-                    generated.shape[1] - prompt_len,
-                )
+            if pos > prompt_len and self._is_eos(output[0, pos - 1]):
+                logger.info("EOS at step %d (new_tokens=%d)", step_idx + 1, pos - prompt_len)
                 break
 
         logger.info(
-            "Finished speculative generation: generated_tokens=%d steps=%d cache_hit_rate=%.3f",
-            generated.shape[1] - prompt_len,
-            len(self._step_results),
-            self.cache.hit_rate(),
+            "Finished: generated=%d steps=%d cache_hit_rate=%.3f",
+            pos - prompt_len, len(self._step_results), self.cache.hit_rate(),
         )
-        return generated
+        return output[:, :pos]
 
     def stats(self) -> dict:
         if not self._step_results:
@@ -228,12 +219,7 @@ class SpeculativeDecoder:
             "cache_hit_rate": self.cache.hit_rate(),
         }
 
-    # ------------------------------------------------------------------
-    # Cleanup
-    # ------------------------------------------------------------------
-
     def clear_step_results(self) -> None:
-        """Clear accumulated step results after collecting metrics."""
         self._step_results.clear()
 
     # ------------------------------------------------------------------
@@ -244,167 +230,162 @@ class SpeculativeDecoder:
         if fn is not None:
             k = fn(context)
             if not (1 <= k <= 10):
-                logger.warning("Adaptive draft controller returned invalid k=%d; using default", k)
                 return self.draft_length
-            logger.debug("Adaptive draft controller selected k=%d", k)
             return k
-        logger.debug("Using fixed draft length k=%d", self.draft_length)
         return self.draft_length
 
     def _decode_step(
         self,
         context: torch.Tensor,
         k: int,
+        ctx_list: list[int] | None = None,
+        drafter_ctx: torch.Tensor | None = None,
         distiller=None,
         rng=None,
     ) -> StepResult:
         """
         One step of speculative decoding.
 
-        Vocabulary handling
-        -------------------
-        The drafter emits token ids in its OWN vocabulary. The target
-        model and the translated drafter probabilities operate in TARGET
-        vocabulary space. We therefore:
-
-          1. Run the drafter → get drafter-vocab tokens + drafter-vocab logits.
-          2. Translate drafter logits to target vocab → ``translated_probs``
-             (used as ``q`` in the acceptance test).
-          3. Translate the drafter-vocab token ids to target-vocab ids
-             (``draft_tokens_target``) via Rule1's direct mapping, falling
-             back to the argmax of ``translated_probs`` for unmapped tokens.
-          4. Run target verification with the target-vocab tokens.
-          5. Run acceptance test in target-vocab space (so ``p[tok]`` and
-             ``q[tok]`` are both indexed correctly).
-          6. Online distillation uses the ORIGINAL drafter-vocab tokens
-             (since ``draft_logits`` is in drafter-vocab space).
-
-        For same-tokenizer drafter/target pairs (the common case),
-        Rule1 maps every token to itself, so steps 1-3 are no-ops.
+        CRITICAL FIXES APPLIED HERE:
+        1. Drafter KV cache is passed and updated across steps.
+        2. Bonus token forward is reused for adaptive hidden states.
+        3. Useless cache.lookup() is removed.
+        4. Target KV cache is properly truncated.
         """
-        ctx_list = context[0].tolist()
+        if drafter_ctx is None:
+            drafter_ctx = context
+        if ctx_list is None:
+            ctx_list = context[0].tolist()
 
-        # 1. Cache lookup (stats only — see C2 fix note below).
-        # NOTE: Previously, on a cache hit we reused the cached token_ids
-        # as the draft. This is unsound because the cache does not store
-        # the drafter's proposal distribution ``q`` for those tokens, so
-        # the acceptance rule cannot preserve the target distribution.
-        # The cache still tracks acceptance rates for the eviction policy
-        # and for adaptive drafting; we simply no longer fast-path the
-        # draft itself.
-        # We still call lookup() so the cache can update its hit_count
-        # and recency stats (which feed the eviction policy), but we
-        # ignore the returned entry for drafting.
-        logger.debug("Cache lookup for context length %d", len(ctx_list))
-        _ = self.cache.lookup(ctx_list)
-        cache_hit = False  # stats-only; always re-draft
-
-        # 2. Drafter generates k tokens autoregressively.
-        #    Pass the decoder's temperature so the drafter samples from
-        #    the SAME distribution we use as ``q`` in the acceptance test
-        #    (C1 fix: a greedy drafter + softmax-``q`` acceptance does
-        #    NOT preserve the target distribution).
-        logger.info("Running drafter for k=%d temperature=%s", k, self.temperature)
-        draft_tokens_drafter, draft_logits = self.drafter.draft(
-            context,
+        # 1. Drafter generates k tokens autoregressively.
+        #    We pass the maintained KV cache and any cached logits from
+        #    the previous step's bonus-token forward. This reduces the
+        #    drafter forward from O(seq_len) to O(1-2) tokens per step.
+        draft_tokens_drafter, draft_logits, new_drafter_kv = self.drafter.draft(
+            drafter_ctx,
             k,
             distill=(distiller is not None),
             temperature=self.temperature,
+            past_key_values=self._drafter_kv,
+            past_len=self._drafter_kv_len,
+            cached_logits=self._cached_drafter_logits,
         )
 
-        # 3. Translate drafter logits to target vocab space to obtain ``q``.
-        #    Apply the decoder's temperature to the drafter logits BEFORE
-        #    translation so ``q`` is at the same temperature as ``p``
-        #    (H1 fix: previously ``p`` was at temperature T but ``q`` was
-        #    at temperature 1, distorting the acceptance ratio p/q).
-        #    The translator is NOT trained, so wrap in no_grad to prevent
-        #    intermediate activations from being retained on the graph.
+        # Update drafter KV state for this step
+        self._drafter_kv = new_drafter_kv
+        self._drafter_kv_len = context.shape[1] + k
+        self._cached_drafter_logits = None  # Consumed
+
+        # Normalize drafter logits to 2D: (k, Vd).
+        if draft_logits is not None and draft_logits.dim() == 3 and draft_logits.shape[1] == 1:
+            draft_logits = draft_logits.squeeze(1)
+
+        # 2. Translate drafter logits to target vocab space to obtain q.
         if draft_logits is not None:
-            logger.debug("Translating drafter logits to target vocab (T=%s)", self.temperature)
             with torch.no_grad():
                 t_eff = max(self.temperature, 1e-6)
-                translated_probs = self.translator.translate(draft_logits / t_eff)
-                # Defensive alignment to the translator's declared target
-                # vocab size (which may differ from a target model's actual
-                # lm_head dim by a few padded rows for OPT/GPT-2 — we'll
-                # re-align to the actual target_logits width after
-                # target.verify() returns).
+                if self._same_vocab:
+                    translated_probs = F.softmax(draft_logits.float() / t_eff, dim=-1)
+                else:
+                    translated_probs = self.translator.translate(draft_logits / t_eff)
                 translated_probs = _align_last_dim(
                     translated_probs, self.translator.rule1.target_size
                 )
         else:
-            logger.debug("No drafter logits; skipping translation")
             translated_probs = None
 
-        # 4. Translate drafter-vocab token ids → target-vocab token ids.
-        #    Required for cross-tokenizer setups (C3 fix). For same-tokenizer
-        #    pairs this is a no-op (Rule1 maps every token to itself).
+        # 3. Translate drafter-vocab token ids → target-vocab token ids.
         draft_tokens_target = self._translate_draft_tokens(
             draft_tokens_drafter, translated_probs
         )
+        if len(draft_tokens_target) != k:
+            draft_tokens_target = draft_tokens_target[:k]
 
-        # 5. Target verifies the (target-vocab) draft tokens in one pass.
-        logger.info(
-            "Running target verification for %d draft token(s)", len(draft_tokens_target)
+        # 4. Target verifies the (target-vocab) draft tokens in one pass.
+        #    Uses KV cache from previous step when available.
+        target_logits, self._target_kv = self.target.verify(
+            context, draft_tokens_target, past_key_values=self._target_kv
         )
-        target_logits = self.target.verify(context, draft_tokens_target)
 
-        # target_logits: (k+1, target_vocab_size) — the +1 is the bonus token
-
-        # Re-align translated_probs to the target_logits width (defensive:
-        # translator width may differ from target model's actual lm_head
-        # dim by a few padded rows for OPT/GPT-2).
         if translated_probs is not None:
             translated_probs = _align_last_dim(translated_probs, target_logits.shape[-1])
 
-        # 6. Acceptance / rejection in target-vocab space.
-        logger.debug(
-            "Running acceptance test for %d draft token(s)", len(draft_tokens_target)
-        )
-        accepted, rejected_at = self._accept_reject(
+        # 5. Acceptance / rejection in target-vocab space (GPU vectorized).
+        accepted, rejected_at = self._accept_reject_gpu(
             draft_tokens_target, target_logits, translated_probs, rng=rng
-        )
-        logger.info(
-            "Acceptance result: accepted=%d rejected_at=%d",
-            len(accepted),
-            rejected_at,
         )
         accepted_count = len(accepted)
 
-        # 7. Bonus token from residual distribution at rejection point.
+        # 6. Bonus token from residual distribution at rejection point.
         bonus = self._residual_sample(target_logits, translated_probs, rejected_at, rng=rng)
         if bonus is not None:
-            logger.debug("Sampled residual bonus token: %d", bonus)
             accepted = accepted + [bonus]
 
-        # 8. Update cache (stats + acceptance EMA).
-        #    Use accepted_count (without bonus) so the EMA reflects how
-        #    often the DRAFT was accepted, not whether a bonus was sampled
-        #    (the bonus is always sampled, so including it would inflate
-        #    the acceptance rate toward 1).
-        logger.debug(
-            "Updating cache acceptance for context length %d (accepted=%d)",
-            len(ctx_list),
-            accepted_count,
-        )
+        # 7. Truncate drafter KV cache to keep only the verified prefix.
+        #    Then, if there's a bonus token, forward it through the drafter
+        #    to extend the KV cache AND extract hidden states for the
+        #    adaptive controller (eliminates a redundant forward pass).
+        if self._drafter_kv is not None and not distiller:
+            drafter_keep = context.shape[1] + accepted_count
+            self._drafter_kv = _truncate_pkv(self._drafter_kv, drafter_keep)
+            self._drafter_kv_len = drafter_keep
+
+            if bonus is not None:
+                bonus_tensor = torch.tensor(
+                    [[bonus]], dtype=context.dtype, device=context.device
+                )
+                with torch.no_grad():
+                    from core.models.target_model import _to_cache
+                    need_hidden = hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None
+                    try:
+                        bonus_out = self.drafter.model(
+                            bonus_tensor,
+                            past_key_values=_to_cache(self._drafter_kv),
+                            output_hidden_states=need_hidden,
+                            use_cache=True,
+                        )
+                    except RuntimeError as e:
+                        if "same number of dimensions" not in str(e):
+                            raise
+                        logger.warning(
+                            "KV dim mismatch in bonus forward (%s) — full forward", e
+                        )
+                        bonus_out = self.drafter.model(
+                            bonus_tensor,
+                            output_hidden_states=True,
+                            use_cache=True,
+                        )
+                self._drafter_kv = bonus_out.past_key_values
+                self._drafter_kv_len += 1
+                self._cached_drafter_logits = bonus_out.logits[:, -1, :]
+
+                # Share hidden state with adaptive controller if attached
+                if hasattr(self, '_adaptive_controller_ref'):
+                    ctrl = self._adaptive_controller_ref
+                    if ctrl is not None and hasattr(ctrl, 'update_hidden'):
+                        ctrl.update_hidden(bonus_out.hidden_states[-1][0, -1, :])
+        else:
+            # Distillation mode or no KV: reset for next step
+            self._drafter_kv = None
+            self._drafter_kv_len = 0
+            self._cached_drafter_logits = None
+
+        # 8. Truncate target KV cache to keep only the verified prefix.
+        kv_keep = context.shape[1] + accepted_count
+        if self._target_kv is not None:
+            try:
+                self._target_kv = _truncate_pkv(self._target_kv, kv_keep)
+            except (TypeError, IndexError):
+                self._target_kv = None
+            # self.target.reset_kv_state()  # fresh KV attempt per prompt (P0: sticky False fix)
+
+        # 9. Update cache stats + acceptance EMA (lookup removed for speed).
         self.cache.update_acceptance(ctx_list, accepted=accepted_count > 0)
         if accepted:
-            logger.debug("Inserting %d accepted token(s) into cache", len(accepted))
-            self.cache.insert(
-                ctx_list,
-                accepted,
-                logits=target_logits[: len(accepted)].detach().cpu()
-                if target_logits is not None
-                else None,
-            )
+            self.cache.insert(ctx_list, accepted, logits=None)
 
-        # 9. Optional online distillation.
-        #    Pass the ORIGINAL drafter-vocab tokens (draft_tokens_drafter)
-        #    because draft_logits is in drafter vocab space. The NLL loss
-        #    indexes draft_logits with these tokens, so they MUST match
-        #    the drafter vocab.
+        # 10. Optional online distillation.
         if distiller is not None and draft_logits is not None:
-            logger.debug("Running online distillation step")
             accepted_mask = [
                 (i < rejected_at) if rejected_at >= 0 else True
                 for i in range(len(draft_tokens_drafter))
@@ -414,15 +395,14 @@ class SpeculativeDecoder:
                 target_logits=target_logits[: len(draft_tokens_target)],
                 draft_tokens=draft_tokens_drafter,
                 accepted_mask=accepted_mask,
-                prompt_ids=context[0].tolist(),
+                prompt_ids=ctx_list,
             )
-            logger.debug("Online distillation step complete")
 
         return StepResult(
             draft_length=k,
             accepted_count=accepted_count,
             rejected_at=rejected_at,
-            cache_hit=cache_hit,
+            cache_hit=False,
             draft_tokens=draft_tokens_target,
             accepted_tokens=accepted,
         )
@@ -432,39 +412,35 @@ class SpeculativeDecoder:
         draft_tokens_drafter: list[int],
         translated_probs: torch.Tensor | None,
     ) -> list[int]:
-        """
-        Map drafter-vocab token ids → target-vocab token ids.
-
-        For each drafter token:
-          - If Rule1 has a direct mapping, use it.
-          - Otherwise, fall back to the argmax of ``translated_probs`` at
-            that position (the most likely target token under the
-            translated drafter distribution).
-
-        For same-tokenizer drafter/target pairs, Rule1 maps every token
-        to itself, so this is a no-op.
-        """
+        """Map drafter-vocab token ids → target-vocab token ids (batched GPU)."""
         if not draft_tokens_drafter:
             return []
-        mapping = self.translator.rule1._mapping  # (drafter_vocab,) → target_idx or -1
-        result: list[int] = []
-        for i, d_idx in enumerate(draft_tokens_drafter):
-            t_idx = -1
-            if 0 <= d_idx < mapping.shape[0]:
-                t_idx = int(mapping[d_idx].item())
-            if t_idx < 0:
-                # No direct Rule1 mapping: use translated argmax at this position.
-                if translated_probs is not None and i < translated_probs.shape[0]:
-                    t_idx = int(translated_probs[i].argmax().item())
-                else:
-                    # Last-resort fallback: pass through the drafter id.
-                    # target.verify may clip or raise on out-of-range ids;
-                    # this branch should only trigger in degenerate test setups.
-                    t_idx = d_idx
-            result.append(t_idx)
-        return result
 
-    def _accept_reject(
+        k = len(draft_tokens_drafter)
+        mapping = self.translator.rule1._mapping
+
+        device = str(translated_probs.device) if translated_probs is not None else str(mapping.device)
+        if mapping.device.type != device:
+            mapping = mapping.to(device)
+
+        draft_tensor = torch.tensor(draft_tokens_drafter, dtype=torch.long, device=device)
+        safe_indices = draft_tensor.clamp(0, mapping.shape[0] - 1)
+        mapped = mapping[safe_indices]
+
+        need_fallback = mapped < 0
+        if need_fallback.any() and translated_probs is not None:
+            fallback_mask = need_fallback & (safe_indices < translated_probs.shape[0])
+            if fallback_mask.any():
+                argmax_vals = translated_probs.argmax(dim=-1)
+                mapped[fallback_mask] = argmax_vals[fallback_mask]
+
+        still_negative = mapped < 0
+        if still_negative.any():
+            mapped[still_negative] = draft_tensor[still_negative]
+
+        return mapped.tolist()
+
+    def _accept_reject_gpu(
         self,
         draft_tokens: list[int],
         target_logits: torch.Tensor,
@@ -472,68 +448,65 @@ class SpeculativeDecoder:
         rng: torch.Generator | None = None,
     ) -> tuple[list[int], int]:
         """
-        Standard speculative decoding acceptance test.
+        GPU-vectorized acceptance test.
 
-        For each position i:
-          p(x) = target_prob(draft_tokens[i] | context + draft[:i])
-          q(x) = translated drafter prob (or uniform 1/V fallback)
-          Accept with prob min(1, p/q).
-
-        Parameters
-        ----------
-        rng : optional torch.Generator for deterministic acceptance.
-
-        The uniform 1/V fallback preserves the target distribution when
-        the drafter's proposal is unknown (defensive path; in normal
-        operation ``translated_probs`` is always provided).
+        FIX: Eliminates 2 CPU syncs (.cpu().tolist() for accept_probs
+        and draws) by doing the comparison on GPU and finding the first
+        rejection via torch.cumprod.
 
         Returns (accepted_list, first_rejection_index).
         """
-        accepted: list[int] = []
+        k = len(draft_tokens)
+        if k == 0:
+            return [], -1
+
         V = target_logits.shape[-1]
+        t_eff = max(self.temperature, 1e-6)
 
-        for i, tok in enumerate(draft_tokens):
-            t_logit = target_logits[i]  # (target_vocab,)
-            if t_logit.isnan().any() or t_logit.isinf().any():
-                logger.warning(
-                    "Target logits at acceptance position %d contain NaN/Inf — zeroing.", i
-                )
-                t_logit = torch.nan_to_num(t_logit, nan=0.0, posinf=1e6, neginf=-1e6)
-            p = F.softmax(t_logit.float() / max(self.temperature, 1e-6), dim=-1)
-            p_tok = p[tok].item()
+        # Batched softmax over all k positions
+        t_logits = target_logits[:k].float() / t_eff
+        if t_logits.isnan().any() or t_logits.isinf().any():
+            t_logits = torch.nan_to_num(t_logits, nan=0.0, posinf=1e6, neginf=-1e6)
+        target_probs = F.softmax(t_logits, dim=-1)  # (k, V)
 
-            if translated_probs is not None:
-                q_tok = translated_probs[i, tok].item()
-                q_tok = max(q_tok, 1e-8)
-                accept_prob = min(1.0, p_tok / q_tok)
+        device = target_logits.device
+        tok_tensor = torch.tensor(draft_tokens, dtype=torch.long, device=device)
+        idx = torch.arange(k, device=device)
+        p_tok_vec = target_probs[idx, tok_tensor]  # (k,)
+
+        if translated_probs is not None:
+            q_tok_vec = translated_probs[idx, tok_tensor].clamp(min=1e-8)
+            accept_probs = (p_tok_vec / q_tok_vec).clamp(max=1.0)
+        else:
+            accept_probs = (p_tok_vec * V).clamp(max=1.0)
+
+        # Generate random draws on the same device as the RNG
+        if rng is not None:
+            if str(rng.device) == str(device):
+                draws = torch.rand(k, generator=rng, device=device)
             else:
-                # Uniform-proposal fallback: q = 1/V.
-                # accept_prob = min(1, p_tok / (1/V)) = min(1, p_tok * V).
-                # Combined with the matching uniform residual in
-                # _residual_sample, this preserves the target distribution.
-                accept_prob = min(1.0, p_tok * V)
+                draws = torch.rand(k, generator=rng).to(device)
+        else:
+            draws = torch.rand(k, device=device)
 
-            logger.debug(
-                "Acceptance token %d/%d: token=%d accept_prob=%.4f",
-                i + 1,
-                len(draft_tokens),
-                tok,
-                accept_prob,
-            )
-            if rng is not None:
-                draw = torch.rand(1, generator=rng).item()
-            else:
-                draw = torch.rand(1).item()
-            if draw < accept_prob:
-                accepted.append(tok)
-            else:
-                logger.info(
-                    "Rejected draft token %d: token=%d accept_prob=%.4f", i + 1, tok, accept_prob
-                )
-                return accepted, i
+        # Vectorized acceptance: accept where draw < accept_prob
+        accepted_mask = draws < accept_probs  # (k,) bool
 
-        logger.info("All %d draft token(s) accepted", len(draft_tokens))
-        return accepted, -1  # all accepted
+        # Find first rejection using cumprod: if all positions 0..i are
+        # accepted, cumprod[i] = True. First False = first rejection.
+        cum_accepted = torch.cumprod(accepted_mask, dim=0)
+        # accepted = cum_accepted is True
+        accepted_count_gpu = cum_accepted.sum().item()  # single sync
+
+        if accepted_count_gpu == k:
+            # All accepted
+            accepted = draft_tokens[:k]
+            return accepted, -1
+
+        # First rejection index
+        rejected_at = accepted_count_gpu  # first False position
+        accepted = draft_tokens[:accepted_count_gpu]
+        return accepted, rejected_at
 
     def _residual_sample(
         self,
@@ -542,41 +515,17 @@ class SpeculativeDecoder:
         rejected_at: int,
         rng: torch.Generator | None = None,
     ) -> int | None:
-        """
-        Sample one bonus token from the residual distribution at the
-        rejection point (or the position after a fully-accepted draft).
-
-        Residual = norm(max(0, p - q)).
-
-        When ``translated_probs`` is None (defensive path), use the
-        uniform proposal q = 1/V so the marginal of the produced token
-        is still exactly ``p``. When all draft tokens are accepted
-        (``rejected_at < 0``), there is no rejection residual to sample
-        from, so we sample directly from ``p`` at the bonus position
-        (this is the standard "bonus token" rule and preserves ``p``).
-
-        Parameters
-        ----------
-        rng : optional torch.Generator for deterministic sampling.
-        """
+        """Sample one bonus token from residual distribution."""
         pos = rejected_at if rejected_at >= 0 else len(target_logits) - 1
         if pos >= target_logits.shape[0]:
-            logger.debug("Skipping residual sample: position %d out of range", pos)
             return None
 
         t_logit = target_logits[pos]
         if t_logit.isnan().any() or t_logit.isinf().any():
-            logger.warning(
-                "Target logits at position %d contain NaN/Inf — zeroing. "
-                "This usually indicates the input sequence was corrupted "
-                "by prior draft output errors.",
-                pos,
-            )
             t_logit = torch.nan_to_num(t_logit, nan=0.0, posinf=1e6, neginf=-1e6)
         p = F.softmax(t_logit.float() / max(self.temperature, 1e-6), dim=-1)
 
         if rejected_at >= 0:
-            # Rejection occurred at position `pos`; sample from residual.
             if translated_probs is not None:
                 q = translated_probs[rejected_at]
             else:
@@ -586,36 +535,17 @@ class SpeculativeDecoder:
             s = residual.sum()
             if s > 1e-8:
                 residual = residual / s
-                if rng is not None:
-                    token = torch.multinomial(residual.cpu(), 1, generator=rng).item()
-                else:
-                    token = torch.multinomial(residual, 1).item()
-                logger.debug(
-                    "Residual sample at position %d: token=%d", pos, token
-                )
+                token = _multinomial_with_rng(residual, 1, rng)
                 return token
-            logger.debug(
-                "Residual mass empty at position %d; falling back to target", pos
-            )
 
-        if rng is not None:
-            token = torch.multinomial(p.cpu(), 1, generator=rng).item()
-        else:
-            token = torch.multinomial(p, 1).item()
-        logger.debug(
-            "Bonus sample from target distribution at position %d: token=%d", pos, token
-        )
+        token = _multinomial_with_rng(p, 1, rng)
         return token
 
     def _is_eos(self, token_id: torch.Tensor) -> bool:
         eos_ids = getattr(self.target.model.config, "eos_token_id", None)
         if eos_ids is None:
-            logger.debug("No EOS token id configured")
             return False
+        tid = token_id.item()
         if isinstance(eos_ids, int):
-            is_eos = token_id.item() == eos_ids
-            logger.debug("EOS check for token %d against %d: %s", token_id.item(), eos_ids, is_eos)
-            return is_eos
-        is_eos = token_id.item() in eos_ids
-        logger.debug("EOS check for token %d against %s: %s", token_id.item(), eos_ids, is_eos)
-        return is_eos
+            return tid == eos_ids
+        return tid in eos_ids

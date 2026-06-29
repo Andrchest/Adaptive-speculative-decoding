@@ -8,6 +8,11 @@
 ## 🚀 Quick Start
 
 ```bash
+# 0. Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# → installs to ~/.local/bin/uv (no sudo required)
+# → add to PATH: export PATH="$HOME/.local/bin:$PATH"
+
 # 1. Clone
 git clone git@github.com:Andrchest/Adaptive-speculative-decoding.git
 cd Adaptive-speculative-decoding

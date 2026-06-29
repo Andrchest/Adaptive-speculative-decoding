@@ -38,12 +38,23 @@ class _UniversalDrafterAdapter:
         k: int,
         distill: bool = False,
         temperature: float = 1.0,
-    ) -> tuple[list[int], torch.Tensor]:
+        past_key_values=None,
+        past_len: int = 0,
+        cached_logits: torch.Tensor | None = None,
+    ) -> tuple[list[int], torch.Tensor, object]:
         """Forward to base (distillation) or universal (inference)."""
         if distill:
-            return self.base.draft(context, k, distill=True, temperature=temperature)
+            return self.base.draft(
+                context, k, distill=True, temperature=temperature,
+                past_key_values=past_key_values, past_len=past_len,
+                cached_logits=cached_logits,
+            )
         with torch.no_grad():
-            return self.universal.draft(context, k, target_name=self._target_model_path)
+            return self.universal.draft(
+                context, k, target_name=self._target_model_path,
+                past_key_values=past_key_values, past_len=past_len,
+                cached_logits=cached_logits
+            )
 
     def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.universal.base_model(input_ids).logits.squeeze(0)

@@ -261,6 +261,10 @@ class TokenizerLattice:
                 self._edges_by_end_dev[j] = (starts.to(device), ends.to(device), d_ids.to(device))
             self._dp_device = device
 
+        # Handle 3D logits (e.g. (k, 1, Vd)) — squeeze intermediate dims
+        if drafter_probs.dim() == 3 and drafter_probs.shape[1] == 1:
+            drafter_probs = drafter_probs.squeeze(1)
+
         k = drafter_probs.shape[0]
 
         if self._N == 0:
