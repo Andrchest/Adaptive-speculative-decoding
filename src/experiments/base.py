@@ -425,24 +425,25 @@ class BaseExperiment(abc.ABC):
     def on_decode_step(
         self,
         ctx: DecodeContext,
-        step_result: StepResult,
+        step_results: list["StepResult"],
         prompt_index: int,
     ) -> None:
-        """Called after each decode step (one prompt completion).
+        """Called after each prompt is decoded.
 
-        Override to implement per-step logic: distillation triggers,
+        Override to implement per-prompt logic: distillation triggers,
         routing decisions, custom metric collection, etc.
 
         Parameters
         ----------
         ctx : DecodeContext
             Mutable decode context.
-        step_result : StepResult
-            Statistics for the completed step.
+        step_results : list[StepResult]
+            List of StepResult objects for the completed prompt
+            (one per decode step within the prompt).
         prompt_index : int
             Zero-based index of the current prompt.
         """
-        del ctx, step_result, prompt_index  # unused in base
+        del ctx, step_results, prompt_index  # unused in base
 
     def on_after_decode(self, ctx: DecodeContext) -> None:
         """Called once after all prompts have been decoded.
@@ -697,10 +698,12 @@ class BaseExperiment(abc.ABC):
                         accepted=len(sr.accepted_tokens),
                         cache_hit=sr.cache_hit,
                     )
+            # Capture step results BEFORE clearing so the hook can use them
+            _step_results = list(decoder._step_results)
             decoder._step_results.clear()
 
-            # Hook: after each step
-            self.on_decode_step(decode_ctx, decoder.stats(), i)
+            # Hook: after each prompt (passes list of StepResult for this prompt)
+            self.on_decode_step(decode_ctx, _step_results, i)
 
             # Progress logging
             if _verbose_mode and i % log_every == 0:

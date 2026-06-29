@@ -327,6 +327,14 @@ class ExperimentRunner:
     def _setup_mlflow(self, cfg: ExperimentConfig) -> None:
         """Initialize MLflow run if configured."""
         if _HAS_MLFLOW and getattr(cfg, "mlflow_experiment", None):
+            # End any previously active run (e.g. from a failed experiment)
+            active = mlflow.active_run()
+            if active is not None:
+                logger.warning(
+                    "Active MLflow run %s found — ending before starting new run",
+                    active.info.run_id,
+                )
+                mlflow.end_run()
             logger.info(
                 "Initializing MLflow experiment=%s run=%s",
                 cfg.mlflow_experiment,

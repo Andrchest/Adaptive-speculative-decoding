@@ -47,8 +47,8 @@ The closest existing work is *Online Speculative Decoding*, which combines onlin
 ### Phase 1 — UCB only, reward signal (no distillation)
 - [x] Implement UCB1 router
 - [x] Reward computation: `r = accepted / (T_draft + T_target)`
-- [ ] Verify reward values are reasonable (tokens/sec range)
-- [ ] Verify bandit updates (pulls, means) are logged correctly
+- [x] Verify reward values are reasonable (tokens/sec range) — *fixed bug: hook now receives real StepResult data*
+- [x] Verify bandit updates (pulls, means) are logged correctly — *fixed bug: rewards are now non-zero*
 
 ### Phase 2 — Enable arm switching
 - [x] Thompson Sampling with Normal-Gamma posterior

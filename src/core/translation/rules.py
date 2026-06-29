@@ -169,35 +169,17 @@ class Rule1Mapping:
         target_d_indices = mapping[source_d_indices]    # (M,) on device
 
         # --- Memory-safe implementation ---
-        # The fancy indexing (tensor[:, large_indices]) triggers a mysterious
-        # OOM (~47 GB) on this system regardless of device (CUDA or CPU).
-        #
-        # Root cause: PyTorch's advanced indexing implementation has a bug when
-        # the index tensor is large (~50K elements) on this hardware/software.
-        #
-        # Solution: use torch.gather which is a single kernel call and doesn't
-        # trigger the problematic advanced indexing path.
-        #
-        # Step 1: gather source probs using source_d_indices
-        # Step 2: scatter gathered probs to target positions using target_d_indices
-
-        # Build per-batch index tensors: stack source_d_indices `batch` times
-        # so we get (B, M) matching drafter_probs shape on dim 1
-        # Build per-batch index tensors: stack source_d_indices `batch` times
-        # so we get (B, M) matching drafter_probs shape on dim 1
+        # Advanced indexing (tensor[:, large_indices]) triggers a CUDA allocator
+        # crash on MIG partitions (NVML_SUCCESS assertion in CUDACachingAllocator).
+        # Use torch.gather instead — single kernel, no advanced indexing path.
         indices_stack = torch.stack(
             [source_d_indices for _ in range(batch)], dim=0
         )  # (B, M)
-
-        # gather: single kernel, no advanced indexing path
         src_gathered = torch.gather(drafter_probs, 1, indices_stack)  # (B, M)
-
-        # Scatter gathered probs to target positions
         tgt_indices_stack = torch.stack(
             [target_d_indices for _ in range(batch)], dim=0
         )  # (B, M)
         target_probs.scatter_add_(1, tgt_indices_stack, src_gathered)
-
         del indices_stack, tgt_indices_stack, src_gathered
         logger.debug('Rule 1: end mapping logits ')
 

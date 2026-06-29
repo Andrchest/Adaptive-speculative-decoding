@@ -26,6 +26,13 @@ Examples:
     python src/main.py --suite ablation --tiny -n 1
 """
 
+import os
+
+# Workaround for PyTorch CUDA allocator OOM on MIG partitions
+# (NVML_SUCCESS assertion failure in CUDACachingAllocator)
+if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import logging
 import sys
 from enum import Enum
@@ -164,6 +171,10 @@ def _apply_overrides(
         # override them
         if tiny_models:
             exp.set_config_override("drafter_model_path", "facebook/opt-125m")
+            exp.set_config_override("drafter_model_paths", [
+                "facebook/opt-125m",
+                "facebook/opt-350m",
+            ])
             exp.set_config_override("target_model_path", "facebook/opt-350m")
             exp.set_config_override("max_new_tokens", 32)
 
@@ -313,7 +324,20 @@ def main(  # noqa: C901
         return
 
     # --- Select experiments ---
-    if research:
+    if experiment:
+        logger.info("Selected single experiment: %s", experiment)
+        # Search research experiments if --research flag is set, otherwise search all
+        if research:
+            all_exps = discover_research_experiments()
+        else:
+            all_exps = discover_experiments()
+        matching = [e for e in all_exps if e.meta.name == experiment]
+        if not matching:
+            logger.error("No experiment named %r", experiment)
+            console.print(f"[red]No experiment named {experiment!r}[/red]")
+            sys.exit(1)
+        experiments = matching
+    elif research:
         logger.info("Discovering research experiments")
         experiments = discover_research_experiments()
         if not experiments:
@@ -337,15 +361,6 @@ def main(  # noqa: C901
         from experiments.suites import DATASET_SUITE
 
         experiments = list(DATASET_SUITE)
-    elif experiment:
-        logger.info("Selected single experiment: %s", experiment)
-        all_exps = discover_experiments()
-        matching = [e for e in all_exps if e.meta.name == experiment]
-        if not matching:
-            logger.error("No experiment named %r", experiment)
-            console.print(f"[red]No experiment named {experiment!r}[/red]")
-            sys.exit(1)
-        experiments = matching
     else:
         logger.error("No experiment selection provided")
         console.print(
