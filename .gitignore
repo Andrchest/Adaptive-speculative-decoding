@@ -74,3 +74,6 @@ dmypy.json
 *.bin
 *.checkpoint
 wandb/
+
+# Handoff docs
+research/m.krylov/HANDOFF.md

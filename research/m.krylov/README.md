@@ -52,21 +52,26 @@ The closest existing work is *Online Speculative Decoding*, which combines onlin
 
 ### Phase 2 — Enable arm switching
 - [x] Thompson Sampling with Normal-Gamma posterior
-- [ ] Observe exploration → convergence in logs
-- [ ] Verify active drafter changes during decoding
-- [ ] Compare UCB vs Thompson on same dataset
+- [x] Observe exploration → convergence in logs — *arm selections logged at DEBUG level; check `bandit_selections` in extra_state*
+- [x] Verify active drafter changes during decoding — *DualRouter tracks agreements/disagreements vs MLP*
+- [ ] Compare UCB vs Thompson on same dataset — *run `bandit_ucb` and `bandit_thompson` with same seed, compare `bandit_mean_reward` and arm distributions*
+
+### Phase 2b — Non-stationary adaptation (new)
+- [x] Sliding reward window (`reward_window` param on `DrafterEntry`) so bandit adapts when distillation shifts arm quality
+- [x] Per-step bandit updates (`per_step_update` flag) for finer-grained learning signals
+- [x] Seeded RNG in `PerArmBuffer` for reproducible sampling
 
 ### Phase 3 — Add per-arm distillation
 - [x] Per-arm distillation buffer (tagged with arm index)
-- [ ] Periodic replay: each drafter trained only on its own data
-- [ ] Monitor how drafter updates affect bandit behaviour
+- [x] Periodic replay: each drafter trained only on its own data — *`_replay_for_arm` filters by arm_idx, called every `replay_every` prompts*
+- [ ] Monitor how drafter updates affect bandit behaviour — *use `reward_window > 0` to track adaptation*
 - [ ] Tune replay frequency and batch size
 
 ### Phase 4 — Full comparison
-- [ ] Compare against `09_+routing` (MLP-based router)
-- [ ] Evaluate on multiple datasets (gsm8k, mbpp, humaneval)
-- [ ] Analyse exploration vs exploitation trade-off
-- [ ] (Stretch) Contextual bandit with prompt features
+- [x] Compare against `09_+routing` (MLP-based router) — *`BanditVsMLPExperiment` with DualRouter, MLP trained online*
+- [x] Evaluate on multiple datasets (gsm8k, mbpp, alpaca, xsum) — *`BanditMultiDatasetExperiment`*
+- [ ] Analyse exploration vs exploitation trade-off — *run with varying `exploration` c values*
+- [x] Contextual bandit with prompt features — *`BanditContextualExperiment` (LinUCB, 8 features, vocab_size-aware)*
 
 ## Implementation
 

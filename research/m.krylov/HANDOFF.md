@@ -1,407 +1,334 @@
-# Handoff — Bandit Routing Experiment (m.krylov)
+# Handoff — Bandit Routing for Speculative Decoding (m.krylov)
 
-> Commit `1d4ecd9` — 2026-06-24
-> Last updated: 2026-06-29 (AI assistant session)
-
----
-
-## 1. Project Overview
-
-### What the project does
-
-**Adaptive Speculative Decoding** is a research framework for speeding up LLM inference. The core idea: instead of a large "target" model generating tokens one at a time (slow), a small "drafter" model proposes multiple tokens at once, and the target verifies them all in a single forward pass. Accepted tokens are kept; rejected ones trigger a residual sample. The theoretical guarantee is **zero quality loss** — output distribution matches the target exactly.
-
-### Core pipeline
-
-```
-Prompt → Drafter drafts k tokens → Cross-vocab translation → Target verifies (1 pass)
-       → Accept/reject each token → Residual bonus sample → Update cache + distill
-```
-
-### Key modules
-
-| Module | Purpose |
-|---|---|
-| `core/decoder/speculative.py` | Main decode loop — draft, verify, accept/reject, residual sample |
-| `core/models/draft_model.py` | Small fast model wrapper (autoregressive draft generation) |
-| `core/models/target_model.py` | Large slow model wrapper (batch verification, optional 4-bit NF4) |
-| `core/translation/` | Cross-vocabulary mapping when drafter/target use different tokenizers (Rule1 = exact match, Rule2 = approximate via Aho-Corasick, or TokenizerLattice = exact DP) |
-| `core/cache/ngram.py` | N-gram cache with LRU/LFU/acc/hybrid eviction |
-| `core/distillation/online.py` | Online distillation — fine-tunes drafter during inference using KL + NLL loss |
-| `core/extensions/routing/` | MLP-based dynamic router (selects drafter per prompt) |
-| `core/extensions/adaptive/` | SpeedupPredictor — adapts draft length k per context |
-| `core/extensions/contrastive/` | InfoNCE loss using rejected tokens as hard negatives |
-| `core/extensions/replay/` | Replay buffer with FIFO or prioritized sampling |
-| `core/extensions/multitarget/` | UniversalDrafter — single drafter for multiple target families via per-target embeddings |
-
-### Experiment framework
-
-Uses a **Strategy pattern**. Every experiment is a `BaseExperiment` subclass that overrides `build_*` methods (translator, cache, distiller, router, etc.) and `on_*` hooks (before/after decode, per-step). The `ExperimentRunner` orchestrates model loading, dataset loading, GPU memory management, and result persistence.
-
-```bash
-python src/main.py --smoke                     # Quick test
-python src/main.py --suite ablation             # All 11 built-in experiments
-python src/main.py --research                   # All research experiments
-python src/main.py --experiment bandit_ucb      # Single experiment
-python src/main.py --list                       # List all experiments
-```
-
-### Ablation suite (11 built-in experiments)
-
-1. `01_baseline` — plain speculative decoding
-2. `02_+lattice` — exact tokenizer lattice instead of Rule2 heuristic
-3. `03_+translator` — learned translator blended with Rule1+Rule2
-4. `04_+online_distil` — online distillation
-5. `05_+replay_fifo` — replay with FIFO sampling
-6. `06_+replay_prioritized` — replay with prioritized sampling
-7. `07_+contrastive` — contrastive loss on rejected tokens
-8. `08_+speedup_adapt` — adaptive draft length
-9. `09_+routing` — MLP-based dynamic multi-drafter router
-10. `10_+universal` — universal multi-target drafter
-11. `11_full_system` — everything combined
+> Branch `research/m.krylov`, HEAD `87a70d2`
+> Working tree: 3 modified files (bandit_routing.py, README.md, HANDOFF.md)
+> Single implementation file: `experiments/bandit_routing.py` (1519 lines)
 
 ---
 
-## 2. Commit 1d4ecd9 — Bandit Routing Experiment
+## 1. What this does
 
-### What was added
+Replaces the static MLP drafter-router (`09_+routing`) with **online multi-armed bandit** algorithms that learn which drafter to pick per prompt from live decoding performance — no separate training phase required.  Three bandit families are implemented (UCB1, Thompson Sampling, LinUCB), each optionally combined with **per-arm online distillation** so drafters improve while the router learns.
 
-Two files:
+### Reward
 
-| File | Lines | Purpose |
-|---|---|---|
-| `research/m.krylov/experiments/bandit_routing.py` | +641 | Full implementation |
-| `research/m.krylov/README.md` | +91/-7 | Research hypothesis, phased plan, references |
-
-### The research hypothesis
-
-The existing routing approach (`09_+routing`) uses a trained MLP classifier that maps prompt embeddings to drafter indices. This requires:
-- A training phase to collect (prompt, best-drafter) pairs
-- A separate router model to maintain
-- Static assignment — doesn't adapt during inference
-
-**Proposal**: Replace the MLP router with a **multi-armed bandit** algorithm that learns routing policy **online** from actual decoding performance, while drafters are simultaneously improved through online distillation.
-
-### Data flow
+Computed once per prompt (aggregated over all decode steps in that prompt):
 
 ```
-Prompt arrives
-    ↓
-Bandit router selects drafter αᵢ (UCB score or Thompson sample)
-    ↓
-Selected drafter generates K tokens
-    ↓
-Target verifies draft tokens (1 forward pass)
-    ↓
-Some tokens accepted, rest rejected + residual bonus
-    ↓
-Reward computed: rᵢ = accepted_count / (T_draft + T_target)
-    ↓
-Router updates bandit policy with reward
-    ↓
-Accepted tokens + target logits stored in per-arm buffer
-    ↓
-Periodically: replay buffer → distill selected drafter
+reward = total_accepted_tokens / max(total_wall_time_ms / 1000, 1e-6)    # tokens/sec
 ```
 
-### Reward definition
+Balances quality (acceptance count) against speed (wall-clock time).  A fast but inaccurate drafter and an accurate but slow drafter are both penalised.
+
+### Data flow per prompt
 
 ```
-rᵢ = A / (T_draft + T_target)
+prompt input_ids
+    ↓
+router.select_drafter(input_ids)  ← bandit (or LinUCB with features)
+    ↓
+selected drafter generates K tokens
+    ↓
+target verifies in 1 forward pass
+    ↓
+accepted tokens emitted, bonus residual sampled
+    ↓
+reward computed from StepResult list
+    ↓
+router.update(reward)
+    ↓
+[if distillation enabled, every replay_every prompts]
+    → PerArmBuffer.sample_for_arm(arm_idx) → distiller.step()
 ```
 
-Where:
-- **A** = number of accepted draft tokens
-- **T_draft** = wall-clock time for draft generation
-- **T_target** = wall-clock time for target verification
+---
 
-This reward balances quality against speed — a fast but inaccurate drafter and an accurate but slow drafter are both penalized.
+## 2. Router algorithms (3)
 
-### Two algorithms implemented
+All routers use a **round-robin initial exploration** phase (each arm selected once via `_round_robin_count`) before switching to their algorithm-specific selection.
 
-#### UCB1 (Upper Confidence Bound)
+### UCB1 — `UCBBanditRouter`
 
 ```
 score(arm) = mean_reward + c * sqrt(ln(total_pulls) / arm_pulls)
 ```
 
-- Simple, deterministic, one hyperparameter (`c`, default 2.0)
-- Exploration naturally decays as arms are pulled more
-- Round-robin until every arm has been pulled once
+Deterministic.  One hyperparameter `c` (default 2.0).
 
-#### Thompson Sampling (Normal-Gamma posterior)
+### Thompson Sampling — `ThompsonSamplingRouter`
 
-- Bayesian: maintains full posterior over each arm's mean reward
-- Prior: `mu ~ N(mu_0, sigma²/kappa_0)`, `sigma² ~ InvGamma(alpha_0, beta_0)`
-- After N observations: updates kappa, mu, alpha, beta analytically
-- Selection: sample from each arm's posterior, pick highest
-- Naturally balances exploration/exploitation without manual tuning
+Normal-Gamma conjugate posterior per arm.  Maintains sufficient statistics (N, Σr, Σr²) inside `_GaussianArm` and samples a posterior mean for each arm; picks the highest sample.  Fixed RNG seed 42 for reproducibility.  Prior: μ₀=0, κ₀=1, α₀=1, β₀=1.
 
-### Per-arm distillation
+Updates both the `_GaussianArm` posterior and the `DrafterEntry` (for sliding-window support).
 
-Each drafter has its own `OnlineDistiller` and optimizer. The `PerArmBuffer` tags every training entry with the arm index, so during replay each drafter is trained **only on data it generated**. This prevents distribution mismatch — drafter A shouldn't learn from drafter B's proposals.
+### LinUCB (contextual) — `ContextualBanditRouter`
 
-### Key classes
+Each arm maintains a ridge-regression weight vector θ ∈ ℝᵈ (d=8 by default).  Score = θᵀx + α·√(xᵀA⁻¹x).  Updated via Cholesky rank-1 update with direct-inverse fallback.
 
-| Class | Role |
+**Feature vector** (from `_extract_prompt_features`), L2-normalised:
+
+| # | Feature |
 |---|---|
-| `UCBBanditRouter` | UCB1 selection, `select_drafter()` / `update(reward)` |
-| `ThompsonSamplingRouter` | Thompson Sampling with Normal-Gamma posterior |
-| `_GaussianArm` | Internal: tracks posterior parameters for one arm |
-| `DrafterEntry` | One bandit arm: name, model, pulls, total_reward |
-| `PerArmBuffer` | FIFO buffer tagged by arm index; `sample_for_arm()` |
-| `BanditRoutingExperiment` | Main experiment — builds drafters, router, distillers |
-| `BanditUCBExperiment` | Convenience: UCB without distillation (phases 1-2) |
-| `BanditThompsonExperiment` | Convenience: Thompson without distillation (phases 1-2) |
-| `BanditUCBDistillExperiment` | Convenience: UCB + distillation (phase 3+) |
-| `BanditThompsonDistillExperiment` | Convenience: Thompson + distillation (phase 4) |
+| 0 | log(prompt_length + 1) |
+| 1 | vocab diversity (unique / total) |
+| 2 | mean token ID / **vocab_size** |
+| 3 | std token ID / **vocab_size** |
+| 4 | fraction tokens < 100 (special/control) |
+| 5 | fraction tokens 100–1000 (common) |
+| 6 | fraction tokens 1000–5000 (medium) |
+| 7 | fraction tokens ≥ 5000 (rare) |
 
-### Phased development plan
+Features 2–3 use the **actual model vocab_size** read from `ctx.drafter.model.config.vocab_size` at build time (e.g. ~50k for OPT, ~151k for Qwen2.5), not a hardcoded proxy.
 
-| Phase | Status | Description |
+---
+
+## 3. DrafterEntry — sliding reward window
+
+`DrafterEntry` is the bandit arm dataclass.  When `reward_window > 0` it maintains a FIFO `deque` of the most recent N rewards.  `mean_reward` is computed from the window instead of all history, so the bandit can **adapt when drafter quality changes** (e.g. during online distillation).
+
+```python
+entry = DrafterEntry(name="model", model=model, reward_window=32)
+entry.record_reward(reward)  # use this, not direct field mutation
+mean = entry.mean_reward     # windowed or full-history depending on reward_window
+```
+
+---
+
+## 4. Per-arm distillation
+
+Each drafter has its own `OnlineDistiller` + Adam optimiser.  A `PerArmBuffer` (FIFO, capacity 4096) tags every training entry with the arm index so each drafter trains **only on data it generated**.  Replay happens every 32 prompts, batch size 8.
+
+`PerArmBuffer` uses a **seeded RNG** (`torch.Generator`, seed from config defaulting to 42) so `sample_for_arm()` produces reproducible results across runs.
+
+Distillation loss (from `core/distillation/online.py`):
+
+```
+L = KL(target_in_drafter_space || drafter) + λ · NLL(drafter on accepted tokens)
+```
+
+---
+
+## 5. Reward update granularity
+
+Two modes controlled by `per_step_update` on `BanditRoutingExperiment`:
+
+| Mode | Method | Updates per prompt |
 |---|---|---|
-| **1** | ✅ Done | UCB1 router, reward signal, no distillation |
-| **2** | ✅ Done | Thompson Sampling, arm switching during decoding |
-| **3** | ✅ Done | Per-arm distillation with tagged buffer |
-| **4** | ⏳ Remaining | Compare against MLP routing, multiple datasets, contextual bandit |
+| Per-prompt (default) | `_update_per_prompt()` | 1 (reward aggregated over all steps) |
+| Per-step | `_update_per_step()` | N (one per decode step within the prompt) |
 
-### How to run
-
-```bash
-# UCB without distillation
-python src/main.py --research --experiment bandit_ucb
-
-# Thompson Sampling without distillation
-python src/main.py --research --experiment bandit_thompson
-
-# UCB with distillation
-python src/main.py --research --experiment bandit_ucb_distill
-
-# Thompson with distillation
-python src/main.py --research --experiment bandit_thompson_distill
-
-# All research experiments
-python src/main.py --research
-
-# Quick test with tiny models
-python src/main.py --research --tiny -n 5
-```
-
-### Metrics produced
-
-In addition to standard metrics (acceptance_rate, tokens_per_sec, etc.), the experiment reports:
-
-- `bandit_router` — algorithm, exploration params, per-arm pulls and mean rewards
-- `bandit_mean_reward` / `bandit_std_reward` — reward statistics across all steps
-- `mean_wall_time_ms` — average decode step timing
-- `buffer_stats` — total entries and per-arm breakdown (when distillation enabled)
-
-### Novelty vs prior work
-
-The closest prior work is **Online Speculative Decoding**, which combines online distillation with model routing. Their routing uses a BERT-based classifier that assigns draft models by prompt domain (static, requires training data). The bandit approach learns directly from decoding performance (acceptance rate + wall-clock time) with no separate training phase — the routing policy improves continuously during inference.
-
-### Open questions for Phase 4
-
-1. Does bandit routing outperform MLP routing (`09_+routing`) on acceptance rate and throughput?
-2. How does exploration vs exploitation trade-off evolve over a long decoding session?
-3. Can a contextual bandit (using prompt features like length, domain, token distribution) do even better?
-4. How do bandit policies behave when drafters are being simultaneously improved by distillation (non-stationary rewards)?
+Per-step mode gives finer-grained learning signals at the cost of more frequent bandit updates.
 
 ---
 
-## 3. Bug fixes applied (2026-06-29, original)
+## 6. Experiment classes (10, auto-discovered)
 
-Four bugs were found and fixed in the bandit routing experiment:
+All classes are in `bandit_routing.py` and exported via `__all__`.  Discovery happens through `experiments/suites.py::discover_research_experiments()` which scans `research/*/experiments/*.py`.
 
-### Bug 1: `on_decode_step` received a `dict` instead of `StepResult` (CRITICAL)
+| Class | Meta name | Algorithm | Distillation | Notes |
+|---|---|---|---|---|
+| `BanditUCBExperiment` | `bandit_ucb` | UCB1 | no | baseline bandit |
+| `BanditThompsonExperiment` | `bandit_thompson` | Thompson | no | Bayesian baseline |
+| `BanditUCBDistillExperiment` | `bandit_ucb_distill` | UCB1 | yes | per-arm distillation |
+| `BanditThompsonDistillExperiment` | `bandit_thompson_distill` | Thompson | yes | per-arm distillation |
+| `BanditContextualExperiment` | `bandit_contextual` | LinUCB | no | 8 prompt features, vocab_size-aware |
+| `BanditContextualDistillExperiment` | `bandit_contextual_distill` | LinUCB | yes | contextual + distillation |
+| `BanditVsMLPExperiment` | `bandit_vs_mlp_ucb` | UCB1 | no | head-to-head vs MLP (see §7) |
+| `BanditVsMLPThompsonExperiment` | `bandit_vs_mlp_thompson` | Thompson | no | head-to-head vs MLP |
+| `BanditMultiDatasetExperiment` | `bandit_multidataset_ucb` | UCB1 | no | gsm8k, mbpp, alpaca, xsum |
+| `BanditMultiDatasetThompsonExperiment` | `bandit_multidataset_thompson` | Thompson | no | cross-dataset Thompson |
 
-The runner's `BaseExperiment.run()` called `self.on_decode_step(decode_ctx, decoder.stats(), i)` **after** clearing `decoder._step_results`. Since `decoder.stats()` reads from `_step_results`, the hook got an empty dict. The bandit's `on_decode_step` tried `step_result.accepted_count` which fell through to `hasattr → else 0`, so **reward was always 0** and the bandit never learned.
+### Inheritance
 
-**Fix:** Changed the runner to capture `_step_results = list(decoder._step_results)` **before** clearing, and pass the list to the hook. Updated `on_decode_step` signature to accept `list[StepResult]`. The bandit experiment now aggregates `total_accepted`, `total_wall_ms`, `total_draft` across all steps in the prompt.
-
-### Bug 2: Duplicate experiment names
-
-`__all__` exported 5 classes but 3 shared the name `bandit_routing_ucb` (base class defaulting to ucb + `BanditUCBExperiment` + `BanditUCBDistillExperiment`) and 2 shared `bandit_routing_thompson`. Running `--experiment bandit_routing_ucb` executed all 3.
-
-**Fix:** Removed base `BanditRoutingExperiment` from `__all__`. Gave each convenience class a unique `meta.name`: `bandit_ucb`, `bandit_thompson`, `bandit_ucb_distill`, `bandit_thompson_distill`.
-
-### Bug 3: `on_decode_step` granularity mismatch
-
-The docstring said "per decode step" but the runner calls it once per completed prompt. The bandit's `step_count` was labeled as steps but was actually counting prompts.
-
-**Fix:** Updated docstrings to reflect that the hook is called once per prompt, receiving a list of `StepResult` objects (one per decode step within that prompt).
-
-### Bug 4: Missing `__init__.py`
-
-`research/m.krylov/experiments/` had no `__init__.py`.
-
-**Fix:** Created `__init__.py`.
-
-### Files changed
-
-| File | Change |
-|---|---|
-| `src/experiments/base.py` | Pass `list[StepResult]` to `on_decode_step` before clearing |
-| `research/m.krylov/experiments/bandit_routing.py` | Fixed `on_decode_step`, unique names, removed base from `__all__` |
-| `research/m.krylov/experiments/__init__.py` | Created |
+```
+BaseExperiment
+  └── BanditRoutingExperiment          (core logic: reward, buffer, distill hooks)
+        ├── BanditUCBExperiment
+        ├── BanditThompsonExperiment
+        ├── BanditUCBDistillExperiment
+        ├── BanditThompsonDistillExperiment
+        ├── BanditContextualExperiment  (overrides build_router → LinUCB)
+        │     └── BanditContextualDistillExperiment
+        ├── BanditVsMLPExperiment       (overrides build_router → DualRouter)
+        │     └── BanditVsMLPThompsonExperiment
+        ├── BanditMultiDatasetExperiment
+        │     └── BanditMultiDatasetThompsonExperiment
+```
 
 ---
 
-## 4. Additional fixes (2026-06-29, AI assistant session)
+## 7. DualRouter — bandit vs MLP comparison
 
-### Bug 5: `--tiny` didn't override `drafter_model_paths`
+The `BanditVsMLPExperiment` needs to record what the MLP router would have chosen **and** what the bandit chose, then compare.  The challenge: the experiment hook `on_decode_step` does not receive `input_ids`, but the MLP router needs them to embed and select.
 
-The `--tiny` CLI flag only overrode `drafter_model_path` (singular) and `target_model_path`, but `build_router` reads `drafter_model_paths` (plural) which was hardcoded in the config to Qwen models. This caused the bandit experiment to try loading **Qwen/Qwen2.5-0.5B + Qwen/Qwen2.5-1.5B as drafters** even with `--tiny`, leading to OOM.
+### Solution: `DualRouter` wrapper
 
-**Fix (`src/main.py`):** `_apply_overrides` now also sets `drafter_model_paths` when `--tiny` is used:
-```python
-exp.set_config_override("drafter_model_paths", [
-    "facebook/opt-125m",
-    "facebook/opt-350m",
-])
-```
+The runner calls `router.select_drafter(input_ids)` once per prompt — this is the only point where `input_ids` is available.  `DualRouter.select_drafter()`:
 
-### Bug 6: `--research -e <name>` ran ALL research experiments instead of filtering
+1. Caches `input_ids` in `_last_input_ids` for later MLP observation recording
+2. Asks the MLP router → records its index in `_mlp_selection`
+3. Asks the bandit router → returns its selection for actual decoding
+4. `update(reward)` is forwarded to the bandit router only
 
-The CLI selection logic checked `--research` before `-e`, so `--research -e bandit_ucb` discovered and ran all 4 research experiments instead of just the named one.
+### Online MLP training
 
-**Fix (`src/main.py`):** Moved the `experiment` check to be evaluated first. When both `--research` and `-e` are given, it searches only research experiments for the matching name.
+The MLP router starts with random weights.  `DualRouter` trains it **online** every `mlp_train_every` updates (default 32):
 
-### Bug 7: MLflow run left active after experiment failure
+- `BanditVsMLPExperiment.on_decode_step()` calls `router.mlp.record(input_ids, drafter_idx, acceptance_rate)` to feed observations to the MLP's training buffer
+- `DualRouter.update()` calls `mlp.train_router(n_epochs=10, lr=1e-3)` every 32 updates (when ≥ 4 samples accumulated)
 
-When an experiment failed after `_setup_mlflow()` started an MLflow run, the run was never ended. The next experiment then failed with "Run with UUID ... is already active."
+This means the MLP learns from actual decoding performance during the run rather than staying at random initialisation.
 
-**Fix (`src/experiments/runner.py`):** `_setup_mlflow` now checks for and ends any active MLflow run before starting a new one.
+### Comparison metrics
 
-### Bug 8: Thompson Sampling used non-existent `torch.gamma()`
+In `on_after_decode`, the experiment computes:
 
-`_GaussianArm.sample()` called `torch.gamma(...)` which doesn't exist in PyTorch. The correct API is `torch.distributions.Gamma`.
-
-**Fix (`bandit_routing.py`):** Replaced with:
-```python
-import torch.distributions as D
-gamma_dist = D.Gamma(concentration=torch.tensor(self.alpha_N), rate=torch.tensor(self.beta_N))
-tau = gamma_dist.sample().item()
-```
-
-### Bug 9: `build_router` loaded duplicate drafter on GPU
-
-The runner loads `ctx.drafter` (e.g., opt-125m). Then `build_router` loaded a **second copy** of the same model from `drafter_model_paths[0]` (also opt-125m). Two copies of the same model on GPU = wasted VRAM.
-
-**Fix (`bandit_routing.py`):** `build_router` now reuses `ctx.drafter` when the path matches `cfg.drafter_model_path` instead of loading a new `DraftModel`.
-
-### Bug 10: CUDA allocator OOM on MIG partitions
-
-The PyTorch CUDA caching allocator fails with `NVML_SUCCESS == r INTERNAL ASSERT FAILED at "CUDACachingAllocator.cpp":1015` on NVIDIA A100 MIG partitions. This affects **all experiments** (including built-in baseline), not just the bandit experiment. The error triggers during `scatter_add_` / `index_add_` in the vocabulary translation step.
-
-**Partial fix (`src/main.py`):** Added `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` at the top of `main.py` before any torch imports. This helps on some systems but **does not fully resolve** the issue on this particular MIG partition (A100-SXM4-80GB MIG 3g.40gb, PyTorch 2.6.0+cu124, driver 555.42.06).
-
-**Also changed (`src/core/translation/rules.py`):** Replaced `index_add_` with `scatter_add_` as an alternative kernel, but this also triggers the same allocator bug on this hardware.
-
-**⚠️ BLOCKER:** The experiments **cannot run on this machine** due to the CUDA allocator bug. This is a known PyTorch issue with MIG partitions. On a non-MIG GPU or full GPU, the experiments should work. Workarounds to try:
-- Set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (already done in code)
-- Use a non-MIG GPU
-- Upgrade PyTorch (this may be fixed in later versions)
-- Run on CPU with `--device cpu` (slow but should work for correctness testing)
-
-### Files changed in this session
-
-| File | Changes |
-|---|---|
-| `src/main.py` | Added `PYTORCH_CUDA_ALLOC_CONF` env var; fixed `--tiny` to override `drafter_model_paths`; fixed `--research -e` selection order |
-| `src/experiments/runner.py` | Fixed MLflow run leak (end active run before starting new one) |
-| `src/core/translation/rules.py` | Replaced `index_add_` with `scatter_add_` in Rule1 `map_logits` |
-| `research/m.krylov/experiments/bandit_routing.py` | Fixed `torch.gamma` → `torch.distributions.Gamma`; `build_router` reuses `ctx.drafter` to avoid duplicate GPU loads |
+- `bandit_arm_distribution` / `mlp_arm_distribution` — per-router selection counts
+- `agreements` / `disagreements` — how often both chose the same drafter
+- `bandit_router` / `mlp_router` — full per-router `.stats()` output
+- `mlp_online_train_count` — number of online training rounds completed
 
 ---
 
-## 5. Current state of the branch
+## 8. Configuration parameters
 
-The branch `research/m.krylov` is the **active working branch**. It is based on `main` with the full experiment framework, all built-in experiments, and the bandit routing experiment on top.
+### BanditRoutingExperiment (base)
 
-Most recent commits (newest first):
-
-| Commit | Author | Description |
+| Parameter | Default | Description |
 |---|---|---|
-| `1d4ecd9` | S1norin | Bandit routing experiment (UCB + Thompson + per-arm distillation) |
-| `49922b5` | Andrchest | Split `drafter.py` into `draft_model.py` + `target_model.py` |
-| `50c3538` | Andrchest | Sub-optimization fixes (P0-P2) + profiler |
-| `0acf039` | Andrchest | Fix 5 memory leaks + critical fixes test suite |
-| `f64b7ab` | Andrchest | Add experiment descriptions to research/README.md |
+| `algorithm` | `"ucb"` | `"ucb"`, `"thompson"` (LinUCB via subclass) |
+| `exploration` | 2.0 | UCB `c` or LinUCB `α` |
+| `enable_distillation` | False | Enable per-arm online distillation |
+| `buffer_capacity` | 4096 | PerArmBuffer max entries |
+| `replay_every` | 32 | Distillation replay frequency (prompts) |
+| `replay_batch` | 8 | Distillation batch size |
+| `reward_window` | 0 | Sliding window size (0 = all history) |
+| `per_step_update` | False | Per-step vs per-prompt bandit updates |
 
-**Uncommitted changes** from this session are in the files listed above. They should be reviewed and committed.
+### DualRouter
+
+| Parameter | Default | Description |
+|---|---|---|
+| `mlp_train_every` | 32 | Train MLP every N updates |
+| `mlp_train_epochs` | 10 | MLP training epochs per round |
+| `mlp_train_lr` | 1e-3 | MLP training learning rate |
+
+### DrafterEntry
+
+| Parameter | Default | Description |
+|---|---|---|
+| `reward_window` | 0 | Sliding reward window size (0 = disabled) |
+
+### PerArmBuffer
+
+| Parameter | Default | Description |
+|---|---|---|
+| `capacity` | 4096 | Max buffer entries |
+| `seed` | 42 | RNG seed for reproducible sampling |
+
+### ContextualBanditRouter
+
+| Parameter | Default | Description |
+|---|---|---|
+| `exploration` | 1.0 | LinUCB α (exploration coefficient) |
+| `n_features` | 8 | Feature vector dimension |
+| `vocab_size` | 50257 | Model vocab size for feature normalisation |
 
 ---
 
-## 6. Quick reference
-
-### Hardware note
-
-The current dev machine has an **NVIDIA A100-SXM4-80GB in MIG mode (3g.40gb partition = 40 GB VRAM)**. PyTorch 2.6.0+cu124 has a CUDA allocator bug on this setup that causes OOM during tensor operations. The code changes are correct but **cannot be verified on this machine**. Test on a non-MIG GPU.
-
-### Project layout (relevant parts)
-
-```
-src/
-├── core/
-│   ├── decoder/speculative.py       # Main decode loop
-│   ├── models/draft_model.py        # DraftModel
-│   ├── models/target_model.py       # TargetModel
-│   ├── translation/                 # Cross-vocab translation
-│   ├── cache/ngram.py               # N-gram cache
-│   ├── distillation/online.py       # OnlineDistiller
-│   └── extensions/
-│       ├── routing/router.py        # MLP-based DynamicRouter
-│       ├── adaptive/                # SpeedupPredictor
-│       ├── contrastive/             # InfoNCE loss
-│       ├── replay/buffer.py         # ReplayBuffer
-│       └── multitarget/             # UniversalDrafter
-├── experiments/
-│   ├── base.py                      # BaseExperiment ABC
-│   ├── runner.py                    # ExperimentRunner + ExperimentConfig
-│   ├── suites.py                    # ABLATION_SUITE, discovery
-│   ├── built_in/                    # 10 built-in experiments
-│   └── templates/minimal_template.py # Copy-paste starting point
-└── main.py                          # CLI entry point
-
-research/m.krylov/
-├── README.md                        # Research hypothesis + plan
-├── HANDOFF.md                       # This file
-└── experiments/
-    ├── __init__.py                  # Package init
-    └── bandit_routing.py            # Bandit routing implementation
-```
-
-### Configuration defaults
-
-```python
-# Original (full models):
-drafter_model_paths = [
-    "Qwen/Qwen2.5-0.5B-Instruct",
-    "Qwen/Qwen2.5-1.5B-Instruct",
-]
-target_model_path = "Qwen/Qwen2.5-7B-Instruct"
-
-# --tiny override:
-drafter_model_paths = ["facebook/opt-125m", "facebook/opt-350m"]
-target_model_path = "facebook/opt-350m"
-```
-
-### Running the bandit experiments
+## 9. How to run
 
 ```bash
 # List all research experiments
 python src/main.py --list --research
 
-# Run a single experiment (use --research flag so -e searches research experiments)
-python src/main.py --research --experiment bandit_ucb --tiny -n 10
-python src/main.py --research --experiment bandit_thompson --tiny -n 10
-python src/main.py --research --experiment bandit_ucb_distill --tiny -n 10
-python src/main.py --research --experiment bandit_thompson_distill --tiny -n 10
+# Single experiment (tiny models, 10 samples)
+python src/main.py --experiment bandit_ucb --tiny -n 10
 
-# All research experiments
+# All research experiments (tiny)
 python src/main.py --research --tiny -n 5
 
-# On CPU (slow but avoids CUDA allocator bug)
-python src/main.py --research --experiment bandit_ucb --tiny -n 2 --device cpu --no-mlflow
+# Bandit vs MLP comparison
+python src/main.py --experiment bandit_vs_mlp_ucb --tiny -n 20
+
+# Contextual bandit
+python src/main.py --experiment bandit_contextual --tiny -n 10
+
+# Multi-dataset sweep
+python src/main.py --experiment bandit_multidataset_ucb --tiny -n 100
+
+# With sliding reward window (non-stationary)
+# (set via subclass constructor or experiment config override)
 ```
+
+### Default models
+
+```
+drafter_model_paths = ["Qwen/Qwen2.5-0.5B-Instruct", "Qwen/Qwen2.5-1.5B-Instruct"]
+target_model_path   = "Qwen/Qwen2.5-7B-Instruct"
+dataset             = "gsm8k"
+max_samples         = 500
+max_new_tokens      = 128
+```
+
+`--tiny` overrides to `opt-125m` / `opt-350m` for fast iteration.
+
+---
+
+## 10. Metrics produced
+
+Always (standard): `acceptance_rate`, `tokens_per_sec`, `gpu_mem_peak_gb`, `gpu_mem_mean_gb`, `wall_time_total_s`, `wall_time_mean_s`.
+
+Bandit-specific (via `on_extra_metrics`):
+
+| Key | Type | Description |
+|---|---|---|
+| `bandit_router` | dict | Algorithm, exploration params, per-arm pulls/means |
+| `bandit_mean_reward` | float | Mean reward across all prompts |
+| `bandit_std_reward` | float | Std dev of rewards |
+| `mean_wall_time_ms` | float | Average decode step wall time |
+| `buffer_stats` | dict | Total entries + per-arm breakdown (distillation only) |
+| `bandit_vs_mlp_comparison` | dict | Agreement counts, arm distributions, online train count (vs-MLP only) |
+| `per_dataset_metrics` | dict | Per-dataset reward stats + arm distributions (multi-dataset only) |
+
+---
+
+## 11. Remaining open questions
+
+1. **Exploration vs exploitation trade-off** — Systematic sweep of `exploration` (UCB `c`, LinUCB `α`) values across datasets to find optimal settings.  No grid search has been run yet.
+
+2. **UCB vs Thompson comparison** — Run both on the same dataset with the same seed and compare convergence speed, final reward, and arm distribution.  The experiments exist but the comparison has not been executed.
+
+3. **Distillation tuning** — Optimal `replay_every` and `replay_batch` values depend on dataset and drafter sizes; needs empirical tuning.  Current defaults (32, 8) are placeholders.
+
+4. **Multi-dataset humaneval** — Currently covers gsm8k, mbpp, alpaca, xsum.  humaneval is not yet in `BanditMultiDatasetExperiment.DATASETS`.
+
+5. **Non-stationary reward analysis** — With `reward_window > 0`, how do policies behave when drafters improve mid-run?  Standard bandit regret bounds don't apply.  Needs empirical study.
+
+---
+
+## 12. Key non-experiment classes
+
+| Class | Role |
+|---|---|
+| `DrafterEntry` | One bandit arm: name, model, pulls, total_reward, sliding window |
+| `_GaussianArm` | Normal-Gamma posterior internals for Thompson Sampling |
+| `_LinUCBArm` | Ridge-regression posterior for one LinUCB arm |
+| `PerArmBuffer` | FIFO buffer tagged by arm index; seeded `sample_for_arm()` |
+| `BufferEntry` | One training example (logits, tokens, mask, arm_index) |
+| `DualRouter` | Wrapper that runs bandit + MLP router in parallel with online MLP training |
+
+---
+
+## 13. Files
+
+```
+research/m.krylov/
+├── README.md                        # Research hypothesis, phased plan, task checklist
+├── HANDOFF.md                       # This file
+└── experiments/
+    ├── __init__.py                  # Docstring only (discovery uses __all__ from bandit_routing.py)
+    └── bandit_routing.py            # Everything: routers, buffer, 10 experiment classes
+```
+
+No other files in this research directory are modified or created by this work.  All router algorithms, buffers, and experiments live in the single `bandit_routing.py` module.  The MLP routing components (`DynamicRouter`, `RouterModel`, `DrafterSpec`) are imported from `src/core/extensions/routing/router.py`.

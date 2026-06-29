@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import math
 import time
+from collections import deque
 from dataclasses import dataclass, field
 
 import torch
@@ -36,15 +37,35 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DrafterEntry:
-    """One arm of the bandit."""
+    """One arm of the bandit.
+
+    When ``reward_window`` > 0 only the most recent rewards are used
+    for ``mean_reward`` so the bandit can adapt when drafter quality
+    changes over time (e.g. during online distillation).
+    """
 
     name: str
     model: object | None  # DraftModel instance
     pulls: int = 0
     total_reward: float = 0.0
+    reward_window: int = 0  # 0 = no window (use all history)
+
+    # Internal buffer for sliding window (only used when reward_window > 0)
+    _reward_history: deque = field(default_factory=deque, repr=False)
+
+    def record_reward(self, reward: float) -> None:
+        """Record a reward (call this instead of mutating fields directly)."""
+        self.pulls += 1
+        self.total_reward += reward
+        if self.reward_window > 0:
+            self._reward_history.append(reward)
+            while len(self._reward_history) > self.reward_window:
+                self._reward_history.popleft()
 
     @property
     def mean_reward(self) -> float:
+        if self.reward_window > 0 and self._reward_history:
+            return sum(self._reward_history) / len(self._reward_history)
         return self.total_reward / max(self.pulls, 1)
 
 
@@ -66,15 +87,17 @@ class UCBBanditRouter:
     ) -> None:
         self.arms = list(drafters)
         self.c = exploration
-        self.total_pulls: int = len(drafters)
+        self.total_pulls: int = 0
         self._last_selected_idx: int = 0
+        self._round_robin_count: int = 0  # tracks initial exploration phase
 
     def select_drafter(self, input_ids: torch.Tensor) -> tuple[object | None, int]:
         n_arms = len(self.arms)
 
         # Round-robin until every arm has been pulled at least once
-        if self.total_pulls < n_arms:
-            idx = self.total_pulls % n_arms
+        if self._round_robin_count < n_arms:
+            idx = self._round_robin_count % n_arms
+            self._round_robin_count += 1
             self._last_selected_idx = idx
             return self.arms[idx].model, idx
 
@@ -100,8 +123,7 @@ class UCBBanditRouter:
 
     def update(self, reward: float) -> None:
         arm = self.arms[self._last_selected_idx]
-        arm.pulls += 1
-        arm.total_reward += reward
+        arm.record_reward(reward)
         self.total_pulls += 1
 
     def stats(self) -> dict:
@@ -223,7 +245,8 @@ class ThompsonSamplingRouter:
         ]
         self._drafters = drafters
         self._last_selected_idx: int = 0
-        self._total_pulls: int = len(drafters)
+        self._total_pulls: int = 0
+        self._round_robin_count: int = 0  # tracks initial exploration phase
         self._rng = torch.Generator()
         self._rng.manual_seed(42)
 
@@ -231,8 +254,9 @@ class ThompsonSamplingRouter:
         n_arms = len(self.arms)
 
         # Round-robin until every arm has been pulled at least once
-        if self._total_pulls < n_arms:
-            idx = self._total_pulls % n_arms
+        if self._round_robin_count < n_arms:
+            idx = self._round_robin_count % n_arms
+            self._round_robin_count += 1
             self._last_selected_idx = idx
             return self._drafters[idx].model, idx
 
@@ -251,7 +275,10 @@ class ThompsonSamplingRouter:
         return self._drafters[idx].model, idx
 
     def update(self, reward: float) -> None:
+        # Update the Gaussian posterior
         self.arms[self._last_selected_idx].update(reward)
+        # Also update the DrafterEntry for sliding-window support
+        self._drafters[self._last_selected_idx].record_reward(reward)
         self._total_pulls += 1
 
     def stats(self) -> dict:
@@ -276,18 +303,26 @@ class ThompsonSamplingRouter:
 # ---------------------------------------------------------------------------
 
 
-def _extract_prompt_features(input_ids: torch.Tensor, max_features: int = 8) -> torch.Tensor:
+def _extract_prompt_features(
+    input_ids: torch.Tensor,
+    max_features: int = 8,
+    vocab_size: int = 50257,  # default OPT vocab; override with actual model vocab_size
+) -> torch.Tensor:
     """Extract a fixed-size feature vector from prompt token IDs.
 
     Features (all L2-normalised):
         0: log(prompt_length + 1)
         1: vocab diversity (unique_tokens / total_tokens)
-        2: mean token ID / vocab_size_proxy (10000)
-        3: std token ID / vocab_size_proxy
+        2: mean token ID / vocab_size
+        3: std token ID / vocab_size
         4: fraction of tokens < 100 (special/control tokens)
         5: fraction of tokens in 100..1000 (common words)
         6: fraction of tokens in 1000..5000 (medium-frequency)
         7: fraction of tokens >= 5000 (rare tokens)
+
+    ``vocab_size`` should be set to the actual model vocabulary size
+    (e.g. ~50k for OPT, ~151k for Qwen2.5) so features 2–3 stay in
+    a sensible [0, 1] range.
 
     Returns a 1-D tensor of length ``max_features``.
     """
@@ -300,11 +335,12 @@ def _extract_prompt_features(input_ids: torch.Tensor, max_features: int = 8) -> 
     mean_id = ids.mean().item()
     std_id = ids.std().item() if n > 1 else 0.0
 
+    vs = max(vocab_size, 1)
     features = [
         math.log(n + 1),
         unique / n,
-        mean_id / 10000.0,
-        std_id / 10000.0,
+        mean_id / vs,
+        std_id / vs,
         (ids < 100).float().mean().item(),
         ((ids >= 100) & (ids < 1000)).float().mean().item(),
         ((ids >= 1000) & (ids < 5000)).float().mean().item(),
@@ -395,6 +431,7 @@ class ContextualBanditRouter:
         drafters: list[DrafterEntry],
         exploration: float = 1.0,
         n_features: int = 8,
+        vocab_size: int = 50257,
     ) -> None:
         self.arms = [
             _LinUCBArm(name=d.name, d=n_features, alpha=exploration)
@@ -402,19 +439,22 @@ class ContextualBanditRouter:
         ]
         self._drafters = drafters
         self.n_features = n_features
+        self.vocab_size = vocab_size
         self._last_selected_idx: int = 0
         self._total_pulls: int = 0
+        self._round_robin_count: int = 0  # tracks initial exploration phase
 
     def select_drafter(self, input_ids: torch.Tensor) -> tuple[object | None, int]:
         n_arms = len(self.arms)
 
         # Round-robin until every arm has been pulled at least once
-        if self._total_pulls < n_arms:
-            idx = self._total_pulls % n_arms
+        if self._round_robin_count < n_arms:
+            idx = self._round_robin_count % n_arms
+            self._round_robin_count += 1
             self._last_selected_idx = idx
             return self._drafters[idx].model, idx
 
-        x = _extract_prompt_features(input_ids, self.n_features)
+        x = _extract_prompt_features(input_ids, self.n_features, vocab_size=self.vocab_size)
         scores = [arm.score(x) for arm in self.arms]
         idx = int(max(range(n_arms), key=lambda i: scores[i]))
         self._last_selected_idx = idx
@@ -431,7 +471,11 @@ class ContextualBanditRouter:
 
     def update(self, reward: float) -> None:
         x = getattr(self, "_last_context", torch.ones(self.n_features))
-        self.arms[self._last_selected_idx].update(x, reward)
+        arm = self.arms[self._last_selected_idx]
+        arm.update(x, reward)
+        # Also update the DrafterEntry for consistency
+        if self._last_selected_idx < len(self._drafters):
+            self._drafters[self._last_selected_idx].record_reward(reward)
         self._total_pulls += 1
 
     def stats(self) -> dict:
@@ -472,11 +516,15 @@ class PerArmBuffer:
 
     When replaying, entries are filtered by arm so each drafter is only
     trained on data it generated.
+
+    Uses a seeded RNG for reproducible sampling across runs.
     """
 
-    def __init__(self, capacity: int = 4096) -> None:
+    def __init__(self, capacity: int = 4096, seed: int = 42) -> None:
         self.capacity = capacity
         self._entries: list[BufferEntry] = []
+        self._rng = torch.Generator()
+        self._rng.manual_seed(seed)
 
     def push(
         self,
@@ -500,12 +548,15 @@ class PerArmBuffer:
     def sample_for_arm(
         self, arm_index: int, batch_size: int = 8
     ) -> list[BufferEntry]:
-        """Return up to batch_size entries for the given arm."""
+        """Return up to batch_size entries for the given arm.
+
+        Uses a seeded RNG so results are reproducible across runs.
+        """
         arm_entries = [e for e in self._entries if e.arm_index == arm_index]
         if not arm_entries:
             return []
-        # Simple random sample
-        indices = torch.randperm(len(arm_entries))[:batch_size].tolist()
+        # Reproducible random sample via seeded generator
+        indices = torch.randperm(len(arm_entries), generator=self._rng)[:batch_size].tolist()
         return [arm_entries[i] for i in indices]
 
     def __len__(self) -> int:
@@ -541,6 +592,8 @@ class BanditRoutingExperiment(BaseExperiment):
         buffer_capacity: int = 4096,
         replay_every: int = 32,
         replay_batch: int = 8,
+        reward_window: int = 0,       # 0 = all history; >0 = sliding window (non-stationary)
+        per_step_update: bool = False,  # True = update bandit per decode step, not per prompt
     ) -> None:
         super().__init__(
             ExperimentMeta(
@@ -561,11 +614,14 @@ class BanditRoutingExperiment(BaseExperiment):
         self.buffer_capacity = buffer_capacity
         self.replay_every = replay_every
         self.replay_batch = replay_batch
+        self.reward_window = reward_window
+        self.per_step_update = per_step_update
 
         # Populated during build
         self._drafters: list[DrafterEntry] = []
         self._buffer: PerArmBuffer | None = None
         self._distillers: list[object] = []  # one per arm
+        self._vocab_size: int = 50257  # default; updated in build_router
 
     def get_config(self) -> ExperimentConfig:
         return ExperimentConfig(
@@ -601,6 +657,11 @@ class BanditRoutingExperiment(BaseExperiment):
         if not drafter_paths:
             drafter_paths = [cfg.drafter_model_path]
 
+        # Grab actual vocab size from the drafter model config
+        self._vocab_size = getattr(
+            getattr(ctx.drafter.model, "config", None), "vocab_size", 50257
+        )
+
         self._drafters = []
         default_name = cfg.drafter_model_path
         for path in drafter_paths:
@@ -610,13 +671,17 @@ class BanditRoutingExperiment(BaseExperiment):
                 logger.info("Reusing runner drafter for %s", path)
             else:
                 model = DraftModel(path, device=ctx.device)
-            self._drafters.append(DrafterEntry(name=path, model=model))
+            self._drafters.append(DrafterEntry(
+                name=path, model=model, reward_window=self.reward_window,
+            ))
 
         logger.info(
-            "Building %s router with %d drafters: %s",
+            "Building %s router with %d drafters: %s (vocab_size=%d, reward_window=%d)",
             self.algorithm,
             len(self._drafters),
             [d.name for d in self._drafters],
+            self._vocab_size,
+            self.reward_window,
         )
 
         if self.algorithm == "ucb":
@@ -641,7 +706,7 @@ class BanditRoutingExperiment(BaseExperiment):
             logger.warning("No translator found; skipping distillation setup")
             return None
 
-        self._buffer = PerArmBuffer(capacity=self.buffer_capacity)
+        self._buffer = PerArmBuffer(capacity=self.buffer_capacity, seed=getattr(ctx.config, "seed", 42))
         self._distillers = []
 
         for i, entry in enumerate(self._drafters):
@@ -688,6 +753,11 @@ class BanditRoutingExperiment(BaseExperiment):
 
         Called once per prompt.  ``step_results`` is a list of
         ``StepResult`` objects (one per decode step within the prompt).
+
+        When ``per_step_update`` is True the bandit is updated once per
+        decode step (finer-grained learning).  Otherwise (default) the
+        reward is aggregated over all steps and the bandit is updated
+        once per prompt.
         """
         router = ctx.router
         if router is None:
@@ -697,17 +767,29 @@ class BanditRoutingExperiment(BaseExperiment):
         ctx.extra_state["step_count"] = step_count + 1
         arm_idx = getattr(router, "_last_selected_idx", 0)
 
-        # --- Reward computation (aggregate over all steps in this prompt) ---
+        if self.per_step_update:
+            self._update_per_step(ctx, router, step_results, step_count, prompt_index, arm_idx)
+        else:
+            self._update_per_prompt(ctx, router, step_results, step_count, prompt_index, arm_idx)
+
+    def _update_per_prompt(
+        self,
+        ctx: DecodeContext,
+        router: object,
+        step_results: list,
+        step_count: int,
+        prompt_index: int,
+        arm_idx: int,
+    ) -> None:
+        """Aggregate reward over all steps, update bandit once."""
         total_accepted = sum(sr.accepted_count for sr in step_results)
         total_wall_ms = sum(sr.wall_time_ms for sr in step_results)
         total_draft = sum(sr.draft_length for sr in step_results)
 
-        # Fallback timing estimate if the decoder didn't instrument wall_time
         if total_wall_ms <= 0:
-            # Rough estimate: ~1ms per draft token + ~2ms per target verify
             total_wall_ms = total_draft * 1.0 + len(step_results) * 2.0
 
-        reward = total_accepted / max(total_wall_ms / 1000.0, 1e-6)  # tokens/sec
+        reward = total_accepted / max(total_wall_ms / 1000.0, 1e-6)
 
         ctx.extra_state["reward_history"].append({
             "step": step_count,
@@ -719,8 +801,49 @@ class BanditRoutingExperiment(BaseExperiment):
         })
         ctx.extra_state["timing_history"].append(total_wall_ms)
 
-        # --- Update bandit ---
         router.update(reward)
+
+        # --- Periodic distillation (phase 3+) ---
+        if (
+            self.enable_distillation
+            and self._buffer is not None
+            and step_count % self.replay_every == 0
+        ):
+            self._replay_for_arm(ctx, arm_idx)
+
+    def _update_per_step(
+        self,
+        ctx: DecodeContext,
+        router: object,
+        step_results: list,
+        step_count: int,
+        prompt_index: int,
+        arm_idx: int,
+    ) -> None:
+        """Update bandit once per decode step (finer-grained)."""
+        total_wall_ms = 0.0
+        for si, sr in enumerate(step_results):
+            accepted = sr.accepted_count
+            wall_ms = sr.wall_time_ms
+            if wall_ms <= 0:
+                wall_ms = sr.draft_length * 1.0 + 2.0
+
+            reward = accepted / max(wall_ms / 1000.0, 1e-6)
+            total_wall_ms += wall_ms
+
+            ctx.extra_state["reward_history"].append({
+                "step": step_count,
+                "prompt": prompt_index,
+                "sub_step": si,
+                "arm": arm_idx,
+                "accepted": accepted,
+                "wall_time_ms": wall_ms,
+                "reward": reward,
+            })
+
+            router.update(reward)
+
+        ctx.extra_state["timing_history"].append(total_wall_ms)
 
         # --- Periodic distillation (phase 3+) ---
         if (
@@ -847,11 +970,13 @@ class BanditContextualExperiment(BanditRoutingExperiment):
         *,
         exploration: float = 1.0,
         n_features: int = 8,
+        reward_window: int = 0,
     ) -> None:
         super().__init__(
             algorithm="ucb",  # unused; we override build_router
             exploration=exploration,
             enable_distillation=False,
+            reward_window=reward_window,
         )
         self.meta = ExperimentMeta(
             name="bandit_contextual",
@@ -871,6 +996,11 @@ class BanditContextualExperiment(BanditRoutingExperiment):
         if not drafter_paths:
             drafter_paths = [cfg.drafter_model_path]
 
+        # Grab actual vocab size from the drafter model config
+        self._vocab_size = getattr(
+            getattr(ctx.drafter.model, "config", None), "vocab_size", 50257
+        )
+
         self._drafters = []
         default_name = cfg.drafter_model_path
         for path in drafter_paths:
@@ -879,17 +1009,21 @@ class BanditContextualExperiment(BanditRoutingExperiment):
                 logger.info("Reusing runner drafter for %s", path)
             else:
                 model = DraftModel(path, device=ctx.device)
-            self._drafters.append(DrafterEntry(name=path, model=model))
+            self._drafters.append(DrafterEntry(
+                name=path, model=model, reward_window=self.reward_window,
+            ))
 
         logger.info(
-            "Building LinUCB contextual router with %d drafters, %d features",
+            "Building LinUCB contextual router with %d drafters, %d features (vocab_size=%d)",
             len(self._drafters),
             self.n_features,
+            self._vocab_size,
         )
         return ContextualBanditRouter(
             self._drafters,
             exploration=self.exploration,
             n_features=self.n_features,
+            vocab_size=self._vocab_size,
         )
 
 
@@ -906,6 +1040,88 @@ class BanditContextualDistillExperiment(BanditContextualExperiment):
             depends_on=["01_baseline"],
         )
         self.enable_distillation = True
+
+
+# ---------------------------------------------------------------------------
+# Dual-router wrapper — runs bandit + MLP in parallel
+# ---------------------------------------------------------------------------
+
+
+class DualRouter:
+    """Wraps a bandit router and an MLP router.
+
+    The runner calls ``select_drafter(input_ids)`` once per prompt.
+    This wrapper queries **both** routers, records the MLP selection
+    for later comparison, and returns the bandit's selection for
+    actual decoding.
+
+    ``update(reward)`` is forwarded to the bandit router only.
+    The MLP router is trained online every ``mlp_train_every`` updates
+    so it starts from learned weights rather than random initialisation.
+    """
+
+    def __init__(
+        self,
+        bandit_router: UCBBanditRouter | ThompsonSamplingRouter | ContextualBanditRouter,
+        mlp_router: object,  # DynamicRouter
+        mlp_train_every: int = 32,
+        mlp_train_epochs: int = 10,
+        mlp_train_lr: float = 1e-3,
+    ) -> None:
+        self.bandit = bandit_router
+        self.mlp = mlp_router
+        self._last_selected_idx: int = 0
+        # Populated by select_drafter, consumed by on_decode_step
+        self._mlp_selection: int = 0
+        # Store last input_ids so MLP can record observations in on_decode_step
+        self._last_input_ids: torch.Tensor | None = None
+        # Online MLP training config
+        self._mlp_train_every = mlp_train_every
+        self._mlp_train_epochs = mlp_train_epochs
+        self._mlp_train_lr = mlp_train_lr
+        self._mlp_update_count: int = 0
+
+    def select_drafter(self, input_ids: torch.Tensor) -> tuple[object | None, int]:
+        # Cache input_ids for MLP online training
+        self._last_input_ids = input_ids
+
+        # Ask the MLP router and record its choice
+        try:
+            _, mlp_idx = self.mlp.select_drafter(input_ids)
+            self._mlp_selection = mlp_idx
+        except Exception as e:
+            logger.warning("MLP router select failed: %s — defaulting to arm 0", e)
+            self._mlp_selection = 0
+
+        # Ask the bandit router (primary — its drafter is used for decoding)
+        model, bandit_idx = self.bandit.select_drafter(input_ids)
+        self._last_selected_idx = bandit_idx
+        return model, bandit_idx
+
+    def update(self, reward: float) -> None:
+        self.bandit.update(reward)
+        self._mlp_update_count += 1
+
+        # Periodically train the MLP router on accumulated observations
+        if (
+            self._mlp_update_count % self._mlp_train_every == 0
+            and hasattr(self.mlp, "_train_X")
+            and len(self.mlp._train_X) >= 4  # need at least a few samples
+        ):
+            try:
+                self.mlp.train_router(
+                    n_epochs=self._mlp_train_epochs,
+                    lr=self._mlp_train_lr,
+                )
+            except Exception as e:
+                logger.warning("MLP online training failed: %s", e)
+
+    def stats(self) -> dict:
+        return {
+            "bandit": self.bandit.stats() if hasattr(self.bandit, "stats") else {},
+            "mlp": self.mlp.stats() if hasattr(self.mlp, "stats") else {},
+            "mlp_online_train_count": self._mlp_update_count // self._mlp_train_every,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -930,11 +1146,13 @@ class BanditVsMLPExperiment(BanditRoutingExperiment):
         *,
         algorithm: str = "ucb",
         exploration: float = 2.0,
+        reward_window: int = 0,
     ) -> None:
         super().__init__(
             algorithm=algorithm,
             exploration=exploration,
             enable_distillation=False,
+            reward_window=reward_window,
         )
         self.meta = ExperimentMeta(
             name=f"bandit_vs_mlp_{algorithm}",
@@ -944,14 +1162,9 @@ class BanditVsMLPExperiment(BanditRoutingExperiment):
             depends_on=["09_+routing"],
         )
         self._mlp_router: object | None = None
-        self._mlp_stats: list[dict] = []
 
     def build_router(self, ctx: BuildContext):
-        """Build both bandit and MLP routers.
-
-        Returns the bandit router (used for actual decoding).
-        The MLP router is stored for comparison.
-        """
+        """Build both bandit and MLP routers, wrapped in a DualRouter."""
         # Build the bandit router (reuse parent logic)
         from core.models.drafter import DraftModel
         from core.extensions.routing.router import (
@@ -1016,7 +1229,7 @@ class BanditVsMLPExperiment(BanditRoutingExperiment):
             self.algorithm,
             n_drafters,
         )
-        return bandit_router
+        return DualRouter(bandit_router, self._mlp_router)
 
     def on_before_decode(self, ctx: DecodeContext) -> None:
         super().on_before_decode(ctx)
@@ -1029,7 +1242,12 @@ class BanditVsMLPExperiment(BanditRoutingExperiment):
         step_results: list,
         prompt_index: int,
     ) -> None:
-        """Run bandit update AND record MLP selection for comparison."""
+        """Run bandit update AND record MLP selection for comparison.
+
+        The DualRouter wrapper already queried both routers during
+        ``select_drafter(input_ids)`` and stored the MLP selection in
+        ``dual._mlp_selection``.  We read it here.
+        """
         router = ctx.router
         if router is None:
             return
@@ -1059,41 +1277,67 @@ class BanditVsMLPExperiment(BanditRoutingExperiment):
         ctx.extra_state["timing_history"].append(total_wall_ms)
         ctx.extra_state["bandit_selections"].append(bandit_arm)
 
-        # --- Update bandit ---
+        # --- Update bandit (DualRouter forwards to bandit internally) ---
         router.update(reward)
 
-        # --- Record MLP selection (for comparison only) ---
-        if self._mlp_router is not None:
-            # We need the input_ids from the decoder's current context
-            # The MLP router would have selected a drafter; record it
-            mlp_idx = 0  # default
-            # We can't re-run the MLP selection here without input_ids,
-            # so we record the comparison in on_after_decode instead
-            ctx.extra_state["mlp_selections"].append(mlp_idx)
+        # --- Record MLP selection from DualRouter ---
+        if isinstance(router, DualRouter):
+            mlp_idx = router._mlp_selection
+        else:
+            mlp_idx = 0
+        ctx.extra_state["mlp_selections"].append(mlp_idx)
+
+        # --- Feed observation to MLP router for online training ---
+        if isinstance(router, DualRouter) and hasattr(router.mlp, "record"):
+            acceptance_rate = total_accepted / max(total_draft, 1)
+            last_ids = router._last_input_ids
+            if last_ids is not None:
+                router.mlp.record(
+                    input_ids=last_ids,
+                    drafter_idx=bandit_arm,
+                    acceptance_rate=acceptance_rate,
+                )
 
     def on_after_decode(self, ctx: DecodeContext) -> None:
         """Compute comparison statistics between bandit and MLP."""
         super().on_after_decode(ctx)
 
-        rewards = self._last_rewards
         bandit_selections = ctx.extra_state.get("bandit_selections", [])
+        mlp_selections = ctx.extra_state.get("mlp_selections", [])
 
-        comparison = {
+        comparison: dict = {
             "bandit_algorithm": self.algorithm,
-            "bandit_total_pulls": getattr(self._last_router, "total_pulls", getattr(self._last_router, "_total_pulls", 0)),
             "n_drafters": len(self._drafters),
+            "n_prompts": len(bandit_selections),
             "bandit_arm_distribution": {},
+            "mlp_arm_distribution": {},
+            "agreements": 0,
+            "disagreements": 0,
         }
 
-        # Count bandit arm selections
+        # Count arm selections for both routers
         for arm_idx in bandit_selections:
             key = str(arm_idx)
             comparison["bandit_arm_distribution"][key] = \
                 comparison["bandit_arm_distribution"].get(key, 0) + 1
 
-        # If MLP router has stats, include them
-        if self._mlp_router is not None:
-            comparison["mlp_router"] = self._mlp_router.stats()
+        for arm_idx in mlp_selections:
+            key = str(arm_idx)
+            comparison["mlp_arm_distribution"][key] = \
+                comparison["mlp_arm_distribution"].get(key, 0) + 1
+
+        # Agreement / disagreement count
+        for b, m in zip(bandit_selections, mlp_selections):
+            if b == m:
+                comparison["agreements"] += 1
+            else:
+                comparison["disagreements"] += 1
+
+        # Include per-router stats
+        dual = getattr(self, "_last_router", None)
+        if isinstance(dual, DualRouter):
+            comparison["bandit_router"] = dual.bandit.stats()
+            comparison["mlp_router"] = dual.mlp.stats()
 
         self._comparison = comparison
 
@@ -1125,11 +1369,13 @@ class BanditMultiDatasetExperiment(BanditRoutingExperiment):
         exploration: float = 2.0,
         datasets: list[str] | None = None,
         samples_per_dataset: int = 50,
+        reward_window: int = 0,
     ) -> None:
         super().__init__(
             algorithm=algorithm,
             exploration=exploration,
             enable_distillation=False,
+            reward_window=reward_window,
         )
         self.meta = ExperimentMeta(
             name=f"bandit_multidataset_{algorithm}",
@@ -1245,17 +1491,382 @@ class BanditMultiDatasetExperiment(BanditRoutingExperiment):
 class BanditVsMLPThompsonExperiment(BanditVsMLPExperiment):
     """Thompson Sampling vs MLP routing comparison."""
 
-    def __init__(self) -> None:
-        super().__init__(algorithm="thompson")
+    def __init__(self, *, reward_window: int = 0) -> None:
+        super().__init__(algorithm="thompson", reward_window=reward_window)
         self.meta.name = "bandit_vs_mlp_thompson"
 
 
 class BanditMultiDatasetThompsonExperiment(BanditMultiDatasetExperiment):
     """Thompson Sampling routing across multiple datasets."""
 
-    def __init__(self) -> None:
-        super().__init__(algorithm="thompson")
+    def __init__(self, *, reward_window: int = 0) -> None:
+        super().__init__(algorithm="thompson", reward_window=reward_window)
         self.meta.name = "bandit_multidataset_thompson"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Exploration parameter sweep
+# ---------------------------------------------------------------------------
+
+
+class BanditExplorationSweepExperiment(BanditRoutingExperiment):
+    """Systematic sweep of exploration parameters across UCB and LinUCB.
+
+    Runs the full decode loop multiple times, once per exploration value,
+    and reports comparative metrics so you can pick the best setting.
+
+    Sweep dimensions
+    ----------------
+    - UCB1: sweep `c` (exploration coefficient)
+    - LinUCB: sweep `α` (exploration coefficient)
+    - Both algorithms can be swept in the same experiment
+
+    Metrics produced (in `exploration_sweep` dict)
+    ----------------------------------------------
+    - Per-`c`/`α`: mean_reward, std_reward, acceptance_rate, tokens_per_sec,
+      arm_distribution, convergence_sample (first sample where policy
+      stabilises on one arm for `convergence_window` consecutive steps)
+    - Best value per algorithm (highest mean_reward)
+    """
+
+    # Default sweep ranges — customise via constructor
+    DEFAULT_UCB_C_VALUES = [0.1, 0.5, 1.0, 2.0, 5.0]
+    DEFAULT_LINUCB_ALPHA_VALUES = [0.1, 1.0, 5.0]
+
+    def __init__(
+        self,
+        *,
+        ucb_c_values: list[float] | None = None,
+        linucb_alpha_values: list[float] | None = None,
+        convergence_window: int = 10,  # consecutive same-arm to count as converged
+        reward_window: int = 0,
+    ) -> None:
+        super().__init__(
+            algorithm="ucb",
+            exploration=2.0,  # placeholder; overridden per-sweep
+            enable_distillation=False,
+            reward_window=reward_window,
+        )
+        self.meta = ExperimentMeta(
+            name="bandit_exploration_sweep",
+            description=(
+                "Exploration parameter sweep: UCB c-values + LinUCB α-values. "
+                "Compares mean_reward, arm distribution, convergence per setting."
+            ),
+            tags=["research", "m.krylov", "routing", "bandit", "sweep"],
+            dimensions=["drafter_selection", "exploration"],
+            depends_on=["01_baseline"],
+        )
+        self.ucb_c_values = ucb_c_values or self.DEFAULT_UCB_C_VALUES
+        self.linucb_alpha_values = linucb_alpha_values or self.DEFAULT_LINUCB_ALPHA_VALUES
+        self.convergence_window = convergence_window
+
+        # Sweep results
+        self._sweep_results: dict[str, dict] = {}
+
+    # ------------------------------------------------------------------
+    # Override build_router to support both UCB and LinUCB
+    # ------------------------------------------------------------------
+
+    def build_router(self, ctx: BuildContext) -> UCBBanditRouter | ContextualBanditRouter:
+        """Build router for the current sweep value.
+
+        Called once per sweep iteration by _run_sweep.
+        The algorithm is set via `_current_algorithm` and `_current_exploration`.
+        Drafter models are pre-loaded in `run()` and cached in `_preloaded_drafters`.
+        """
+        cfg = ctx.config
+        drafter_paths = getattr(cfg, "drafter_model_paths", [])
+        if not drafter_paths:
+            drafter_paths = [cfg.drafter_model_path]
+
+        self._vocab_size = getattr(
+            getattr(ctx.drafter.model, "config", None), "vocab_size", 50257
+        )
+
+        self._drafters = []
+        for path in drafter_paths:
+            # Use pre-loaded model (cached across sweep iterations)
+            model = self._preloaded_drafters.get(path)
+            if model is None:
+                model = ctx.drafter  # fallback to runner drafter
+            self._drafters.append(DrafterEntry(
+                name=path, model=model, reward_window=self.reward_window,
+            ))
+
+        algo = getattr(self, "_current_algorithm", "ucb")
+        exploration = getattr(self, "_current_exploration", 2.0)
+
+        if algo == "linucb":
+            return ContextualBanditRouter(
+                self._drafters,
+                exploration=exploration,
+                n_features=8,
+                vocab_size=self._vocab_size,
+            )
+        else:
+            return UCBBanditRouter(self._drafters, exploration=exploration)
+
+    # ------------------------------------------------------------------
+    # Override run() to loop over exploration values
+    # ------------------------------------------------------------------
+
+    def run(self, runner: object) -> object:  # ExperimentRunner -> ExperimentResult
+        """Run the full decode loop for each exploration value.
+
+        For each (algorithm, exploration) pair:
+        1. Build router with that exploration value
+        2. Run all prompts
+        3. Collect metrics
+        4. Compare across values
+        """
+        import random as _random
+        import gc
+
+        import numpy as np
+        from experiments.base import ExperimentResult
+
+        logger = logging.getLogger(__name__)
+
+        cfg = self.get_config()
+        # Apply CLI overrides
+        for key, value in self._overrides.items():
+            setattr(cfg, key, value)
+        cfg_dict = runner._asdict_config(cfg)
+
+        # Deterministic seeding
+        seed = getattr(cfg, "seed", 42)
+        torch.manual_seed(seed)
+        _random.seed(seed)
+        np.random.seed(seed)
+        torch_rng = torch.Generator()
+        torch_rng.manual_seed(seed)
+
+        # Load models once (shared across sweep iterations)
+        drafter, target = runner._build_models(cfg)
+
+        # Build translator + cache (shared)
+        build_ctx = BuildContext(
+            device=runner.device,
+            drafter=drafter,
+            target=target,
+            config=cfg,
+            components={},
+        )
+        translator = self.build_translator(build_ctx)
+        build_ctx.components["translator"] = translator
+        cache = self.build_cache(build_ctx)
+        build_ctx.components["cache"] = cache
+
+        # Load dataset once
+        prompts = runner._load_dataset(cfg)
+        max_new_tokens = getattr(cfg, "max_new_tokens", 128)
+
+        # Build decoder (drafter/target can be swapped via router)
+        from core.decoder.speculative import SpeculativeDecoder
+        draft_length = getattr(cfg, "draft_length", 5)
+        decoder = SpeculativeDecoder(
+            drafter=drafter,
+            target=target,
+            translator=translator,
+            cache=cache,
+            draft_length=draft_length,
+        )
+
+        # Benchmark collector (shared)
+        from benchmarks.metrics.collector import BenchmarkCollector
+
+        # MLflow setup
+        runner._setup_mlflow(cfg)
+
+        # Measure baseline TPS once
+        baseline_tps = 0.0
+        try:
+            pid, plen = prompts[0]
+            pid = pid.to(runner.device)
+            bl_result = self._measure_autoregressive_baseline(target, pid, 128)
+            baseline_tps = bl_result["tokens_per_sec"]
+        except Exception:
+            logger.warning("Baseline TPS measurement failed", exc_info=True)
+
+        # ----------------------------------------------------------------
+        # Sweep loop
+        # ----------------------------------------------------------------
+        sweep_configs = []
+        for c_val in self.ucb_c_values:
+            sweep_configs.append(("ucb", c_val))
+        for alpha_val in self.linucb_alpha_values:
+            sweep_configs.append(("linucb", alpha_val))
+
+        total_sweeps = len(sweep_configs)
+        logger.info("Starting exploration sweep: %d configurations", total_sweeps)
+
+        for sweep_idx, (algo, exploration) in enumerate(sweep_configs, 1):
+            sweep_name = f"{algo}_{exploration}"
+            logger.info(
+                "Sweep %d/%d: algorithm=%s exploration=%.2f",
+                sweep_idx, total_sweeps, algo, exploration,
+            )
+
+            # Set current sweep params for build_router
+            self._current_algorithm = algo
+            self._current_exploration = exploration
+
+            # Build router for this sweep value
+            router = self.build_router(build_ctx)
+
+            # Build decode context
+            collector = BenchmarkCollector(name=f"{self.meta.name}_{sweep_name}")
+            collector.set_baseline_tps(baseline_tps)
+
+            decode_ctx = DecodeContext(
+                decoder=decoder,
+                collector=collector,
+                config=cfg,
+                distiller=None,
+                router=router,
+                adaptive_fn=None,
+            )
+
+            # Reset per-run state
+            self._last_rewards = []
+            self._last_timings = []
+
+            # Before decode hook
+            self.on_before_decode(decode_ctx)
+
+            # Decode loop
+            for i, (input_ids, prompt_len) in enumerate(prompts):
+                input_ids = input_ids.to(runner.device)
+
+                # Router selection
+                selected_drafter, _selected_idx = router.select_drafter(input_ids)
+                if selected_drafter is not None:
+                    decoder.drafter = selected_drafter
+
+                with collector.record_sequence(prompt_len=prompt_len) as seq_rec:
+                    decoder.generate(
+                        input_ids,
+                        max_new_tokens=max_new_tokens,
+                        adaptive_length_fn=None,
+                        distiller=None,
+                        rng=torch_rng,
+                    )
+                    for sr in decoder._step_results[-max_new_tokens:]:
+                        seq_rec.add_step(
+                            draft_len=sr.draft_length,
+                            accepted=len(sr.accepted_tokens),
+                            cache_hit=sr.cache_hit,
+                        )
+
+                _step_results = list(decoder._step_results)
+                decoder._step_results.clear()
+
+                # Hook: after each prompt
+                self.on_decode_step(decode_ctx, _step_results, i)
+
+            # After decode
+            self.on_after_decode(decode_ctx)
+
+            # Collect metrics
+            summary = collector.summary()
+            summary = self.on_extra_metrics(summary)
+            collector.clear()
+
+            # Compute convergence point
+            rewards = self._last_rewards
+            convergence_sample = self._find_convergence(
+                rewards, self.convergence_window
+            )
+
+            # Build per-sweep result
+            self._sweep_results[sweep_name] = {
+                "algorithm": algo,
+                "exploration": exploration,
+                "mean_reward": summary.get("bandit_mean_reward", 0.0),
+                "std_reward": summary.get("bandit_std_reward", 0.0),
+                "acceptance_rate": summary.get("acceptance_rate", 0.0),
+                "tokens_per_sec": summary.get("tokens_per_sec", 0.0),
+                "wall_time_total_s": summary.get("wall_time_total_s", 0.0),
+                "convergence_sample": convergence_sample,
+                "n_samples": len(rewards),
+                "router_stats": summary.get("bandit_router", {}),
+            }
+
+            # Free GPU memory between sweeps
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+
+        # ----------------------------------------------------------------
+        # Compile sweep summary
+        # ----------------------------------------------------------------
+        self._compile_sweep_summary()
+
+        # Final MLflow logging
+        runner._log_mlflow_final(cfg, self._final_summary)
+
+        return ExperimentResult(
+            meta=self.meta,
+            config=cfg_dict,
+            metrics=self._final_summary,
+        )
+
+    def _find_convergence(
+        self, rewards: list[dict], window: int
+    ) -> int | None:
+        """Find the first sample index where the policy stabilises.
+
+        Stabilised = same arm selected for `window` consecutive samples.
+        Returns the index of the first sample in the stable run, or None.
+        """
+        if len(rewards) < window:
+            return None
+
+        for i in range(len(rewards) - window + 1):
+            arms = [rewards[j]["arm"] for j in range(i, i + window)]
+            if len(set(arms)) == 1:
+                return i
+        return None
+
+    def _compile_sweep_summary(self) -> None:
+        """Build the final summary dict from per-sweep results."""
+        self._final_summary = {
+            "exploration_sweep": self._sweep_results,
+            "n_sweep_configs": len(self._sweep_results),
+        }
+
+        # Best per algorithm
+        for algo in ("ucb", "linucb"):
+            algo_results = {
+                k: v for k, v in self._sweep_results.items()
+                if v["algorithm"] == algo
+            }
+            if algo_results:
+                best_key = max(algo_results, key=lambda k: algo_results[k]["mean_reward"])
+                best = algo_results[best_key]
+                self._final_summary[f"best_{algo}"] = {
+                    "exploration": best["exploration"],
+                    "mean_reward": best["mean_reward"],
+                    "acceptance_rate": best["acceptance_rate"],
+                    "tokens_per_sec": best["tokens_per_sec"],
+                    "convergence_sample": best["convergence_sample"],
+                }
+
+        # Cross-algorithm best
+        if self._sweep_results:
+            best_key = max(
+                self._sweep_results,
+                key=lambda k: self._sweep_results[k]["mean_reward"],
+            )
+            self._final_summary["best_overall"] = {
+                "config": best_key,
+                "mean_reward": self._sweep_results[best_key]["mean_reward"],
+            }
+
+    def on_extra_metrics(self, summary: dict) -> dict:
+        """Augment with bandit stats (reuse parent logic)."""
+        return super().on_extra_metrics(summary)
 
 
 __all__ = [
@@ -1269,4 +1880,5 @@ __all__ = [
     "BanditVsMLPThompsonExperiment",
     "BanditMultiDatasetExperiment",
     "BanditMultiDatasetThompsonExperiment",
+    "BanditExplorationSweepExperiment",
 ]
