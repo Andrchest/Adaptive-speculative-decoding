@@ -9,8 +9,6 @@ import sys
 import pytest
 import torch
 
-sys.path.insert(0, "src")
-
 from core.decoder.speculative import SpeculativeDecoder, StepResult
 from experiments.runner import ExperimentConfig
 

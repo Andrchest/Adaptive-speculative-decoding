@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as functional
 
 from experiments.base import BaseExperiment, BuildContext, ExperimentMeta
 from experiments.runner import ExperimentConfig
@@ -198,7 +198,7 @@ class EpistemicConsensusK:
         tokens: torch.Tensor,
         logits: torch.Tensor,
     ) -> ConsensusSelection:
-        log_probs = F.log_softmax(logits.float(), dim=-1)
+        log_probs = functional.log_softmax(logits.float(), dim=-1)
         majority_tokens: list[int] = []
         consensus: list[float] = []
 
@@ -398,13 +398,13 @@ class LatentRegimeK:
             sample = int(torch.poisson(lam, generator=self.rng).item())
             if self.k_min <= sample <= self.k_max:
                 return sample
-        return max(self.k_min, min(int(round(lambda_t)), self.k_max))
+        return max(self.k_min, min(round(lambda_t), self.k_max))
 
     def _draft_entropy(self, context: torch.Tensor) -> float:
         with torch.no_grad():
             out = self.drafter.model(context)
             logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :].float()
-            probs = F.softmax(logits, dim=-1)
+            probs = functional.softmax(logits, dim=-1)
             entropy = -(probs * probs.clamp(min=1e-8).log()).sum()
             return float((entropy / math.log(max(logits.shape[-1], 2))).item())
 
@@ -544,4 +544,4 @@ class LatentRegimeKExperiment(BaseExperiment):
         return summary
 
 
-__all__ = ["StochasticConsensusKExperiment", "LatentRegimeKExperiment"]
+__all__ = ["LatentRegimeKExperiment", "StochasticConsensusKExperiment"]
