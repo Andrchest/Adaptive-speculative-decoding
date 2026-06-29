@@ -32,6 +32,13 @@ def _clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(value, upper))
 
 
+def _validate_k_bounds(k_min: int, k_max: int) -> None:
+    if k_min < 1:
+        raise ValueError("k_min must be at least 1")
+    if k_max < k_min:
+        raise ValueError("k_max must be greater than or equal to k_min")
+
+
 @dataclass
 class ConsensusSelection:
     """Debug information for one EpistemicConsensusK decision."""
@@ -107,6 +114,16 @@ class EpistemicConsensusK:
         logit_noise_std: float = 0.0,
         seed: int = 42,
     ) -> None:
+        _validate_k_bounds(k_min, k_max)
+        if n_trajectories < 1:
+            raise ValueError("n_trajectories must be at least 1")
+        if not 0.0 <= target_acceptance <= 1.0:
+            raise ValueError("target_acceptance must be in [0, 1]")
+        if tau_k <= 0:
+            raise ValueError("tau_k must be positive")
+        if tau_margin <= 0:
+            raise ValueError("tau_margin must be positive")
+
         self.drafter = drafter
         self.k_min = k_min
         self.k_max = k_max
@@ -274,6 +291,14 @@ class LatentRegimeK:
         lambda_lr: float = 0.05,
         seed: int = 42,
     ) -> None:
+        _validate_k_bounds(k_min, k_max)
+        if len(lambdas) != len(self.regime_names):
+            raise ValueError("lambdas must contain one value per regime")
+        if any(value <= 0 for value in lambdas):
+            raise ValueError("all regime lambdas must be positive")
+        if not 0.0 <= transition_stay_prob <= 1.0:
+            raise ValueError("transition_stay_prob must be in [0, 1]")
+
         self.drafter = drafter
         self.k_min = k_min
         self.k_max = k_max
@@ -408,13 +433,36 @@ class LatentRegimeK:
             entropy = -(probs * probs.clamp(min=1e-8).log()).sum()
             return float((entropy / math.log(max(logits.shape[-1], 2))).item())
 
-    @staticmethod
-    def _token_class(context: torch.Tensor) -> float:
+    def _token_class(self, context: torch.Tensor) -> float:
         token_id = int(context.reshape(-1)[-1].item())
+
+        tokenizer = getattr(self.drafter, "tokenizer", None)
+        if tokenizer is not None and hasattr(tokenizer, "decode"):
+            try:
+                text = str(tokenizer.decode([token_id]))
+                return self._classify_token_text(text)
+            except Exception:
+                pass
+
         if token_id <= 2:
             return 1.0
         if token_id <= 10:
             return 0.5
+        return 0.0
+
+    @staticmethod
+    def _classify_token_text(text: str) -> float:
+        stripped = text.strip()
+        if not stripped or "\n" in text:
+            return 1.0
+        if any(ch in stripped for ch in "{}[]();:=<>"):
+            return 0.65
+        if any(ch in stripped for ch in "+-*/=^"):
+            return 0.6
+        if any(ch in stripped for ch in "#*_`|>"):
+            return 0.5
+        if any(ch.isdigit() for ch in stripped):
+            return 0.45
         return 0.0
 
     def _posterior_entropy(self) -> float:

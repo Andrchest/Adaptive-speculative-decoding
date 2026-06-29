@@ -46,6 +46,7 @@ class _FakeModel:
 class _ScriptedDrafter:
     def __init__(self) -> None:
         self.model = _FakeModel()
+        self.tokenizer = type("Tokenizer", (), {"decode": lambda _self, ids: "\n"})()
         self.calls = 0
         self.rows = [
             [1, 1, 1, 1],
@@ -126,6 +127,26 @@ def test_latent_regime_updates_posterior_and_lambdas() -> None:
     assert float(controller.posterior.sum().item()) == pytest.approx(1.0)
     assert controller.posterior_entropy_history
     assert controller.summary()["regime_k_mean_selected_k"] >= 1
+
+
+def test_latent_regime_uses_tokenizer_for_token_class() -> None:
+    module = _load_research_module()
+    controller = module.LatentRegimeK(_ScriptedDrafter(), k_min=1, k_max=4)
+
+    token_class = controller._token_class(torch.tensor([[3]], dtype=torch.long))
+
+    assert token_class == pytest.approx(1.0)
+
+
+def test_invalid_dynamic_k_parameters_raise() -> None:
+    module = _load_research_module()
+
+    with pytest.raises(ValueError, match="k_max"):
+        module.EpistemicConsensusK(_ScriptedDrafter(), k_min=4, k_max=1)
+    with pytest.raises(ValueError, match="n_trajectories"):
+        module.EpistemicConsensusK(_ScriptedDrafter(), n_trajectories=0)
+    with pytest.raises(ValueError, match="lambdas"):
+        module.LatentRegimeK(_ScriptedDrafter(), lambdas=(1.0, 2.0))
 
 
 def test_decoder_reports_step_result_to_adaptive_observer() -> None:
