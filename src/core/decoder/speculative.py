@@ -197,6 +197,7 @@ class SpeculativeDecoder:
 
             result = self._decode_step(generated, k, distiller=distiller, rng=rng)
             self._step_results.append(result)
+            self._notify_adaptive_result(adaptive_length_fn, result)
             self.cache.step()
 
             # Truncate the step's emission to the remaining token budget.
@@ -269,6 +270,20 @@ class SpeculativeDecoder:
     def clear_step_results(self) -> None:
         """Clear accumulated step results after collecting metrics."""
         self._step_results.clear()
+
+    def _notify_adaptive_result(self, adaptive_length_fn, result: StepResult) -> None:
+        """Report verification feedback to adaptive controllers when supported."""
+        if adaptive_length_fn is None:
+            return
+
+        observer = getattr(adaptive_length_fn, "observe_step", None)
+        if callable(observer):
+            observer(result)
+            return
+
+        recorder = getattr(adaptive_length_fn, "record_result", None)
+        if callable(recorder):
+            recorder(result.accepted_count)
 
     # ------------------------------------------------------------------
     # Internals

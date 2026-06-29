@@ -116,14 +116,13 @@ and the controller sharply reduces `k`.
 
 ## Implementation Plan
 
-1. Implement `EpistemicConsensusK` as a research adaptive controller.
-2. Add a research experiment under `research/v.poponnikov/experiments/`.
+1. Implement `EpistemicConsensusK` as a research adaptive controller. Done.
+2. Add a research experiment under `research/v.poponnikov/experiments/`. Done.
 3. Compare against `01_baseline` and `08_+speedup_adapt`.
-4. Add unit tests for sampling, threshold adaptation, and bounds on `k`.
+4. Add unit tests for sampling, threshold adaptation, and bounds on `k`. Done.
 5. Add lightweight smoke experiments with tiny models.
 6. Record metrics and notes in `research/v.poponnikov/results/`.
-7. Implement `LatentRegimeK` only after the consensus method has a tested
-   baseline.
+7. Implement `LatentRegimeK` as the second stochastic controller. Done.
 
 ## Metrics
 
@@ -181,6 +180,10 @@ python src/main.py --experiment 08_+speedup_adapt --tiny -n 5 --max-new-tokens 3
 ## Current Status
 
 - Research direction defined.
-- First implementation target: `EpistemicConsensusK`.
-- Second implementation target: `LatentRegimeK`.
-- No experiments have been implemented yet.
+- `EpistemicConsensusK` implemented in
+  `research/v.poponnikov/experiments/stochastic_dynamic_k.py`.
+- `LatentRegimeK` implemented in
+  `research/v.poponnikov/experiments/stochastic_dynamic_k.py`.
+- Research experiments registered for auto-discovery:
+  `stochastic_consensus_k` and `latent_regime_k`.
+- Unit tests added in `tests/unit/test_v_poponnikov_dynamic_k.py`.
