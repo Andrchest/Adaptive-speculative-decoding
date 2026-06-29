@@ -10,8 +10,15 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("USE_FLAX", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("TRANSFORMERS_NO_FLAX", "1")
+os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 
 from experiments import ExperimentRunner, discover_experiments
 
@@ -151,6 +158,19 @@ def run_comparison(args: argparse.Namespace) -> list[dict[str, Any]]:
         device=args.device,
     )
     return runner.run_all()
+
+
+def failed_experiments(results: Sequence[dict[str, Any]]) -> list[str]:
+    """Return experiment names that failed inside the shared runner."""
+    failed: list[str] = []
+    for result in results:
+        metrics = result.get("metrics", {})
+        if metrics.get("error") is True:
+            name = str(result.get("config", {}).get("name", metrics.get("name", "unknown")))
+            error_type = metrics.get("error_type", "error")
+            message = metrics.get("error_message", "")
+            failed.append(f"{name}: {error_type}: {message}")
+    return failed
 
 
 def load_results(result_dir: Path, names: Sequence[str]) -> list[dict[str, Any]]:
@@ -435,6 +455,11 @@ def main() -> None:
 
     merged_csv = args.output_dir / "dynamic_k_comparison.csv"
     write_union_csv(results, merged_csv)
+    failures = failed_experiments(results)
+    if failures:
+        print(f"Merged CSV saved to: {merged_csv}")
+        raise RuntimeError("Experiment failure(s): " + " | ".join(failures))
+
     plot_paths = plot_results(results, args.plots_dir)
 
     print(f"Merged CSV saved to: {merged_csv}")

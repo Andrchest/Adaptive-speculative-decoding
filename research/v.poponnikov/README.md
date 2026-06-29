@@ -171,8 +171,10 @@ Notebook workflow for online IDEs without terminal access:
 
 1. Open `research/v.poponnikov/notebooks/dynamic_k_comparison.ipynb`.
 2. Run the cells from top to bottom.
-3. Keep the tiny smoke run enabled first.
-4. After the smoke run succeeds, set `RUN_REAL = True` in the real Qwen
+3. On a fresh Python 3.10 online image, run the dependency install cell once,
+   then restart the notebook kernel and set `INSTALL_DEPENDENCIES = False`.
+4. Keep the tiny smoke run enabled first.
+5. After the smoke run succeeds, set `RUN_REAL = True` in the real Qwen
    comparison cell and run it.
 
 Command-line workflow:
