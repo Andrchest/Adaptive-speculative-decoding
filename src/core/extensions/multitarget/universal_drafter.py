@@ -26,6 +26,7 @@ import logging
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import AutoModelForCausalLM
 
 logger = logging.getLogger(__name__)
@@ -136,7 +137,11 @@ class UniversalDrafter(nn.Module):
         self,
         context: torch.Tensor,
         k: int,
-        target_name: str | None = None,
+        target_name: str |None = None,
+        temperature: float = 1.0,
+        past_key_values=None,
+        past_len: int = 0,
+        cached_logits: torch.Tensor |None = None,
     ) -> tuple[list[int], torch.Tensor]:
         """
         Draft k tokens conditioned on the specified target family.
@@ -152,28 +157,77 @@ class UniversalDrafter(nn.Module):
         if target_name is not None:
             self.set_target(target_name)
 
-        tokens: list[int] = []
-        all_logits: list[torch.Tensor] = []
-        cur = context.clone()
+        greedy = temperature <= 1e-6
 
-        for _ in range(k):
-            out = self.base_model(cur, output_hidden_states=True)
-            # Extract what we need BEFORE discarding the full output.
-            # last_hidden already has the target adapter applied via the
-            # per-layer forward hooks.
-            last_hidden = out.hidden_states[-1].clone()  # (1, seq, d)
-            logits = self.base_model.lm_head(last_hidden[:, -1, :])  # (1, vocab)
-            all_logits.append(logits.squeeze(0))
-            next_tok = logits.argmax(dim=-1)
-            tokens.append(next_tok.item())
-            cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
+        result_tokens = []
+        logits_list = []
 
-            # Explicitly release forward-pass activations immediately.
-            # This reduces pressure on the CUDA caching allocator.
-            del out
-            del last_hidden
+        if cached_logits is not None:
+            logits = cached_logits.squeeze(0)
+            out_pkv = past_key_values
+        elif past_key_values is not None and past_len > 0:
+            new_input = context[:, past_len:]
+            out = self.base_model(
+                new_input,
+                past_key_values=past_key_values,
+                use_cache=True,
+            )
+            out_pkv = out.past_key_values
+            logits = out.logits[:, -1, :].squeeze(0)
+        else:
+            out = self.base_model(
+                context,
+                use_cache=True,
+            )
+            out_pkv = out.past_key_values
+            logits = out.logits[:, -1, :].squeeze(0)
 
-        return tokens, torch.stack(all_logits, dim=0)  # (k, vocab)
+        next_tok = self._sample_next_token(
+            logits,
+            temperature,
+            greedy,
+        )
+
+        result_tokens.append(next_tok.item())
+        logits_list.append(logits.unsqueeze(0))
+
+        new_input = next_tok.unsqueeze(0).unsqueeze(0)
+
+        for _ in range(k - 1):
+            out = self.base_model(
+                new_input,
+                past_key_values=out_pkv,
+                use_cache=True,
+            )
+            out_pkv = out.past_key_values
+            logits = out.logits[:, -1, :].squeeze(0)
+            logits_list.append(logits.unsqueeze(0))
+            next_tok = self._sample_next_token(
+                logits,
+                temperature,
+                greedy,
+            )
+            result_tokens.append(next_tok.item())
+            new_input = next_tok.unsqueeze(0).unsqueeze(0)
+
+        logits = torch.stack(logits_list, dim=0)
+
+        if logits.dim() == 3 and logits.shape[1] == 1:
+            logits = logits.squeeze(1)
+
+        return result_tokens, logits, out_pkv
+
+    @staticmethod
+    def _sample_next_token(logits, temperature, greedy):
+        if greedy:
+            return logits.argmax(dim=-1)
+
+        probs = F.softmax(
+            logits.float() / max(temperature, 1e-6),
+            dim=-1,
+        )
+
+        return torch.multinomial(probs, 1).squeeze(-1)
 
     def adapter_parameters(self) -> list[torch.Tensor]:
         return list(self.target_adapter.parameters())

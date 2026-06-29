@@ -606,8 +606,8 @@ class BaseExperiment(abc.ABC):
         try:
             pid, plen = prompts[0]
             pid = pid.to(runner.device)
-            n_bl = getattr(cfg, "max_new_tokens", 128)  # match real budget, not a truncated 32
-
+            # n_bl = getattr(cfg, "max_new_tokens", 128)  # match real budget, not a truncated 32
+            n_bl = 128
             bl_result = self._measure_autoregressive_baseline(target, pid, n_bl)
             baseline_tps = bl_result["tokens_per_sec"]
             collector.set_baseline_tps(baseline_tps)

@@ -134,11 +134,17 @@ class DraftModel:
         logits_to_return = torch.stack(logits_list, dim=0)
         if logits_to_return.dim() == 3 and logits_to_return.shape[1] == 1:
             logits_to_return = logits_to_return.squeeze(1)
-        return result_tokens, logits_to_return, out_pkv
+        return result_tokens,  logits_to_return, out_pkv
 
     def _draft_distill(
-        self, context: torch.Tensor, k: int, temperature: float
-    ) -> tuple[list[int], torch.Tensor, object]:
+        self,
+        context: torch.Tensor,
+        k: int,
+        temperature: float,
+        past_key_values=None,
+        past_len: int = 0,
+        cached_logits: torch.Tensor | None = None,
+    ) -> tuple[list[int], torch.Tensor, None]:
         """
         Distillation-aware drafting.
 
