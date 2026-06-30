@@ -136,8 +136,10 @@ class SpeculativeDecoder:
             self.target.reset_kv_state()
 
         if hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None:
-            if hasattr(self._adaptive_controller_ref, 'reset'):
-                self._adaptive_controller_ref.reset()
+            self._adaptive_controller_ref._last_hidden = None
+            self._adaptive_controller_ref._last_k = None
+            if hasattr(self._adaptive_controller_ref, '_last_start'):
+                self._adaptive_controller_ref._last_start = None
 
         self.cache.step()
 
@@ -329,7 +331,7 @@ class SpeculativeDecoder:
         #    Then, if there's a bonus token, forward it through the drafter
         #    to extend the KV cache AND extract hidden states for the
         #    adaptive controller (eliminates a redundant forward pass).
-        if self._drafter_kv is not None and not distiller:
+        if self._drafter_kv is not None:
             drafter_keep = context.shape[1] + accepted_count
             self._drafter_kv = _truncate_pkv(self._drafter_kv, drafter_keep)
             self._drafter_kv_len = drafter_keep
@@ -363,16 +365,20 @@ class SpeculativeDecoder:
                 self._drafter_kv_len += 1
                 self._cached_drafter_logits = bonus_out.logits[:, -1, :]
 
-                # Share hidden state with adaptive controller if attached
                 if hasattr(self, '_adaptive_controller_ref'):
                     ctrl = self._adaptive_controller_ref
                     if ctrl is not None and hasattr(ctrl, 'update_hidden'):
                         ctrl.update_hidden(bonus_out.hidden_states[-1][0, -1, :])
         else:
-            # Distillation mode or no KV: reset for next step
+            # No KV available: reset for next step
             self._drafter_kv = None
             self._drafter_kv_len = 0
             self._cached_drafter_logits = None
+
+            # Prevent Hidden State Leak if cache is dropped
+            if hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None:
+                if hasattr(self._adaptive_controller_ref, '_last_hidden'):
+                    self._adaptive_controller_ref._last_hidden = None
 
         # 8. Truncate target KV cache to keep only the verified prefix.
         kv_keep = context.shape[1] + accepted_count
