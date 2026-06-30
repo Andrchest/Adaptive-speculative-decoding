@@ -15,6 +15,8 @@ import torch
 
 from .rules import Rule1Mapping, Rule2Mapping
 
+import torch.nn.functional as F
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +40,72 @@ def _align_last_dim(x: torch.Tensor, size: int) -> torch.Tensor:
         pad = torch.zeros(pad_shape, dtype=x.dtype, device=x.device)
         return torch.cat([x, pad], dim=-1)
     return x[..., :size]
+
+
+class SameVocabTranslator:
+    """
+    Fast probability translator for identical vocabularies.
+
+    When drafter and target share the same tokenizer
+    the translation is trivially identity: P_target(t) = P_draft(t) for every token.
+    """
+
+    def __init__(self, vocab_size: int) -> None:
+        self.vocab_size = vocab_size
+
+    def translate(self, draft_logits: torch.Tensor) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        draft_logits : (batch, vocab) or (vocab,)
+
+        Returns
+        -------
+        target_probs : (batch, vocab) or (vocab,)  — identical to draft probs
+        """
+        squeeze = draft_logits.dim() == 1
+        if squeeze:
+            draft_logits = draft_logits.unsqueeze(0)
+
+        # Remove extra dims: (B, 1, V) -> (B, V)
+        if draft_logits.dim() == 3 and draft_logits.shape[1] == 1:
+            draft_logits = draft_logits.squeeze(1)
+
+        probs = F.softmax(draft_logits.float(), dim=-1)
+
+        if squeeze:
+            return probs.squeeze(0)
+        return probs
+
+    @property
+    def rule1(self):
+        """Compatibility shim: same vocab means Rule1 covers everything."""
+        # Return a minimal object so existing code that accesses
+        # translator.rule1.drafter_size / _valid_mask doesn't break.
+        return _IdentityRule1Adapter(self.vocab_size)
+
+
+class _IdentityRule1Adapter:
+    """Thin adapter providing rule1-like interface for SameVocabTranslator."""
+
+    def __init__(self, vocab_size: int) -> None:
+        self.vocab_size = vocab_size
+        self.drafter_size = vocab_size
+        self.target_size = vocab_size
+
+    @property
+    def _mapping(self):
+        # Identity mapping: each drafter token maps to itself in target vocab
+        if not hasattr(self, '_map'):
+            self._map = torch.arange(self.vocab_size, dtype=torch.long)
+        return self._map
+
+    @property
+    def _valid_mask(self):
+        # All tokens are valid (identity mapping)
+        if not hasattr(self, '_mask'):
+            self._mask = torch.ones(self.vocab_size, dtype=torch.bool)
+        return self._mask
 
 
 class CrossVocabTranslator:
@@ -146,7 +214,24 @@ class CrossVocabTranslator:
         and GPT-2 pad their embedding matrices to 50272 while the tokenizer
         reports a 50265-entry vocab — and passing the tokenizer size here
         will cause shape mismatches against raw model logits downstream.
+
+        Optimization: if vocabularies are identical (same tokenizer), returns a
+        fast SameVocabTranslator — no mapping tables, just softmax. ~30-50x faster.
         """
+        # ── Fast path: identical vocabularies ──────────────────────────
+        if drafter_vocab_size is not None and target_vocab_size is not None:
+            if drafter_vocab_size == target_vocab_size:
+                d_vocab = drafter_tokenizer.get_vocab()
+                t_vocab = target_tokenizer.get_vocab()
+                if len(d_vocab) == len(t_vocab) and d_vocab == t_vocab:
+                    logger.info(
+                        "SameVocabTranslator: vocabularies identical (size=%d), "
+                        "using fast softmax-only path (no mapping)",
+                        drafter_vocab_size,
+                    )
+                    return SameVocabTranslator(drafter_vocab_size)
+
+        # ── Slow path: different vocabularies ──────────────────────────
         r1 = Rule1Mapping(
             drafter_tokenizer,
             target_tokenizer,

@@ -83,6 +83,7 @@ class SpeculativeDecoder:
         cache: NgramCache | None = None,
         draft_length: int = 5,
         temperature: float = 1.0,
+        step_hook=None,
     ) -> None:
         self.drafter = drafter
         self.target = target
@@ -90,6 +91,7 @@ class SpeculativeDecoder:
         self.cache = cache or NgramCache()
         self.draft_length = draft_length
         self.temperature = temperature
+        self._step_hook = step_hook  # Optional callback for metrics (default: None)
 
         self._step_results: list[StepResult] = []
 
@@ -177,6 +179,7 @@ class SpeculativeDecoder:
                 drafter_ctx=generated,  # full context — KV cache handles efficiency
                 distiller=distiller,
                 rng=rng,
+                step_hook=self._step_hook,
             )
             self._step_results.append(result)
             self.cache.step()
@@ -242,6 +245,9 @@ class SpeculativeDecoder:
         drafter_ctx: torch.Tensor | None = None,
         distiller=None,
         rng=None,
+        step_hook=None,  # Optional callback for metrics (default: None)
+        step_idx=None,
+        start_time=None,
     ) -> StepResult:
         """
         One step of speculative decoding.
@@ -396,6 +402,22 @@ class SpeculativeDecoder:
                 draft_tokens=draft_tokens_drafter,
                 accepted_mask=accepted_mask,
                 prompt_ids=ctx_list,
+            )
+
+        # Optional: call step hook for metrics collection
+        if step_hook is not None:
+            step_hook(
+                draft_tokens_drafter=draft_tokens_drafter,
+                draft_logits=draft_logits,
+                translated_probs=translated_probs,
+                target_logits=target_logits,
+                draft_tokens_target=draft_tokens_target,
+                accepted_count=accepted_count,
+                rejected_at=rejected_at,
+                step_idx=step_idx,
+                start_time=start_time,
+                k=k,
+                ctx_list=ctx_list,
             )
 
         return StepResult(

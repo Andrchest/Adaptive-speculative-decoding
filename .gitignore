@@ -42,9 +42,10 @@ htmlcov/
 .tox/
 .nox/
 
+.env
+
 # Jupyter
 .ipynb_checkpoints
-*.ipynb
 
 # Results & artifacts (kept per-researcher)
 results/
