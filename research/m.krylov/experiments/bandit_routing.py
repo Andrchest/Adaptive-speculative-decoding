@@ -1538,7 +1538,7 @@ class BanditExplorationSweepExperiment(BanditRoutingExperiment):
         *,
         ucb_c_values: list[float] | None = None,
         linucb_alpha_values: list[float] | None = None,
-        convergence_window: int = 10,  # consecutive same-arm to count as converged
+        convergence_window: int = 3,  # consecutive same-arm to count as converged
         reward_window: int = 0,
     ) -> None:
         super().__init__(
@@ -1792,10 +1792,11 @@ class BanditExplorationSweepExperiment(BanditRoutingExperiment):
             summary = self.on_extra_metrics(summary)
             collector.clear()
 
-            # Compute convergence point
+            # Compute convergence point (skip round-robin phase)
             rewards = self._last_rewards
+            n_arms = len(router.arms)
             convergence_sample = self._find_convergence(
-                rewards, self.convergence_window
+                rewards, self.convergence_window, skip=n_arms
             )
 
             # Build per-sweep result
@@ -1832,24 +1833,30 @@ class BanditExplorationSweepExperiment(BanditRoutingExperiment):
         )
 
     def _find_convergence(
-        self, rewards: list[dict], window: int
+        self, rewards: list[dict], window: int, skip: int = 0
     ) -> int | None:
         """Find the first sample index where the policy stabilises.
 
         Stabilised = same arm selected for `window` consecutive samples.
+        `skip` samples are ignored at the start (e.g. round-robin phase).
         Returns the index of the first sample in the stable run, or None.
         """
-        if len(rewards) < window:
+        start = skip
+        if len(rewards) - start < window:
             return None
 
-        for i in range(len(rewards) - window + 1):
+        for i in range(start, len(rewards) - window + 1):
             arms = [rewards[j]["arm"] for j in range(i, i + window)]
             if len(set(arms)) == 1:
                 return i
         return None
 
     def _compile_sweep_summary(self) -> None:
-        """Build the final summary dict from per-sweep results."""
+        """Build the final summary dict from per-sweep results.
+
+        Also flattens the best-overall metrics to the top level so the CLI
+        summary table (which reads top-level keys) can display them correctly.
+        """
         self._final_summary = {
             "exploration_sweep": self._sweep_results,
             "n_sweep_configs": len(self._sweep_results),
@@ -1878,10 +1885,18 @@ class BanditExplorationSweepExperiment(BanditRoutingExperiment):
                 self._sweep_results,
                 key=lambda k: self._sweep_results[k]["mean_reward"],
             )
+            best = self._sweep_results[best_key]
             self._final_summary["best_overall"] = {
                 "config": best_key,
-                "mean_reward": self._sweep_results[best_key]["mean_reward"],
+                "mean_reward": best["mean_reward"],
             }
+
+            # Flatten best-overall metrics to top level for CLI summary table
+            self._final_summary["acceptance_rate"] = best["acceptance_rate"]
+            self._final_summary["tokens_per_sec"] = best["tokens_per_sec"]
+            self._final_summary["wall_time_total_s"] = best["wall_time_total_s"]
+            self._final_summary["bandit_mean_reward"] = best["mean_reward"]
+            self._final_summary["bandit_std_reward"] = best["std_reward"]
 
     def on_extra_metrics(self, summary: dict) -> dict:
         """Augment with bandit stats (reuse parent logic)."""
