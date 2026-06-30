@@ -1,17 +1,17 @@
 # Handoff — Bandit Routing for Speculative Decoding (m.krylov)
 
-> Branch `research/m.krylov`, HEAD `107b65b`
-> Working tree: 1 modified file (bandit_routing.py — uncommitted fixes)
-> Single implementation file: `experiments/bandit_routing.py` (1903 lines)
+> Branch `research/m.krylov`, HEAD `e9a8cc7`
+> Working tree: clean
+> Single implementation file: `experiments/bandit_routing.py` (~1920 lines)
 
 ---
 
-## Status: Phase 5 — Exploration Sweep (RUNNING)
+## Status: Phase 5 — Exploration Sweep (SMOKE TESTED)
 
 - **Phase 1–4**: ✅ Complete (UCB1, Thompson, LinUCB, per-arm distillation, multi-dataset, MLP comparison)
 - **Phase 5**: ✅ Exploration parameter sweep implemented and smoke-tested
-- **Blockers resolved**: `_preloaded_drafters` AttributeError fixed; CUDA OOM avoided via `--tiny` flag
-- **Known issues**: Summary table shows zeros for sweep experiments (metrics nested under `exploration_sweep` key); convergence detection unreliable at `n < window_size`
+- **Blockers resolved**: `_preloaded_drafters` AttributeError fixed; CUDA OOM avoided via `--tiny` flag; summary table zeros fixed; convergence detection improved
+- **Known issues**: none (open research questions remain, see §11)
 
 ---
 
@@ -316,10 +316,6 @@ Bandit-specific (via `on_extra_metrics`):
 
 5. **Non-stationary reward analysis** — With `reward_window > 0`, how do policies behave when drafters improve mid-run?  Standard bandit regret bounds don't apply.  Needs empirical study.
 
-6. **Summary table display** — `BanditExplorationSweepExperiment` nests metrics under `exploration_sweep`, so the CLI summary table shows zeros.  The JSON output is correct.  Fix: either flatten top-level `best_overall` metrics or special-case the sweep experiment in `_print_summary`.
-
-7. **Convergence detection at small n** — `_find_convergence()` requires `n ≥ convergence_window` (default 5).  With `-n 5`, convergence is always `None`.  Consider lowering the window or reporting "not yet converged" explicitly.
-
 ---
 
 ## 12. Key non-experiment classes
@@ -376,12 +372,5 @@ No other files in this research directory are modified or created by this work. 
 - **Low exploration wins at small n**: Both UCB and LinUCB with `c/α=0.1` achieve highest mean reward because round-robin exploration (1 pull each) + greedy exploitation quickly identifies `opt-350m` as superior.
 - **High exploration hurts**: At `c=5.0`, UCB explores `opt-125m` more (3/5 pulls), reducing mean reward by 29%.
 - **LinUCB is more conservative**: Even at `α=5.0`, LinUCB still picks `opt-350m` 4/5 times because the contextual features reinforce the same arm choice.  UCB at `c=5.0` is more randomized.
-- **No convergence detected**: All `convergence_sample = null` because `n=5` equals `convergence_window=5`, so only a single index is checked (and round-robin pollutes the first entries).
+- **Convergence now detected**: Most configs show `convergence_sample=2` (after round-robin skip). Only `ucb_5.0` (high exploration) doesn't converge — expected.
 - **Best overall**: `ucb_0.1` with mean_reward=362.6, acceptance_rate=70.8%.
-
-### Uncommitted fixes in `bandit_routing.py`
-
-Two bugs fixed but not yet committed:
-
-1. **`_preloaded_drafters` AttributeError** — `build_router()` referenced `self._preloaded_drafters` but it was never initialized.  Fixed by initializing the dict in `run()` after `runner._build_models()` and before the sweep loop.
-2. **Primary drafter not routed correctly** — `build_router()` used `_preloaded_drafters.get(path)` for all paths, missing the runner-loaded primary drafter.  Fixed by checking `path == cfg.drafter_model_path` and falling back to `ctx.drafter`.
