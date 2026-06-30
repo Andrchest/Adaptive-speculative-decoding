@@ -84,13 +84,19 @@ class DraftModel:
         if not distill:
             with torch.no_grad():
                 return self._draft_impl_kv(
-                    context, k, temperature,
-                    past_key_values, past_len, cached_logits,
+                    context,
+                    k,
+                    temperature,
+                    past_key_values,
+                    past_len,
+                    cached_logits,
                 )
         else:
             return self._draft_distill(context, k, temperature)
 
-    def _draft_impl_kv(self, context, k, temperature, past_key_values=None, past_len=0, cached_logits=None):
+    def _draft_impl_kv(
+        self, context, k, temperature, past_key_values=None, past_len=0, cached_logits=None
+    ):
         greedy = temperature <= 1e-6
         result_tokens, logits_list = [], []
 
@@ -103,7 +109,7 @@ class DraftModel:
             new_input = next_token.unsqueeze(0).unsqueeze(0)
             remaining = k - 1
         elif past_key_values is not None and past_len > 0:
-            new_input = context[:, past_len:]   # only the unseen tail
+            new_input = context[:, past_len:]  # only the unseen tail
             out = self.model(new_input, past_key_values=past_key_values, use_cache=True)
             out_pkv = out.past_key_values
             logits = out.logits[:, -1, :].squeeze(0)
@@ -134,7 +140,7 @@ class DraftModel:
         logits_to_return = torch.stack(logits_list, dim=0)
         if logits_to_return.dim() == 3 and logits_to_return.shape[1] == 1:
             logits_to_return = logits_to_return.squeeze(1)
-        return result_tokens,  logits_to_return, out_pkv
+        return result_tokens, logits_to_return, out_pkv
 
     def _draft_distill(
         self,
@@ -210,7 +216,8 @@ class DraftModel:
             logits_to_return = logits_to_return.squeeze(1)
         logger.debug(
             "Drafter (distill) generated %d tokens, logits shape: %s",
-            k, tuple(logits_to_return.shape),
+            k,
+            tuple(logits_to_return.shape),
         )
         return result_tokens, logits_to_return, None  # KV cache not returned for distill
 
@@ -237,14 +244,10 @@ class DraftModel:
                     pkv.value_cache[i] = pkv.value_cache[i].detach()
             return pkv
         # Legacy tuple-of-tuples
-        return tuple(
-            tuple(kv.detach() for kv in layer) for layer in pkv
-        )
+        return tuple(tuple(kv.detach() for kv in layer) for layer in pkv)
 
     @staticmethod
-    def _sample_next_token(
-        logits: torch.Tensor, temperature: float, greedy: bool
-    ) -> torch.Tensor:
+    def _sample_next_token(logits: torch.Tensor, temperature: float, greedy: bool) -> torch.Tensor:
         if greedy:
             return logits.argmax(dim=-1)
 
@@ -258,6 +261,20 @@ class DraftModel:
     def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model(input_ids).logits.squeeze(0)
 
+    def cleanup(self) -> None:
+        """Release model from GPU memory.
+
+        Moves the model to CPU and deletes the reference.  After calling
+        this the DraftModel is no longer usable until reloaded.
+        """
+        if self.model is not None:
+            try:
+                self.model.cpu()
+            except Exception:
+                pass
+            self.model = None
+        self.tokenizer = None
+
     @staticmethod
     def _forward_cached(model, input_ids, past_key_values, **kwargs):
         """Forward with KV cache, normalizing dims before and after."""
@@ -267,9 +284,7 @@ class DraftModel:
         except RuntimeError as e:
             if "same number of dimensions" not in str(e) or past_key_values is None:
                 raise
-            logger.warning(
-                "KV dim mismatch (%s) — falling back to full forward", e
-            )
+            logger.warning("KV dim mismatch (%s) — falling back to full forward", e)
             out = model(input_ids, **kwargs)
         if hasattr(out, "past_key_values"):
             out.past_key_values = _normalize_cache(out.past_key_values)

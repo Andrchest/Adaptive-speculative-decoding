@@ -81,10 +81,8 @@ def _truncate_pkv(pkv: object, keep_len: int) -> object:
 
     # Legacy tuple-of-tuples — skip None entries
     def _truncate_layer(layer):
-        return tuple(
-            kv[..., :keep_len, :] if kv is not None else None
-            for kv in layer
-        )
+        return tuple(kv[..., :keep_len, :] if kv is not None else None for kv in layer)
+
     if isinstance(pkv, tuple) and len(pkv) > 0:
         try:
             return tuple(_truncate_layer(layer) for layer in pkv)
@@ -163,9 +161,13 @@ def _to_cache(pkv: object) -> object:
                         k, v = _normalize_kv_dims(k, v)
                         cache.update(k, v, i)
                     else:
-                        raise TypeError(f"Expected tensors, got {type(k).__name__}, {type(v).__name__}")
+                        raise TypeError(
+                            f"Expected tensors, got {type(k).__name__}, {type(v).__name__}"
+                        )
             if cache.layers:
-                logger.debug("Converted list-of-tuples PKV to DynamicCache (%d layers)", len(cache.layers))
+                logger.debug(
+                    "Converted list-of-tuples PKV to DynamicCache (%d layers)", len(cache.layers)
+                )
                 return cache
         except Exception as e:
             logger.warning("PKV list→Cache failed: %s", e)
@@ -232,6 +234,21 @@ class TargetModel:
         """
         self._kv_ok = True
 
+    def cleanup(self) -> None:
+        """Release model from GPU memory.
+
+        Moves the model to CPU and deletes the reference.  After calling
+        this the TargetModel is no longer usable until reloaded.
+        """
+        if self.model is not None:
+            try:
+                self.model.cpu()
+            except Exception:
+                pass
+            self.model = None
+        self.tokenizer = None
+        self._draft_buffer = None
+
     @torch.no_grad()
     def verify(
         self,
@@ -281,9 +298,7 @@ class TargetModel:
 
                 # Safety: past_len must not exceed context length
                 if past_len > ctx_len:
-                    raise ValueError(
-                        f"KV cache length ({past_len}) > context length ({ctx_len})"
-                    )
+                    raise ValueError(f"KV cache length ({past_len}) > context length ({ctx_len})")
 
                 new_ctx = context[:, past_len:]
                 new_len = new_ctx.shape[1]
@@ -309,9 +324,7 @@ class TargetModel:
                 logits = out.logits[0, start : start + k + 1, :]
 
             except Exception as e:
-                logger.warning(
-                    "Target KV cache failed (%s). Falling back to full forward.", e
-                )
+                logger.warning("Target KV cache failed (%s). Falling back to full forward.", e)
                 self._kv_ok = False
                 out = None
 

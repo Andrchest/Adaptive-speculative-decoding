@@ -172,26 +172,35 @@ class ExperimentRunner:
 
     @staticmethod
     def _clear_gpu_memory() -> None:
-        """Aggressively free GPU memory between experiments."""
+        """Aggressively free GPU memory between experiments.
+
+        Runs multiple GC passes and clears the CUDA cache.  For 4-bit
+        (bitsandbytes) models this may not release *all* memory because
+        the quantization state is held in a global C++ allocator, but
+        it recovers the majority of fragmentation.
+        """
         import gc
 
         import torch
 
-        gc.collect()
+        # Multiple GC passes to break reference cycles
+        for _ in range(3):
+            gc.collect()
         if torch.cuda.is_available():
-            try:
-                torch.cuda.empty_cache()
-            except RuntimeError:
-                logger.warning("CUDA empty_cache failed — GPU may be in error state")
             try:
                 torch.cuda.synchronize()
             except RuntimeError:
                 logger.warning("CUDA synchronize failed — GPU may be in error state")
             try:
+                torch.cuda.empty_cache()
+            except RuntimeError:
+                logger.warning("CUDA empty_cache failed — GPU may be in error state")
+            try:
                 logger.info(
-                    "GPU memory: %.1f MB used / %.1f MB total",
+                    "GPU memory after cleanup: %.1f MB used / %.1f MB reserved / %.1f MB total",
                     torch.cuda.memory_allocated() / 1e6,
                     torch.cuda.memory_reserved() / 1e6,
+                    torch.cuda.get_device_properties(0).total_memory / 1e6,
                 )
             except RuntimeError:
                 logger.warning("Could not query GPU memory — GPU may be in error state")
@@ -259,6 +268,12 @@ class ExperimentRunner:
                 }
                 results.append(failed_result)
                 self._save_result(failed_result)
+
+            # Release experiment-level references (models, buffers, etc.)
+            try:
+                exp.cleanup()
+            except Exception as e:
+                logger.warning("Experiment cleanup failed for %s: %s", exp_name, e)
 
             self._clear_gpu_memory()
 
@@ -416,7 +431,7 @@ class ExperimentRunner:
         chunk_size = 256
         result = []
         for chunk_start in range(0, len(texts), chunk_size):
-            chunk = texts[chunk_start: chunk_start + chunk_size]
+            chunk = texts[chunk_start : chunk_start + chunk_size]
 
             encodings = tokenizer(
                 chunk,
