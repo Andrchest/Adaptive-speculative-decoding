@@ -22,6 +22,26 @@ from transformers.cache_utils import Cache
 logger = logging.getLogger(__name__)
 
 
+def _normalize_cache(cache: object) -> object:
+    """Ensure all key/value tensors in a Cache are 4D in-place.
+    Never squeezes the heads dimension (dim=1).
+    """
+    if not isinstance(cache, Cache):
+        return cache
+    for layer in cache.layers:
+        if layer.is_initialized:
+            if layer.keys is not None and layer.keys.ndim == 5:
+                # Extra dim between heads and seq_len: [B, H, 1, T, D]
+                if layer.keys.shape[2] == 1:
+                    layer.keys = layer.keys.squeeze(2)
+                    layer.values = layer.values.squeeze(2)
+                # Extra leading dim: [1, B, H, T, D]
+                elif layer.keys.shape[0] == 1:
+                    layer.keys = layer.keys.squeeze(0)
+                    layer.values = layer.values.squeeze(0)
+    return cache
+
+
 class DraftModel:
     """
     Wraps a small causal LM as a drafter.

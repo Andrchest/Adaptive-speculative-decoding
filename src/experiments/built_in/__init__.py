@@ -18,6 +18,7 @@ configs.  Import the classes you need and instantiate them:
 
 from .baseline import BaselineExperiment
 from .full_system import FullSystemExperiment
+from .with_acceptance_adapt import AcceptanceAdaptiveExperiment
 from .with_contrastive import ContrastiveExperiment
 from .with_lattice import LatticeExperiment
 from .with_online_distil import OnlineDistillExperiment
@@ -28,6 +29,7 @@ from .with_translator import TranslatorExperiment
 from .with_universal import UniversalDrafterExperiment
 
 __all__ = [
+    "AcceptanceAdaptiveExperiment",
     "BaselineExperiment",
     "ContrastiveExperiment",
     "FullSystemExperiment",

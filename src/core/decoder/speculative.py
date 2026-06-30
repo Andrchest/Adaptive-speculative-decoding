@@ -135,6 +135,10 @@ class SpeculativeDecoder:
         if hasattr(self.target, "reset_kv_state"):
             self.target.reset_kv_state()
 
+        if hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None:
+            if hasattr(self._adaptive_controller_ref, 'reset'):
+                self._adaptive_controller_ref.reset()
+
         self.cache.step()
 
         grad_ctx = contextlib.nullcontext() if distiller is not None else torch.no_grad()
@@ -397,6 +401,11 @@ class SpeculativeDecoder:
                 accepted_mask=accepted_mask,
                 prompt_ids=ctx_list,
             )
+
+        if hasattr(self, '_adaptive_controller_ref'):
+            ctrl = self._adaptive_controller_ref
+            if ctrl is not None and hasattr(ctrl, 'record_result'):
+                ctrl.record_result(accepted_count)
 
         return StepResult(
             draft_length=k,
