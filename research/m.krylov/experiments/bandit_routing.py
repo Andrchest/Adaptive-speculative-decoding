@@ -1571,7 +1571,7 @@ class BanditExplorationSweepExperiment(BanditRoutingExperiment):
     def build_router(self, ctx: BuildContext) -> UCBBanditRouter | ContextualBanditRouter:
         """Build router for the current sweep value.
 
-        Called once per sweep iteration by _run_sweep.
+        Called once per sweep iteration by run().
         The algorithm is set via `_current_algorithm` and `_current_exploration`.
         Drafter models are pre-loaded in `run()` and cached in `_preloaded_drafters`.
         """
@@ -1585,11 +1585,17 @@ class BanditExplorationSweepExperiment(BanditRoutingExperiment):
         )
 
         self._drafters = []
+        default_name = cfg.drafter_model_path
         for path in drafter_paths:
             # Use pre-loaded model (cached across sweep iterations)
-            model = self._preloaded_drafters.get(path)
-            if model is None:
-                model = ctx.drafter  # fallback to runner drafter
+            if path == default_name:
+                model = ctx.drafter  # runner-loaded primary drafter
+            else:
+                model = self._preloaded_drafters.get(path)
+                if model is None:
+                    from core.models.drafter import DraftModel
+                    model = DraftModel(path, device=ctx.device)
+                    self._preloaded_drafters[path] = model
             self._drafters.append(DrafterEntry(
                 name=path, model=model, reward_window=self.reward_window,
             ))
@@ -1644,6 +1650,19 @@ class BanditExplorationSweepExperiment(BanditRoutingExperiment):
 
         # Load models once (shared across sweep iterations)
         drafter, target = runner._build_models(cfg)
+
+        # Pre-load extra drafter models (for multi-drafter sweeps)
+        drafter_paths = getattr(cfg, "drafter_model_paths", [])
+        if not drafter_paths:
+            drafter_paths = [cfg.drafter_model_path]
+        self._preloaded_drafters: dict[str, object] = {
+            cfg.drafter_model_path: drafter,
+        }
+        from core.models.drafter import DraftModel
+        for path in drafter_paths:
+            if path not in self._preloaded_drafters:
+                logger.info("Pre-loading extra drafter: %s", path)
+                self._preloaded_drafters[path] = DraftModel(path, device=runner.device)
 
         # Build translator + cache (shared)
         build_ctx = BuildContext(
