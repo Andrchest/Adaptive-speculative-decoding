@@ -159,6 +159,7 @@ def _apply_overrides(
     max_samples: int = 0,
     max_new_tokens: int = 0,
     no_mlflow: bool = False,
+    mlflow_uri: str | None = None,
 ) -> None:
     """
     Apply CLI overrides to experiment configs in-place.
@@ -190,6 +191,8 @@ def _apply_overrides(
             exp.set_config_override("max_new_tokens", max_new_tokens)
         if no_mlflow:
             exp.set_config_override("mlflow_experiment", "")
+        if mlflow_uri:
+            exp.set_config_override("mlflow_tracking_uri", mlflow_uri)
 
 
 def main(  # noqa: C901
@@ -225,6 +228,10 @@ def main(  # noqa: C901
         bool,
         typer.Option("--no-mlflow", help="Disable MLflow logging"),
     ] = False,
+    mlflow_uri: Annotated[
+        str | None,
+        typer.Option("--mlflow-uri", help="MLflow tracking server URI (e.g. http://host:5000/)"),
+    ] = None,
     max_samples: Annotated[
         int | None,
         typer.Option(
@@ -377,6 +384,7 @@ def main(  # noqa: C901
         max_samples=max_samples or 0,
         max_new_tokens=max_new_tokens or 0,
         no_mlflow=no_mlflow,
+        mlflow_uri=mlflow_uri,
     )
     # Set log_level on each experiment config
     for exp in experiments:

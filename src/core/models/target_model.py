@@ -329,7 +329,9 @@ class TargetModel:
                 out = None
 
         if out is None:
-            # Full forward fallback
+            # Full forward fallback — successful forward produces fresh PKV.
+            # Reset _kv_ok so the NEXT step tries KV cache again with this fresh PKV.
+            # A one-time PKV format mismatch should not permanently disable caching.
             if draft_tensor is not None:
                 full_input = torch.cat([context, draft_tensor], dim=1)
             else:
@@ -337,9 +339,6 @@ class TargetModel:
             out = self.model(full_input, use_cache=True)
             new_pkv = _to_cache(out.past_key_values)
             logits = out.logits[0, ctx_len - 1 : ctx_len + k, :]
+            self._kv_ok = True  # retry KV cache on next step with fresh PKV
 
-        if new_pkv is None or not hasattr(new_pkv, "get_seq_length"):
-            if not hasattr(new_pkv, "get_seq_length"):
-                logger.info("Model returned non-Cache PKV — KV disabled for this prompt")
-            self._kv_ok = False
         return logits, new_pkv

@@ -40,7 +40,7 @@ class DraftModel:
         self,
         model_name_or_path: str,
         device: str = "cuda",
-        dtype: torch.dtype = torch.float32,
+        dtype: torch.dtype = torch.float16,
         **model_kwargs,
     ) -> None:
         logger.info("Loading drafter tokenizer from %s", model_name_or_path)

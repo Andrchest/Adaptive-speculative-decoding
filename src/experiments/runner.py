@@ -342,6 +342,12 @@ class ExperimentRunner:
     def _setup_mlflow(self, cfg: ExperimentConfig) -> None:
         """Initialize MLflow run if configured."""
         if _HAS_MLFLOW and getattr(cfg, "mlflow_experiment", None):
+            # Point to remote or local tracking server
+            tracking_uri = getattr(cfg, "mlflow_tracking_uri", None)
+            if tracking_uri:
+                mlflow.set_tracking_uri(tracking_uri)
+                logger.info("MLflow tracking URI set to: %s", tracking_uri)
+
             # End any previously active run (e.g. from a failed experiment)
             active = mlflow.active_run()
             if active is not None:
