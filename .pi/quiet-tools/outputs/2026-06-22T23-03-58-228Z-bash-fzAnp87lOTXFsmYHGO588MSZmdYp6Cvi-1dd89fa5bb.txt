@@ -1,0 +1,315 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Device: cuda  GPU: NVIDIA GeForce RTX 3060 Ti                                │
+│ Models: opt-125m (drafter) / opt-350m (target)                               │
+│ Samples: 2  Max tokens: 16                                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Profiling 1 experiment(s): 01_baseline
+
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /home/andreipc/Adaptive-speculative-decoding/src/profiler.py:810 in main     │
+│                                                                              │
+│   807 │   │   TextColumn("{task.percentage:>3.0f}%| {elapsed}<{remaining}"), │
+│   808 │   │   console=console,                                               │
+│   809 │   ) as progress:                                                     │
+│ ❱ 810 │   │   task = progress.add_task("Profiling...", total=len(exps))      │
+│   811 │   │                                                                  │
+│   812 │   │   for exp in exps:                                               │
+│   813 │   │   │   console.print(f"\n[bold yellow]▓ Profiling:                │
+│       {exp.meta.name}[/bold yellow]")                                        │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1640 in add_task                                                     │
+│                                                                              │
+│   1637 │   │   │   │   self.start_task(self._task_index)                     │
+│   1638 │   │   │   new_task_index = self._task_index                         │
+│   1639 │   │   │   self._task_index = TaskID(int(self._task_index) + 1)      │
+│ ❱ 1640 │   │   self.refresh()                                                │
+│   1641 │   │   return new_task_index                                         │
+│   1642 │                                                                     │
+│   1643 │   def remove_task(self, task_id: TaskID) -> None:                   │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1550 in refresh                                                      │
+│                                                                              │
+│   1547 │   def refresh(self) -> None:                                        │
+│   1548 │   │   """Refresh (render) the progress information."""              │
+│   1549 │   │   if not self.disable and self.live.is_started:                 │
+│ ❱ 1550 │   │   │   self.live.refresh()                                       │
+│   1551 │                                                                     │
+│   1552 │   def get_renderable(self) -> RenderableType:                       │
+│   1553 │   │   """Get a renderable for the progress display."""              │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/live │
+│ .py:247 in refresh                                                           │
+│                                                                              │
+│   244 │   def refresh(self) -> None:                                         │
+│   245 │   │   """Update the display of the Live Render."""                   │
+│   246 │   │   with self._lock:                                               │
+│ ❱ 247 │   │   │   self._live_render.set_renderable(self.renderable)          │
+│   248 │   │   │   if self._nested:                                           │
+│   249 │   │   │   │   if self.console._live_stack:                           │
+│   250 │   │   │   │   │   self.console._live_stack[0].refresh()              │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/live │
+│ .py:225 in renderable                                                        │
+│                                                                              │
+│   222 │   │   renderable: RenderableType                                     │
+│   223 │   │   if live_stack and self is live_stack[0]:                       │
+│   224 │   │   │   # The first Live instance will render everything in the    │
+│       Live stack                                                             │
+│ ❱ 225 │   │   │   renderable = Group(*[live.get_renderable() for live in     │
+│       live_stack])                                                           │
+│   226 │   │   else:                                                          │
+│   227 │   │   │   renderable = self.get_renderable()                         │
+│   228 │   │   return Screen(renderable) if self._alt_screen else renderable  │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/live │
+│ .py:225 in <listcomp>                                                        │
+│                                                                              │
+│   222 │   │   renderable: RenderableType                                     │
+│   223 │   │   if live_stack and self is live_stack[0]:                       │
+│   224 │   │   │   # The first Live instance will render everything in the    │
+│       Live stack                                                             │
+│ ❱ 225 │   │   │   renderable = Group(*[live.get_renderable() for live in     │
+│       live_stack])                                                           │
+│   226 │   │   else:                                                          │
+│   227 │   │   │   renderable = self.get_renderable()                         │
+│   228 │   │   return Screen(renderable) if self._alt_screen else renderable  │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/live │
+│ .py:105 in get_renderable                                                    │
+│                                                                              │
+│   102 │                                                                      │
+│   103 │   def get_renderable(self) -> RenderableType:                        │
+│   104 │   │   renderable = (                                                 │
+│ ❱ 105 │   │   │   self._get_renderable()                                     │
+│   106 │   │   │   if self._get_renderable is not None                        │
+│   107 │   │   │   else self._renderable                                      │
+│   108 │   │   )                                                              │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1554 in get_renderable                                               │
+│                                                                              │
+│   1551 │                                                                     │
+│   1552 │   def get_renderable(self) -> RenderableType:                       │
+│   1553 │   │   """Get a renderable for the progress display."""              │
+│ ❱ 1554 │   │   renderable = Group(*self.get_renderables())                   │
+│   1555 │   │   return renderable                                             │
+│   1556 │                                                                     │
+│   1557 │   def get_renderables(self) -> Iterable[RenderableType]:            │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1559 in get_renderables                                              │
+│                                                                              │
+│   1556 │                                                                     │
+│   1557 │   def get_renderables(self) -> Iterable[RenderableType]:            │
+│   1558 │   │   """Get a number of renderables for the progress display."""   │
+│ ❱ 1559 │   │   table = self.make_tasks_table(self.tasks)                     │
+│   1560 │   │   yield table                                                   │
+│   1561 │                                                                     │
+│   1562 │   def make_tasks_table(self, tasks: Iterable[Task]) -> Table:       │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1583 in make_tasks_table                                             │
+│                                                                              │
+│   1580 │   │                                                                 │
+│   1581 │   │   for task in tasks:                                            │
+│   1582 │   │   │   if task.visible:                                          │
+│ ❱ 1583 │   │   │   │   table.add_row(                                        │
+│   1584 │   │   │   │   │   *(                                                │
+│   1585 │   │   │   │   │   │   (                                             │
+│   1586 │   │   │   │   │   │   │   column.format(task=task)                  │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1588 in <genexpr>                                                    │
+│                                                                              │
+│   1585 │   │   │   │   │   │   (                                             │
+│   1586 │   │   │   │   │   │   │   column.format(task=task)                  │
+│   1587 │   │   │   │   │   │   │   if isinstance(column, str)                │
+│ ❱ 1588 │   │   │   │   │   │   │   else column(task)                         │
+│   1589 │   │   │   │   │   │   )                                             │
+│   1590 │   │   │   │   │   │   for column in self.columns                    │
+│   1591 │   │   │   │   │   )                                                 │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:540 in __call__                                                      │
+│                                                                              │
+│    537 │   │   │   │   if timestamp + self.max_refresh > current_time:       │
+│    538 │   │   │   │   │   return renderable                                 │
+│    539 │   │                                                                 │
+│ ❱  540 │   │   renderable = self.render(task)                                │
+│    541 │   │   self._renderable_cache[task.id] = (current_time, renderable)  │
+│    542 │   │   return renderable                                             │
+│    543                                                                       │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:636 in render                                                        │
+│                                                                              │
+│    633 │   │   super().__init__(table_column=table_column or                 │
+│        Column(no_wrap=True))                                                 │
+│    634 │                                                                     │
+│    635 │   def render(self, task: "Task") -> Text:                           │
+│ ❱  636 │   │   _text = self.text_format.format(task=task)                    │
+│    637 │   │   if self.markup:                                               │
+│    638 │   │   │   text = Text.from_markup(_text, style=self.style,          │
+│        justify=self.justify)                                                 │
+│    639 │   │   else:                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+KeyError: 'elapsed'
+
+During handling of the above exception, another exception occurred:
+
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /home/andreipc/Adaptive-speculative-decoding/src/profiler.py:803 in main     │
+│                                                                              │
+│   800 │                                                                      │
+│   801 │   profiles: list[ExperimentProfile] = []                             │
+│   802 │                                                                      │
+│ ❱ 803 │   with Progress(                                                     │
+│   804 │   │   SpinnerColumn(),                                               │
+│   805 │   │   TextColumn("[progress.description]{task.description}"),        │
+│   806 │   │   BarColumn(),                                                   │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1190 in __exit__                                                     │
+│                                                                              │
+│   1187 │   │   exc_val: Optional[BaseException],                             │
+│   1188 │   │   exc_tb: Optional[TracebackType],                              │
+│   1189 │   ) -> None:                                                        │
+│ ❱ 1190 │   │   self.stop()                                                   │
+│   1191 │                                                                     │
+│   1192 │   def track(                                                        │
+│   1193 │   │   self,                                                         │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1176 in stop                                                         │
+│                                                                              │
+│   1173 │   def stop(self) -> None:                                           │
+│   1174 │   │   """Stop the progress display."""                              │
+│   1175 │   │   if not self.disable:                                          │
+│ ❱ 1176 │   │   │   self.live.stop()                                          │
+│   1177 │   │   │   if not self.console.is_interactive and not                │
+│        self.console.is_jupyter:                                              │
+│   1178 │   │   │   │   self.console.print()                                  │
+│   1179                                                                       │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/live │
+│ .py:165 in stop                                                              │
+│                                                                              │
+│   162 │   │   │   with self.console:                                         │
+│   163 │   │   │   │   try:                                                   │
+│   164 │   │   │   │   │   if not self._alt_screen and not                    │
+│       self.console.is_jupyter:                                               │
+│ ❱ 165 │   │   │   │   │   │   self.refresh()                                 │
+│   166 │   │   │   │   finally:                                               │
+│   167 │   │   │   │   │   self._disable_redirect_io()                        │
+│   168 │   │   │   │   │   self.console.pop_render_hook()                     │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/live │
+│ .py:247 in refresh                                                           │
+│                                                                              │
+│   244 │   def refresh(self) -> None:                                         │
+│   245 │   │   """Update the display of the Live Render."""                   │
+│   246 │   │   with self._lock:                                               │
+│ ❱ 247 │   │   │   self._live_render.set_renderable(self.renderable)          │
+│   248 │   │   │   if self._nested:                                           │
+│   249 │   │   │   │   if self.console._live_stack:                           │
+│   250 │   │   │   │   │   self.console._live_stack[0].refresh()              │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/live │
+│ .py:227 in renderable                                                        │
+│                                                                              │
+│   224 │   │   │   # The first Live instance will render everything in the    │
+│       Live stack                                                             │
+│   225 │   │   │   renderable = Group(*[live.get_renderable() for live in     │
+│       live_stack])                                                           │
+│   226 │   │   else:                                                          │
+│ ❱ 227 │   │   │   renderable = self.get_renderable()                         │
+│   228 │   │   return Screen(renderable) if self._alt_screen else renderable  │
+│   229 │                                                                      │
+│   230 │   def update(self, renderable: RenderableType, *, refresh: bool =    │
+│       False) -> None:                                                        │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/live │
+│ .py:105 in get_renderable                                                    │
+│                                                                              │
+│   102 │                                                                      │
+│   103 │   def get_renderable(self) -> RenderableType:                        │
+│   104 │   │   renderable = (                                                 │
+│ ❱ 105 │   │   │   self._get_renderable()                                     │
+│   106 │   │   │   if self._get_renderable is not None                        │
+│   107 │   │   │   else self._renderable                                      │
+│   108 │   │   )                                                              │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1554 in get_renderable                                               │
+│                                                                              │
+│   1551 │                                                                     │
+│   1552 │   def get_renderable(self) -> RenderableType:                       │
+│   1553 │   │   """Get a renderable for the progress display."""              │
+│ ❱ 1554 │   │   renderable = Group(*self.get_renderables())                   │
+│   1555 │   │   return renderable                                             │
+│   1556 │                                                                     │
+│   1557 │   def get_renderables(self) -> Iterable[RenderableType]:            │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1559 in get_renderables                                              │
+│                                                                              │
+│   1556 │                                                                     │
+│   1557 │   def get_renderables(self) -> Iterable[RenderableType]:            │
+│   1558 │   │   """Get a number of renderables for the progress display."""   │
+│ ❱ 1559 │   │   table = self.make_tasks_table(self.tasks)                     │
+│   1560 │   │   yield table                                                   │
+│   1561 │                                                                     │
+│   1562 │   def make_tasks_table(self, tasks: Iterable[Task]) -> Table:       │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1583 in make_tasks_table                                             │
+│                                                                              │
+│   1580 │   │                                                                 │
+│   1581 │   │   for task in tasks:                                            │
+│   1582 │   │   │   if task.visible:                                          │
+│ ❱ 1583 │   │   │   │   table.add_row(                                        │
+│   1584 │   │   │   │   │   *(                                                │
+│   1585 │   │   │   │   │   │   (                                             │
+│   1586 │   │   │   │   │   │   │   column.format(task=task)                  │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:1588 in <genexpr>                                                    │
+│                                                                              │
+│   1585 │   │   │   │   │   │   (                                             │
+│   1586 │   │   │   │   │   │   │   column.format(task=task)                  │
+│   1587 │   │   │   │   │   │   │   if isinstance(column, str)                │
+│ ❱ 1588 │   │   │   │   │   │   │   else column(task)                         │
+│   1589 │   │   │   │   │   │   )                                             │
+│   1590 │   │   │   │   │   │   for column in self.columns                    │
+│   1591 │   │   │   │   │   )                                                 │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:540 in __call__                                                      │
+│                                                                              │
+│    537 │   │   │   │   if timestamp + self.max_refresh > current_time:       │
+│    538 │   │   │   │   │   return renderable                                 │
+│    539 │   │                                                                 │
+│ ❱  540 │   │   renderable = self.render(task)                                │
+│    541 │   │   self._renderable_cache[task.id] = (current_time, renderable)  │
+│    542 │   │   return renderable                                             │
+│    543                                                                       │
+│                                                                              │
+│ /home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/rich/prog │
+│ ress.py:636 in render                                                        │
+│                                                                              │
+│    633 │   │   super().__init__(table_column=table_column or                 │
+│        Column(no_wrap=True))                                                 │
+│    634 │                                                                     │
+│    635 │   def render(self, task: "Task") -> Text:                           │
+│ ❱  636 │   │   _text = self.text_format.format(task=task)                    │
+│    637 │   │   if self.markup:                                               │
+│    638 │   │   │   text = Text.from_markup(_text, style=self.style,          │
+│        justify=self.justify)                                                 │
+│    639 │   │   else:                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+KeyError: 'elapsed'
+
+
+Command exited with code 1

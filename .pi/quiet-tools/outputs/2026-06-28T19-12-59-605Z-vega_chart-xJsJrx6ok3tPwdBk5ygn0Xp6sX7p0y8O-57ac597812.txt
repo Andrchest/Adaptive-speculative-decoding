@@ -1,0 +1,361 @@
+Error rendering chart: Traceback (most recent call last):
+  File "<string>", line 18, in <module>
+  File "/home/andreipc/.cache/uv/archive-v0/O8D1Zigc4ysEcoNAMrqSb/lib/python3.12/site-packages/altair/vegalite/v6/api.py", line 4143, in from_dict
+    return t.cast("_TSchemaBase", core.Root.from_dict(dct, validate))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/andreipc/.cache/uv/archive-v0/O8D1Zigc4ysEcoNAMrqSb/lib/python3.12/site-packages/altair/utils/schemapi.py", line 1301, in from_dict
+    cls.validate(dct)
+  File "/home/andreipc/.cache/uv/archive-v0/O8D1Zigc4ysEcoNAMrqSb/lib/python3.12/site-packages/altair/utils/schemapi.py", line 1343, in validate
+    validate_jsonschema(instance, schema, rootschema=cls._rootschema or cls._schema)
+  File "/home/andreipc/.cache/uv/archive-v0/O8D1Zigc4ysEcoNAMrqSb/lib/python3.12/site-packages/altair/utils/schemapi.py", line 155, in validate_jsonschema
+    raise main_error
+jsonschema.exceptions.ValidationError: Additional properties are not allowed ('hconcat' was unexpected)
+
+Failed validating 'additionalProperties' in schema[2]:
+    {'additionalProperties': False,
+     'properties': {'$schema': {'description': 'URL to [JSON '
+                                               'schema](http://json-schema.org/) '
+                                               'for a Vega-Lite '
+                                               'specification. Unless you '
+                                               'have a reason to change '
+                                               'this, use '
+                                               '`https://vega.github.io/schema/vega-lite/v6.json`. '
+                                               'Setting the `$schema` '
+                                               'property allows automatic '
+                                               'validation and '
+                                               'autocomplete in editors '
+                                               'that support JSON schema.',
+                                'format': 'uri',
+                                'type': 'string'},
+                    'autosize': {'anyOf': [{'$ref': '#/definitions/AutosizeType'},
+                                           {'$ref': '#/definitions/AutoSizeParams'}],
+                                 'description': 'How the visualization '
+                                                'size should be '
+                                                'determined. If a string, '
+                                                'should be one of `"pad"`, '
+                                                '`"fit"` or `"none"`. '
+                                                'Object values can '
+                                                'additionally specify '
+                                                'parameters for content '
+                                                'sizing and automatic '
+                                                'resizing.\n'
+                                                '\n'
+                                                '__Default value__: `pad`'},
+                    'background': {'anyOf': [{'$ref': '#/definitions/Color'},
+                                             {'$ref': '#/definitions/ExprRef'}],
+                                   'description': 'CSS color property to '
+                                                  'use as the background '
+                                                  'of the entire view.\n'
+                                                  '\n'
+                                                  '__Default value:__ '
+                                                  '`"white"`'},
+                    'config': {'$ref': '#/definitions/Config',
+                               'description': 'Vega-Lite configuration '
+                                              'object. This property can '
+                                              'only be defined at the '
+                                              'top-level of a '
+                                              'specification.'},
+                    'data': {'anyOf': [{'$ref': '#/definitions/Data'},
+                                       {'type': 'null'}],
+                             'description': 'An object describing the data '
+                                            'source. Set to `null` to '
+                                            "ignore the parent's data "
+                                            'source. If no data is set, it '
+                                            'is derived from the parent.'},
+                    'datasets': {'$ref': '#/definitions/Datasets',
+                                 'description': 'A global data store for '
+                                                'named datasets. This is a '
+                                                'mapping from names to '
+                                                'inline datasets. This can '
+                                                'be an array of objects or '
+                                                'primitive values or a '
+                                                'string. Arrays of '
+                                                'primitive values are '
+                                                'ingested as objects with '
+                                                'a `data` property.'},
+                    'description': {'description': 'Description of this '
+                                                   'mark for commenting '
+                                                   'purpose.',
+                                    'type': 'string'},
+                    'encoding': {'$ref': '#/definitions/SharedEncoding',
+                                 'description': 'A shared key-value '
+                                                'mapping between encoding '
+                                                'channels and definition '
+                                                'of fields in the '
+                                                'underlying layers.'},
+                    'height': {'anyOf': [{'type': 'number'},
+                                         {'const': 'container',
+                                          'type': 'string'},
+                                         {'$ref': '#/definitions/Step'}],
+                               'description': 'The height of a '
+                                              'visualization.\n'
+                                              '\n'
+                                              '- For a plot with a '
+                                              'continuous y-field, height '
+                                              'should be a number.\n'
+                                              '- For a plot with either a '
+                                              'discrete y-field or no '
+                                              'y-field, height can be '
+                                              'either a number indicating '
+                                              'a fixed height or an object '
+                                              'in the form of `{step: '
+                                              'number}` defining the '
+                                              'height per discrete step. '
+                                              '(No y-field is equivalent '
+                                              'to having one discrete '
+                                              'step.)\n'
+                                              '- To enable responsive '
+                                              'sizing on height, it should '
+                                              'be set to `"container"`.\n'
+                                              '\n'
+                                              '__Default value:__ Based on '
+                                              '`config.view.continuousHeight` '
+                                              'for a plot with a '
+                                              'continuous y-field and '
+                                              '`config.view.discreteHeight` '
+                                              'otherwise.\n'
+                                              '\n'
+                                              '__Note:__ For plots with '
+                                              '[`row` and `column` '
+                                              'channels](https://vega.github.io/vega-lite/docs/encoding.html#facet), '
+                                              'this represents the height '
+                                              'of a single view and the '
+                                              '`"container"` option cannot '
+                                              'be used.\n'
+                                              '\n'
+                                              '__See also:__ '
+                                              '[`height`](https://vega.github.io/vega-lite/docs/size.html) '
+                                              'documentation.'},
+                    'layer': {'description': 'Layer or single view '
+                                             'specifications to be '
+                                             'layered.\n'
+                                             '\n'
+                                             '__Note__: Specifications '
+                                             'inside `layer` cannot use '
+                                             '`row` and `column` channels '
+                                             'as layering facet '
+                                             'specifications is not '
+                                             'allowed. Instead, use the '
+                                             '[facet '
+                                             'operator](https://vega.github.io/vega-lite/docs/facet.html) '
+                                             'and place a layer inside a '
+                                             'facet.',
+                              'items': {'anyOf': [{'$ref': '#/definitions/LayerSpec'},
+                                                  {'$ref': '#/definitions/UnitSpec'}]},
+                              'type': 'array'},
+                    'name': {'description': 'Name of the visualization for '
+                                            'later reference.',
+                             'type': 'string'},
+                    'padding': {'anyOf': [{'$ref': '#/definitions/Padding'},
+                                          {'$ref': '#/definitions/ExprRef'}],
+                                'description': 'The default visualization '
+                                               'padding, in pixels, from '
+                                               'the edge of the '
+                                               'visualization canvas to '
+                                               'the data rectangle. If a '
+                                               'number, specifies padding '
+                                               'for all sides. If an '
+                                               'object, the value should '
+                                               'have the format `{"left": '
+                                               '5, "top": 5, "right": 5, '
+                                               '"bottom": 5}` to specify '
+                                               'padding for each side of '
+                                               'the visualization.\n'
+                                               '\n'
+                                               '__Default value__: `5`'},
+                    'params': {'description': 'Dynamic variables or '
+                                              'selections that '
+                                              'parameterize a '
+                                              'visualization.',
+                               'items': {'$ref': '#/definitions/TopLevelParameter'},
+                               'type': 'array'},
+                    'projection': {'$ref': '#/definitions/Projection',
+                                   'description': 'An object defining '
+                                                  'properties of the '
+                                                  'geographic projection '
+                                                  'shared by underlying '
+                                                  'layers.'},
+                    'resolve': {'$ref': '#/definitions/Resolve',
+                                'description': 'Scale, axis, and legend '
+                                               'resolutions for view '
+                                               'composition '
+                                               'specifications.'},
+                    'title': {'anyOf': [{'$ref': '#/definitions/Text'},
+                                        {'$ref': '#/definitions/TitleParams'}],
+                              'description': 'Title for the plot.'},
+                    'transform': {'description': 'An array of data '
+                                                 'transformations such as '
+                                                 'filter and new field '
+                                                 'calculation.',
+                                  'items': {'$ref': '#/definitions/Transform'},
+                                  'type': 'array'},
+                    'usermeta': {'$ref': '#/definitions/Dict',
+                                 'description': 'Optional metadata that '
+                                                'will be passed to Vega. '
+                                                'This object is completely '
+                                                'ignored by Vega and '
+                                                'Vega-Lite and can be used '
+                                                'for custom metadata.'},
+                    'view': {'$ref': '#/definitions/ViewBackground',
+                             'description': 'An object defining the view '
+                                            "background's fill and "
+                                            'stroke.\n'
+                                            '\n'
+                                            '__Default value:__ none '
+                                            '(transparent)'},
+                    'width': {'anyOf': [{'type': 'number'},
+                                        {'const': 'container',
+                                         'type': 'string'},
+                                        {'$ref': '#/definitions/Step'}],
+                              'description': 'The width of a '
+                                             'visualization.\n'
+                                             '\n'
+                                             '- For a plot with a '
+                                             'continuous x-field, width '
+                                             'should be a number.\n'
+                                             '- For a plot with either a '
+                                             'discrete x-field or no '
+                                             'x-field, width can be either '
+                                             'a number indicating a fixed '
+                                             'width or an object in the '
+                                             'form of `{step: number}` '
+                                             'defining the width per '
+                                             'discrete step. (No x-field '
+                                             'is equivalent to having one '
+                                             'discrete step.)\n'
+                                             '- To enable responsive '
+                                             'sizing on width, it should '
+                                             'be set to `"container"`.\n'
+                                             '\n'
+                                             '__Default value:__ Based on '
+                                             '`config.view.continuousWidth` '
+                                             'for a plot with a continuous '
+                                             'x-field and '
+                                             '`config.view.discreteWidth` '
+                                             'otherwise.\n'
+                                             '\n'
+                                             '__Note:__ For plots with '
+                                             '[`row` and `column` '
+                                             'channels](https://vega.github.io/vega-lite/docs/encoding.html#facet), '
+                                             'this represents the width of '
+                                             'a single view and the '
+                                             '`"container"` option cannot '
+                                             'be used.\n'
+                                             '\n'
+                                             '__See also:__ '
+                                             '[`width`](https://vega.github.io/vega-lite/docs/size.html) '
+                                             'documentation.'}},
+     'required': ['layer'],
+     'type': 'object'}
+
+On instance:
+    {'$schema': 'https://vega.github.io/schema/vega-lite/v5.json',
+     'data': {'values': [{'exp': '01_baseline',
+                          'tps': 54,
+                          'acc': 45.8,
+                          'speedup': 1.09,
+                          'gpu': 0.7,
+                          'wall': 11.74},
+                         {'exp': '02_+lattice',
+                          'tps': 41.2,
+                          'acc': 45.8,
+                          'speedup': 0.86,
+                          'gpu': 0.71,
+                          'wall': 15.39},
+                         {'exp': '03_+translator',
+                          'tps': 42.3,
+                          'acc': 52,
+                          'speedup': 0.88,
+                          'gpu': 0.82,
+                          'wall': 15.94},
+                         {'exp': '04_+online_distil',
+                          'tps': 42.8,
+                          'acc': 50.6,
+                          'speedup': 0.89,
+                          'gpu': 2.1,
+                          'wall': 15.63},
+                         {'exp': '05_+replay_fifo',
+                          'tps': 32.4,
+                          'acc': 42.5,
+                          'speedup': 0.67,
+                          'gpu': 2.1,
+                          'wall': 20.34},
+                         {'exp': '06_+replay_prio',
+                          'tps': 34.8,
+                          'acc': 47.3,
+                          'speedup': 0.74,
+                          'gpu': 2.1,
+                          'wall': 18.92},
+                         {'exp': '07_+contrastive',
+                          'tps': 42.3,
+                          'acc': 50.6,
+                          'speedup': 0.9,
+                          'gpu': 2.1,
+                          'wall': 15.82},
+                         {'exp': '08_+speedup_adapt',
+                          'tps': 50.9,
+                          'acc': 51,
+                          'speedup': 1.05,
+                          'gpu': 0.71,
+                          'wall': 12.62},
+                         {'exp': '09_+routing',
+                          'tps': 53.3,
+                          'acc': 45.8,
+                          'speedup': 1.13,
+                          'gpu': 0.71,
+                          'wall': 11.9},
+                         {'exp': '11_full_system',
+                          'tps': 42.2,
+                          'acc': 60.7,
+                          'speedup': 0.9,
+                          'gpu': 2.67,
+                          'wall': 15.92}]},
+     'title': {'text': 'Ablation Study: opt-125m / opt-350m (20 samples)',
+               'fontSize': 16},
+     'hconcat': [{'mark': {'type': 'bar', 'color': '#4C9AFF'},
+                  'encoding': {'y': {'field': 'exp',
+                                     'type': 'nominal',
+                                     'sort': ['-tps'],
+                                     'axis': {'title': None}},
+                               'x': {'field': 'tps',
+                                     'type': 'quantitative',
+                                     'axis': {'title': 'Tokens/sec'}},
+                               'tooltip': [{'field': 'exp'},
+                                           {'field': 'tps',
+                                            'format': '.1f'}]},
+                  'width': 240,
+                  'title': 'Throughput'},
+                 {'mark': {'type': 'bar', 'color': '#30A46C'},
+                  'encoding': {'y': {'field': 'exp',
+                                     'type': 'nominal',
+                                     'sort': ['-tps'],
+                                     'axis': {'title': None}},
+                               'x': {'field': 'acc',
+                                     'type': 'quantitative',
+                                     'axis': {'title': 'Acceptance Rate '
+                                                       '(%)'}},
+                               'tooltip': [{'field': 'exp'},
+                                           {'field': 'acc',
+                                            'format': '.1f'}]},
+                  'width': 240,
+                  'title': 'Acceptance (%)'},
+                 {'mark': {'type': 'bar'},
+                  'encoding': {'y': {'field': 'exp',
+                                     'type': 'nominal',
+                                     'sort': ['-tps'],
+                                     'axis': {'title': None}},
+                               'x': {'field': 'speedup',
+                                     'type': 'quantitative',
+                                     'axis': {'title': 'Speedup'}},
+                               'color': {'condition': {'test': 'datum.speedup '
+                                                               '>= 1.0',
+                                                       'value': '#30A46C'},
+                                         'value': '#E85D5D'},
+                               'tooltip': [{'field': 'exp'},
+                                           {'field': 'speedup',
+                                            'format': '.2f'}]},
+                  'width': 240,
+                  'title': 'Wall Clock Speedup'}],
+     'resolve': {'scale': {'y': 'shared'}},
+     'width': 760,
+     'height': 400}

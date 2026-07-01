@@ -120,7 +120,14 @@ class DraftModel:
             new_input = next_token.unsqueeze(0).unsqueeze(0)
             remaining = k - 1
         elif past_key_values is not None and past_len > 0:
-            new_input = context[:, past_len:]   # only the unseen tail
+            # FIX: past_len may exceed context.shape[1] when the context
+            # grows by fewer tokens than were drafted. Clamp to avoid
+            # empty/negative slicing.
+            actual_past = min(past_len, context.shape[1])
+            new_input = context[:, actual_past:]   # only the unseen tail
+            if new_input.shape[1] == 0:
+                # Nothing new to process — just use last token from context
+                new_input = context[:, -1:]
             out = self.model(new_input, past_key_values=past_key_values, use_cache=True)
             out_pkv = out.past_key_values
             logits = out.logits[:, -1, :].squeeze(0)
@@ -130,7 +137,11 @@ class DraftModel:
             new_input = next_token.unsqueeze(0).unsqueeze(0)
             remaining = k - 1
         else:
-            out = self.model(context, use_cache=True)
+            # FIX: Pass DynamicCache() explicitly — without it, some models
+            # return a plain tuple as past_key_values which crashes later.
+            from transformers.cache_utils import DynamicCache
+            init_pkv = DynamicCache()
+            out = self.model(context, past_key_values=init_pkv, use_cache=True)
             out_pkv = out.past_key_values
             logits = out.logits[:, -1, :].squeeze(0)
             next_token = self._sample_next_token(logits, temperature, greedy)

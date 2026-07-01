@@ -1,0 +1,166 @@
+[21:11:15] INFO     Parsed arguments: suite=None                     main.py:164
+                    experiment=01_baseline smoke=False list=False               
+                    max_samples=5 max_new_tokens=0                              
+           INFO     Selected single experiment: 01_baseline          main.py:234
+           INFO     ExperimentRunner initialized:                  runner.py:161
+                    output_dir=results device=cuda experiments=1                
+           INFO     Running 1 experiment(s)                          main.py:260
+           INFO     Starting run_all for 1 experiment(s)           runner.py:200
+           INFO     Starting experiment 1/1: 01_baseline           runner.py:204
+
+============================================================
+  Running: 01_baseline
+============================================================
+           INFO     Running experiment: 01_baseline                  base.py:516
+           INFO     Loading drafter model: facebook/opt-125m       runner.py:287
+           INFO     Loading drafter tokenizer from             draft_model.py:34
+                    facebook/opt-125m                                           
+[21:11:16] INFO     Loading drafter model from                 draft_model.py:36
+                    facebook/opt-125m on cuda                                   
+[21:11:17] INFO     Drafter model ready: facebook/opt-125m     draft_model.py:45
+           INFO     Loading target model in 4-bit NF4 (lower VRAM) runner.py:295
+           INFO     Loading target model: facebook/opt-350m        runner.py:299
+           INFO     Loading target tokenizer from             target_model.py:35
+                    facebook/opt-350m                                           
+           INFO     Using 4-bit quantization for target model target_model.py:39
+           INFO     Loading target model from                 target_model.py:50
+                    facebook/opt-350m on cuda                                   
+[21:11:18] DEBUG    Loading bitsandbytes native library from:  cextension.py:295
+                    /home/andreipc/miniconda3/envs/ml_env/lib/                  
+                    python3.10/site-packages/bitsandbytes/libb                  
+                    itsandbytes_cuda121.so                                      
+[21:11:19] INFO     Target model ready: facebook/opt-350m     target_model.py:59
+           INFO     GPU memory after models: 0.67 GB                 base.py:535
+[21:11:20] INFO     Rule1Mapping: 50265/50272 drafter tokens have   rules.py:124
+                    exact target match (100.0%)                                 
+[21:11:21] INFO     Rule2Mapping built: drafter_size=50272          rules.py:219
+                    target_size=50272 transfer_entries=50264                    
+           INFO     Built CrossVocabTranslator:                vocabulary.py:164
+                    drafter_vocab=50272 target_vocab=50272                      
+                    device=cuda                                                 
+           INFO     CrossVocabTranslator initialized:           vocabulary.py:72
+                    rule1=Rule1Mapping rule2=Rule2Mapping                       
+                    learned=no weight=0.00                                      
+           INFO     NgramCache initialized: max_size=65536 n=3       ngram.py:98
+                    eviction=hybrid                                             
+           INFO     NgramCache initialized: max_size=65536 n=3       ngram.py:98
+                    eviction=hybrid                                             
+           INFO     Loading dataset gsm8k with max_samples=5       runner.py:362
+           DEBUG    PyTorch version 2.5.1 available.                config.py:54
+[21:11:22] INFO     Loading openai/gsm8k main test split           runner.py:366
+[21:11:24] DEBUG    Attempting to acquire lock 140229445989472 on    _api.py:331
+                    /home/andreipc/.cache/huggingface/datasets/_home            
+                    _andreipc_.cache_huggingface_datasets_openai___g            
+                    sm8k_main_0.0.0_740312add88f781978c0658806c59bc2            
+                    815b9866.lock                                               
+           DEBUG    Lock 140229445989472 acquired on                 _api.py:334
+                    /home/andreipc/.cache/huggingface/datasets/_home            
+                    _andreipc_.cache_huggingface_datasets_openai___g            
+                    sm8k_main_0.0.0_740312add88f781978c0658806c59bc2            
+                    815b9866.lock                                               
+           DEBUG    open file:                                      local.py:379
+                    /home/andreipc/.cache/huggingface/datasets/open             
+                    ai___gsm8k/main/0.0.0/740312add88f781978c065880             
+                    6c59bc2815b9866/dataset_info.json                           
+           DEBUG    Attempting to release lock 140229445989472 on    _api.py:364
+                    /home/andreipc/.cache/huggingface/datasets/_home            
+                    _andreipc_.cache_huggingface_datasets_openai___g            
+                    sm8k_main_0.0.0_740312add88f781978c0658806c59bc2            
+                    815b9866.lock                                               
+           DEBUG    Lock 140229445989472 released on                 _api.py:367
+                    /home/andreipc/.cache/huggingface/datasets/_home            
+                    _andreipc_.cache_huggingface_datasets_openai___g            
+                    sm8k_main_0.0.0_740312add88f781978c0658806c59bc2            
+                    815b9866.lock                                               
+           DEBUG    Attempting to acquire lock 140229116471392 on    _api.py:331
+                    /home/andreipc/.cache/huggingface/datasets/opena            
+                    i___gsm8k/main/0.0.0/740312add88f781978c0658806c            
+                    59bc2815b9866_builder.lock                                  
+           DEBUG    Lock 140229116471392 acquired on                 _api.py:334
+                    /home/andreipc/.cache/huggingface/datasets/opena            
+                    i___gsm8k/main/0.0.0/740312add88f781978c0658806c            
+                    59bc2815b9866_builder.lock                                  
+           DEBUG    open file:                                      local.py:379
+                    /home/andreipc/.cache/huggingface/datasets/open             
+                    ai___gsm8k/main/0.0.0/740312add88f781978c065880             
+                    6c59bc2815b9866/dataset_info.json                           
+           DEBUG    Attempting to release lock 140229116471392 on    _api.py:364
+                    /home/andreipc/.cache/huggingface/datasets/opena            
+                    i___gsm8k/main/0.0.0/740312add88f781978c0658806c            
+                    59bc2815b9866_builder.lock                                  
+           DEBUG    Lock 140229116471392 released on                 _api.py:367
+                    /home/andreipc/.cache/huggingface/datasets/opena            
+                    i___gsm8k/main/0.0.0/740312add88f781978c0658806c            
+                    59bc2815b9866_builder.lock                                  
+           INFO     Tokenizing 5 text sample(s) with batched       runner.py:389
+                    encoding                                                    
+           INFO     Tokenization complete: 5 samples               runner.py:412
+           INFO     GPU memory after setup: 0.67 GB                  base.py:586
+           INFO     BenchmarkCollector initialized:              collector.py:88
+                    name=01_baseline                                            
+           INFO     Starting speculative generation:          speculative.py:112
+                    prompt_len=105 max_new_tokens=32                            
+                    draft_length=5                                              
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 1 selected draft length k=5   speculative.py:156
+                    (new_tokens=0/32)                                           
+           DEBUG    Cache lookup for context length 105       speculative.py:298
+           DEBUG    Cache MISS for key=(1, 1, 1)                    ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:90
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+[21:11:25] DEBUG    Sequence recorded: prompt_len=105           collector.py:122
+                    new_tokens=0 wall_time=0.792s acc=0.000                     
+           ERROR    Experiment 1/1 (01_baseline) FAILED: CUDA out  runner.py:228
+                    of memory. Tried to allocate 47.07 GiB. GPU 0               
+                    has a total capacity of 7.66 GiB of which 6.77              
+                    GiB is free. Including non-PyTorch memory,                  
+                    this process has 902.00 MiB memory in use. Of               
+                    the allocated memory 696.73 MiB is allocated                
+                    by PyTorch, and 41.27 MiB is reserved by                    
+                    PyTorch but unallocated. If reserved but                    
+                    unallocated memory is large try setting                     
+                    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:Tr              
+                    ue to avoid fragmentation.  See documentation               
+                    for Memory Management                                       
+                    (https://pytorch.org/docs/stable/notes/cuda.ht              
+                    ml#environment-variables)                                   
+Traceback (most recent call last):
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 213, in run_all
+    exp_result = self.run_one_experiment(exp)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 272, in run_one_experiment
+    return exp.run(self)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/base.py", line 636, in run
+    decoder.generate(
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 123, in generate
+    return self._generate_loop(
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 164, in _generate_loop
+    result = self._decode_step(generated, k, distiller=distiller, rng=rng)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 326, in _decode_step
+    translated_probs = self.translator.translate(draft_logits / t_eff)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/translation/vocabulary.py", line 92, in translate
+    r1 = self.rule1.map_logits(draft_logits)  # (k, target_vocab)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/translation/rules.py", line 166, in map_logits
+    target_probs.index_add_(1, target_d_indices, drafter_probs[:, source_d_indices])
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 47.07 GiB. GPU 0 has a total capacity of 7.66 GiB of which 6.77 GiB is free. Including non-PyTorch memory, this process has 902.00 MiB memory in use. Of the allocated memory 696.73 MiB is allocated by PyTorch, and 41.27 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+           INFO     Saving experiment result to                    runner.py:423
+                    results/01_baseline.json                                    
+           INFO     GPU memory: 8.5 MB used / 157.3 MB total       runner.py:179
+           INFO     Writing comparison table to                    runner.py:432
+                    results/comparison_table.csv                                
+
+Comparison table saved to: results/comparison_table.csv
+           INFO     Comparison table saved                         runner.py:442
+           INFO     Finished run_all with 1 result(s)              runner.py:252
+           INFO     All experiments finished                         main.py:262
+
+=== Final Comparison ===
+Experiment                       Acc Rate        TPS    Speedup
+-----------------------------------------------------------------
+01_baseline                     0.000       0.0      0.00x

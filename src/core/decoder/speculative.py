@@ -163,6 +163,11 @@ class SpeculativeDecoder:
         consec_zero = 0
         ctx_list: list[int] = input_ids[0].tolist()
 
+        # CRITICAL: Maintain a separate drafter context in drafter vocab.
+        # The output buffer contains accepted tokens in target vocab,
+        # but the drafter needs drafter vocab tokens for embedding.
+        drafter_context_ids: list[int] = input_ids[0].tolist()  # drafter vocab
+
         for step_idx in range(max_new_tokens):
             new_tokens = pos - prompt_len
             if new_tokens >= max_new_tokens:
@@ -170,11 +175,16 @@ class SpeculativeDecoder:
 
             generated = output[:, :pos]
 
+            # Build drafter context tensor from drafter vocab token IDs
+            drafter_ctx = torch.tensor(
+                [drafter_context_ids], dtype=input_ids.dtype, device=input_ids.device
+            )
+
             k = self._choose_draft_length(generated, adaptive_length_fn)
 
             result = self._decode_step(
                 generated, k, ctx_list,
-                drafter_ctx=generated,  # full context — KV cache handles efficiency
+                drafter_ctx=drafter_ctx,  # always in drafter vocab
                 distiller=distiller,
                 rng=rng,
             )
@@ -188,6 +198,18 @@ class SpeculativeDecoder:
                     output[0, pos + i] = tok
                 pos += len(emitted)
                 ctx_list.extend(emitted)
+
+                # CRITICAL: Translate accepted tokens (target vocab) back to
+                # drafter vocab for the drafter's context.
+                if not self._same_vocab:
+                    drafter_emitted = self.translator.translate_target_to_drafter(emitted)
+                else:
+                    drafter_emitted = emitted
+                drafter_context_ids.extend(drafter_emitted)
+
+                # Also update ctx_list with drafter vocab for cache consistency
+                ctx_list = drafter_context_ids[:]
+
                 consec_zero = 0
             else:
                 consec_zero += 1
@@ -273,6 +295,10 @@ class SpeculativeDecoder:
 
         # Update drafter KV state for this step
         self._drafter_kv = new_drafter_kv
+        # FIX: KV cache has context.shape[1] + k entries after drafting,
+        # but on the next step the context grows by len(accepted) tokens.
+        # The drafter only needs to process the NEW tokens beyond past_len,
+        # so we store the actual KV cache length here.
         self._drafter_kv_len = context.shape[1] + k
         self._cached_drafter_logits = None  # Consumed
 
@@ -325,39 +351,58 @@ class SpeculativeDecoder:
         #    Then, if there's a bonus token, forward it through the drafter
         #    to extend the KV cache AND extract hidden states for the
         #    adaptive controller (eliminates a redundant forward pass).
+        #
+        #    CRITICAL: drafter_ctx_len is the length of the drafter context
+        #    (in drafter vocab), not the output buffer length.
+        drafter_ctx_len = drafter_ctx.shape[1] if drafter_ctx is not None else context.shape[1]
         if self._drafter_kv is not None and not distiller:
-            drafter_keep = context.shape[1] + accepted_count
+            drafter_keep = drafter_ctx_len + accepted_count
             self._drafter_kv = _truncate_pkv(self._drafter_kv, drafter_keep)
             self._drafter_kv_len = drafter_keep
 
             if bonus is not None:
-                bonus_tensor = torch.tensor(
-                    [[bonus]], dtype=context.dtype, device=context.device
-                )
-                with torch.no_grad():
-                    from core.models.target_model import _to_cache
-                    need_hidden = hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None
-                    try:
-                        bonus_out = self.drafter.model(
-                            bonus_tensor,
-                            past_key_values=_to_cache(self._drafter_kv),
-                            output_hidden_states=need_hidden,
-                            use_cache=True,
-                        )
-                    except RuntimeError as e:
-                        if "same number of dimensions" not in str(e):
-                            raise
-                        logger.warning(
-                            "KV dim mismatch in bonus forward (%s) — full forward", e
-                        )
-                        bonus_out = self.drafter.model(
-                            bonus_tensor,
-                            output_hidden_states=True,
-                            use_cache=True,
-                        )
-                self._drafter_kv = bonus_out.past_key_values
-                self._drafter_kv_len += 1
-                self._cached_drafter_logits = bonus_out.logits[:, -1, :]
+                # Translate bonus token to drafter vocab for the drafter.
+                # The bonus token is sampled from target logits (target vocab),
+                # but the drafter expects drafter vocab ids.
+                drafter_vocab_size = self.drafter.model.config.vocab_size
+                if not self._same_vocab:
+                    bonus_drafter = self.translator.translate_target_to_drafter([bonus])[0]
+                else:
+                    bonus_drafter = bonus
+
+                if bonus_drafter < drafter_vocab_size:
+                    bonus_tensor = torch.tensor(
+                        [[bonus_drafter]], dtype=context.dtype, device=context.device
+                    )
+                    with torch.no_grad():
+                        from core.models.target_model import _to_cache
+                        need_hidden = hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None
+                        try:
+                            bonus_out = self.drafter.model(
+                                bonus_tensor,
+                                past_key_values=_to_cache(self._drafter_kv),
+                                output_hidden_states=need_hidden,
+                                use_cache=True,
+                            )
+                        except RuntimeError as e:
+                            if "same number of dimensions" not in str(e):
+                                raise
+                            logger.warning(
+                                "KV dim mismatch in bonus forward (%s) — full forward", e
+                            )
+                            bonus_out = self.drafter.model(
+                                bonus_tensor,
+                                output_hidden_states=True,
+                                use_cache=True,
+                            )
+                    self._drafter_kv = bonus_out.past_key_values
+                    self._drafter_kv_len += 1
+                    self._cached_drafter_logits = bonus_out.logits[:, -1, :]
+                else:
+                    logger.debug(
+                        "Skipping drafter bonus forward: token %d >= drafter vocab %d (cross-vocab)",
+                        bonus_drafter, drafter_vocab_size,
+                    )
 
                 # Share hidden state with adaptive controller if attached
                 if hasattr(self, '_adaptive_controller_ref'):
@@ -382,7 +427,12 @@ class SpeculativeDecoder:
         # 9. Update cache stats + acceptance EMA (lookup removed for speed).
         self.cache.update_acceptance(ctx_list, accepted=accepted_count > 0)
         if accepted:
-            self.cache.insert(ctx_list, accepted, logits=None)
+            # Translate accepted tokens to drafter vocab for cache consistency
+            if not self._same_vocab:
+                accepted_drafter = self.translator.translate_target_to_drafter(accepted)
+            else:
+                accepted_drafter = accepted
+            self.cache.insert(ctx_list, accepted_drafter, logits=None)
 
         # 10. Optional online distillation.
         if distiller is not None and draft_logits is not None:

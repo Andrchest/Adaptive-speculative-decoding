@@ -1,0 +1,640 @@
+                    (b'content-encoding', b'gzip'), (b'ETag',                   
+                    b'W/"718-YVXN1C6rdAdknn3+qA2LLHuSA8k"'),                    
+                    (b'X-Powered-By', b'huggingface-moon'),                     
+                    (b'X-Request-Id',                                           
+                    b'Root=1-6a3824f8-4c86388e0266ce1600372ac9;add3             
+                    ae1e-c39c-4d08-9477-77c4b7eb66e3'),                         
+                    (b'RateLimit', b'"api";r=986;t=161'),                       
+                    (b'RateLimit-Policy', b'"fixed                              
+                    window";"api";q=1000;w=300'),                               
+                    (b'cross-origin-opener-policy',                             
+                    b'same-origin'), (b'Referrer-Policy',                       
+                    b'strict-origin-when-cross-origin'),                        
+                    (b'Access-Control-Max-Age', b'86400'),                      
+                    (b'Access-Control-Allow-Origin',                            
+                    b'https://huggingface.co'), (b'Vary',                       
+                    b'Origin'), (b'vary', b'Accept-Encoding'),                  
+                    (b'Access-Control-Expose-Headers',                          
+                    b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Err             
+                    or-Message,X-Total-Count,ETag,Link,Accept-Range             
+                    s,Content-Range,X-Linked-Size,X-Linked-ETag,X-X             
+                    et-Hash'), (b'X-Cache', b'Miss from                         
+                    cloudfront'), (b'Via', b'1.1                                
+                    37485b4aa4feacfc1ca26cfa4163e76a.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P2'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'bpZMGuiqnjlTysexFGYeEhALEH1nAIoTmH2wDjOgvZ5n6             
+                    3fbYzGtpw==')])                                             
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           INFO     Loading dataset gsm8k with max_samples=1       runner.py:342
+           DEBUG    PyTorch version 2.12.0 available.               config.py:54
+           INFO     Loading openai/gsm8k main test split           runner.py:346
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'HEAD']>                                 
+           DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 307, b'Temporary                 
+                    Redirect', [(b'Content-Type', b'text/plain;                 
+                    charset=utf-8'), (b'Content-Length', b'237'),               
+                    (b'Connection', b'keep-alive'), (b'Date',                   
+                    b'Sun, 21 Jun 2026 17:52:56 GMT'),                          
+                    (b'Location',                                               
+                    b'/api/resolve-cache/datasets/openai/gsm8k/7403             
+                    12add88f781978c0658806c59bc2815b9866/README.md?             
+                    %2Fdatasets%2Fopenai%2Fgsm8k%2Fresolve%2Fmain%2             
+                    FREADME.md=&etag=%22ad25b2c451d0fcd2793678b2baa             
+                    917c962acf281%22'), (b'X-Powered-By',                       
+                    b'huggingface-moon'), (b'X-Request-Id',                     
+                    b'Root=1-6a3824f8-306b2af6223efaf25f0881dc;789b             
+                    264f-3f9c-42c5-807d-04f40cb065e0'),                         
+                    (b'RateLimit', b'"resolvers";r=4983;t=161'),                
+                    (b'RateLimit-Policy', b'"fixed                              
+                    window";"resolvers";q=5000;w=300'),                         
+                    (b'cross-origin-opener-policy',                             
+                    b'same-origin'), (b'Referrer-Policy',                       
+                    b'strict-origin-when-cross-origin'),                        
+                    (b'Access-Control-Max-Age', b'86400'),                      
+                    (b'Access-Control-Allow-Origin',                            
+                    b'https://huggingface.co'), (b'Vary', b'Origin,             
+                    Accept'), (b'Access-Control-Expose-Headers',                
+                    b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Err             
+                    or-Message,X-Total-Count,ETag,Link,Accept-Range             
+                    s,Content-Range,X-Linked-Size,X-Linked-ETag,X-X             
+                    et-Hash'), (b'X-Repo-Commit',                               
+                    b'740312add88f781978c0658806c59bc2815b9866'),               
+                    (b'Accept-Ranges', b'bytes'), (b'X-Hub-Cache',              
+                    b'HIT'), (b'Content-Disposition', b'inline;                 
+                    filename*=UTF-8\'\'README.md;                               
+                    filename="README.md";'),                                    
+                    (b'Content-Security-Policy', b"default-src                  
+                    'none'; sandbox"), (b'X-Linked-ETag',                       
+                    b'"ad25b2c451d0fcd2793678b2baa917c962acf281"'),             
+                    (b'X-Cache', b'Miss from cloudfront'), (b'Via',             
+                    b'1.1                                                       
+                    37485b4aa4feacfc1ca26cfa4163e76a.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P2'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'5dkaaz7bdJlfj8ucqfVEycsGQfVmuan5k_3lyZdYVvwCK             
+                    8KiO67S3Q==')])                                             
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'HEAD']>                                 
+           DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 200, b'OK',                      
+                    [(b'Content-Type', b'text/plain;                            
+                    charset=utf-8'), (b'Content-Length', b'7935'),              
+                    (b'Connection', b'keep-alive'), (b'Date',                   
+                    b'Mon, 15 Jun 2026 13:08:29 GMT'), (b'ETag',                
+                    b'"ad25b2c451d0fcd2793678b2baa917c962acf281"'),             
+                    (b'X-Powered-By', b'huggingface-moon'),                     
+                    (b'X-Request-Id',                                           
+                    b'Root=1-6a2ff94d-346c00db529b984a5470fcec;fe29             
+                    4c6b-8ca1-456b-b028-839e3bc784ae'),                         
+                    (b'RateLimit', b'"resolvers";r=4964;t=128'),                
+                    (b'RateLimit-Policy', b'"fixed                              
+                    window";"resolvers";q=5000;w=300'),                         
+                    (b'cross-origin-opener-policy',                             
+                    b'same-origin'), (b'Referrer-Policy',                       
+                    b'strict-origin-when-cross-origin'),                        
+                    (b'Access-Control-Max-Age', b'86400'),                      
+                    (b'Access-Control-Allow-Origin',                            
+                    b'https://huggingface.co'),                                 
+                    (b'Access-Control-Expose-Headers',                          
+                    b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Err             
+                    or-Message,X-Total-Count,ETag,Link,Accept-Range             
+                    s,Content-Range,X-Linked-Size,X-Linked-ETag,X-X             
+                    et-Hash'), (b'X-Repo-Commit',                               
+                    b'740312add88f781978c0658806c59bc2815b9866'),               
+                    (b'Accept-Ranges', b'bytes'), (b'X-Hub-Cache',              
+                    b'HIT'), (b'Content-Disposition', b'inline;                 
+                    filename*=UTF-8\'\'README.md;                               
+                    filename="README.md";'),                                    
+                    (b'Content-Security-Policy', b"default-src                  
+                    'none'; sandbox"), (b'Vary', b'Origin'),                    
+                    (b'X-Cache', b'Hit from cloudfront'), (b'Via',              
+                    b'1.1                                                       
+                    37485b4aa4feacfc1ca26cfa4163e76a.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P2'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'C0Wh_7Jco_ZJ07dx1ne0ud7oAx_zOnW-gmvrEZujE0jzT             
+                    Otkumul_A=='), (b'Age', b'535467')])                        
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'HEAD']>                                 
+[20:52:57] DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 404, b'Not Found',               
+                    [(b'Content-Type', b'text/plain;                            
+                    charset=utf-8'), (b'Content-Length', b'15'),                
+                    (b'Connection', b'keep-alive'), (b'Date',                   
+                    b'Sun, 21 Jun 2026 17:52:56 GMT'), (b'ETag',                
+                    b'W/"f-mY2VvLxuxB7KhsoOdQTlMTccuAQ"'),                      
+                    (b'X-Powered-By', b'huggingface-moon'),                     
+                    (b'X-Request-Id',                                           
+                    b'Root=1-6a3824f8-3eaf01e4198d490206420a46;b693             
+                    e59c-7c40-494c-9535-838fe3834084'),                         
+                    (b'RateLimit', b'"resolvers";r=4982;t=161'),                
+                    (b'RateLimit-Policy', b'"fixed                              
+                    window";"resolvers";q=5000;w=300'),                         
+                    (b'cross-origin-opener-policy',                             
+                    b'same-origin'), (b'Referrer-Policy',                       
+                    b'strict-origin-when-cross-origin'),                        
+                    (b'Access-Control-Max-Age', b'86400'),                      
+                    (b'Access-Control-Allow-Origin',                            
+                    b'https://huggingface.co'), (b'Vary',                       
+                    b'Origin'), (b'Access-Control-Expose-Headers',              
+                    b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Err             
+                    or-Message,X-Total-Count,ETag,Link,Accept-Range             
+                    s,Content-Range,X-Linked-Size,X-Linked-ETag,X-X             
+                    et-Hash'), (b'X-Repo-Commit',                               
+                    b'740312add88f781978c0658806c59bc2815b9866'),               
+                    (b'Accept-Ranges', b'bytes'), (b'X-Hub-Cache',              
+                    b'MISS'), (b'X-Error-Code', b'EntryNotFound'),              
+                    (b'X-Error-Message', b'Entry not found'),                   
+                    (b'X-Cache', b'Error from cloudfront'),                     
+                    (b'Via', b'1.1                                              
+                    37485b4aa4feacfc1ca26cfa4163e76a.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P2'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'1jCzjIk0KSYXoF6HcOX1iITdST-NFHFf_LUm5Im8oGTqK             
+                    O_mfT5-bQ==')])                                             
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    connect_tcp.started host='s3.amazonaws.com'     _trace.py:47
+                    port=443 local_address=None timeout=3                       
+                    socket_options=None                                         
+           DEBUG    connect_tcp.complete                            _trace.py:47
+                    return_value=<httpcore._backends.sync.SyncStrea             
+                    m object at 0x7e54661efcb0>                                 
+           DEBUG    start_tls.started ssl_context=<ssl.SSLContext   _trace.py:47
+                    object at 0x7e54844911d0>                                   
+                    server_hostname='s3.amazonaws.com' timeout=3                
+           DEBUG    start_tls.complete                              _trace.py:47
+                    return_value=<httpcore._backends.sync.SyncStrea             
+                    m object at 0x7e543f061940>                                 
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'HEAD']>                                 
+           DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 404, b'Not Found',               
+                    [(b'x-amz-request-id', b'BKWWP1BX4TT0E359'),                
+                    (b'x-amz-id-2',                                             
+                    b'/nxN/PtFhDIv0CIquOZuv1QqB4r+wqHKmR8cepV42YvvH             
+                    MVYixkug/Zyq7qWVCaYLPCdoG7+H84='),                          
+                    (b'Content-Type', b'application/xml'),                      
+                    (b'Transfer-Encoding', b'chunked'), (b'Date',               
+                    b'Sun, 21 Jun 2026 17:52:56 GMT'), (b'Server',              
+                    b'AmazonS3')])                                              
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'GET']>                                  
+           DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 200, b'OK',                      
+                    [(b'Content-Type', b'application/json;                      
+                    charset=utf-8'), (b'Transfer-Encoding',                     
+                    b'chunked'), (b'Connection', b'keep-alive'),                
+                    (b'Date', b'Sun, 21 Jun 2026 17:52:57 GMT'),                
+                    (b'content-encoding', b'gzip'), (b'ETag',                   
+                    b'W/"b5f-5oXWh27AbAqgu29Ox3zYejVTut0"'),                    
+                    (b'X-Powered-By', b'huggingface-moon'),                     
+                    (b'X-Request-Id',                                           
+                    b'Root=1-6a3824f9-46ddc8de591711626ec52e69;c191             
+                    0a7d-c870-42fd-a94f-2e958db70563'),                         
+                    (b'RateLimit', b'"api";r=985;t=160'),                       
+                    (b'RateLimit-Policy', b'"fixed                              
+                    window";"api";q=1000;w=300'),                               
+                    (b'cross-origin-opener-policy',                             
+                    b'same-origin'), (b'Referrer-Policy',                       
+                    b'strict-origin-when-cross-origin'),                        
+                    (b'Access-Control-Max-Age', b'86400'),                      
+                    (b'Access-Control-Allow-Origin',                            
+                    b'https://huggingface.co'), (b'Vary',                       
+                    b'Origin'), (b'vary', b'Accept-Encoding'),                  
+                    (b'Access-Control-Expose-Headers',                          
+                    b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Err             
+                    or-Message,X-Total-Count,ETag,Link,Accept-Range             
+                    s,Content-Range,X-Linked-Size,X-Linked-ETag,X-X             
+                    et-Hash'), (b'X-Cache', b'Miss from                         
+                    cloudfront'), (b'Via', b'1.1                                
+                    37485b4aa4feacfc1ca26cfa4163e76a.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P2'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'aGZ01u9VVHh1GHtoWldljvkTJoN4rSFuHZXWNUq55oozD             
+                    c0VAIXc1w==')])                                             
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'HEAD']>                                 
+           DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 404, b'Not Found',               
+                    [(b'Content-Type', b'text/plain;                            
+                    charset=utf-8'), (b'Content-Length', b'15'),                
+                    (b'Connection', b'keep-alive'), (b'Date',                   
+                    b'Sun, 21 Jun 2026 17:52:57 GMT'), (b'ETag',                
+                    b'W/"f-mY2VvLxuxB7KhsoOdQTlMTccuAQ"'),                      
+                    (b'X-Powered-By', b'huggingface-moon'),                     
+                    (b'X-Request-Id',                                           
+                    b'Root=1-6a3824f9-170d4b2e3799aee70c44178f;9a4c             
+                    f374-2494-4ba6-a047-873f4aa48ade'),                         
+                    (b'RateLimit', b'"resolvers";r=4981;t=160'),                
+                    (b'RateLimit-Policy', b'"fixed                              
+                    window";"resolvers";q=5000;w=300'),                         
+                    (b'cross-origin-opener-policy',                             
+                    b'same-origin'), (b'Referrer-Policy',                       
+                    b'strict-origin-when-cross-origin'),                        
+                    (b'Access-Control-Max-Age', b'86400'),                      
+                    (b'Access-Control-Allow-Origin',                            
+                    b'https://huggingface.co'), (b'Vary',                       
+                    b'Origin'), (b'Access-Control-Expose-Headers',              
+                    b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Err             
+                    or-Message,X-Total-Count,ETag,Link,Accept-Range             
+                    s,Content-Range,X-Linked-Size,X-Linked-ETag,X-X             
+                    et-Hash'), (b'X-Repo-Commit',                               
+                    b'740312add88f781978c0658806c59bc2815b9866'),               
+                    (b'Accept-Ranges', b'bytes'), (b'X-Hub-Cache',              
+                    b'MISS'), (b'X-Error-Code', b'EntryNotFound'),              
+                    (b'X-Error-Message', b'Entry not found'),                   
+                    (b'X-Cache', b'Error from cloudfront'),                     
+                    (b'Via', b'1.1                                              
+                    37485b4aa4feacfc1ca26cfa4163e76a.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P2'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'UyjJy5K64hCKY_W3W5IeEm2odGjdN0Dlv2jVo1UiId4Rq             
+                    5GleA4zgA==')])                                             
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    connect_tcp.started                             _trace.py:47
+                    host='datasets-server.huggingface.co' port=443              
+                    local_address=None timeout=100.0                            
+                    socket_options=None                                         
+           DEBUG    connect_tcp.complete                            _trace.py:47
+                    return_value=<httpcore._backends.sync.SyncStrea             
+                    m object at 0x7e543f03a4e0>                                 
+           DEBUG    start_tls.started ssl_context=<ssl.SSLContext   _trace.py:47
+                    object at 0x7e54844911d0>                                   
+                    server_hostname='datasets-server.huggingface.co             
+                    ' timeout=100.0                                             
+           DEBUG    start_tls.complete                              _trace.py:47
+                    return_value=<httpcore._backends.sync.SyncStrea             
+                    m object at 0x7e543ef9fc50>                                 
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'GET']>                                  
+[20:52:58] DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 200, b'OK',                      
+                    [(b'Content-Type', b'application/json'),                    
+                    (b'Transfer-Encoding', b'chunked'),                         
+                    (b'Connection', b'keep-alive'), (b'Date',                   
+                    b'Sun, 21 Jun 2026 17:52:57 GMT'), (b'vary',                
+                    b'Accept-Encoding'), (b'content-encoding',                  
+                    b'gzip'), (b'server', b'uvicorn'),                          
+                    (b'cache-control', b'max-age=120'),                         
+                    (b'x-revision',                                             
+                    b'740312add88f781978c0658806c59bc2815b9866'),               
+                    (b'X-Cache', b'Miss from cloudfront'), (b'Via',             
+                    b'1.1                                                       
+                    d0abab6c47da3c8bff9c4ea0d8b50470.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P7'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'z0PF18_F_N9z9Tvphu6H7xvQLtI2-B7-cOcGMRQo0UUmz             
+                    1hQHribkg==')])                                             
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'GET']>                                  
+           DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 200, b'OK',                      
+                    [(b'Content-Type', b'application/json;                      
+                    charset=utf-8'), (b'Content-Length', b'626'),               
+                    (b'Connection', b'keep-alive'), (b'Date',                   
+                    b'Sun, 21 Jun 2026 17:52:58 GMT'), (b'ETag',                
+                    b'W/"272-99nyx78W/XeZdSx4HPHn5A8ZqNw"'),                    
+                    (b'X-Powered-By', b'huggingface-moon'),                     
+                    (b'X-Request-Id',                                           
+                    b'Root=1-6a3824fa-4ec6e60226bd0e2f16c13c8b;9c0a             
+                    9688-6ff0-4356-80a4-f332e43f63a9'),                         
+                    (b'RateLimit', b'"api";r=984;t=159'),                       
+                    (b'RateLimit-Policy', b'"fixed                              
+                    window";"api";q=1000;w=300'),                               
+                    (b'cross-origin-opener-policy',                             
+                    b'same-origin'), (b'Referrer-Policy',                       
+                    b'strict-origin-when-cross-origin'),                        
+                    (b'Access-Control-Max-Age', b'86400'),                      
+                    (b'Access-Control-Allow-Origin',                            
+                    b'https://huggingface.co'), (b'Vary',                       
+                    b'Origin'), (b'Access-Control-Expose-Headers',              
+                    b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Err             
+                    or-Message,X-Total-Count,ETag,Link,Accept-Range             
+                    s,Content-Range,X-Linked-Size,X-Linked-ETag,X-X             
+                    et-Hash'), (b'X-Cache', b'Miss from                         
+                    cloudfront'), (b'Via', b'1.1                                
+                    37485b4aa4feacfc1ca26cfa4163e76a.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P2'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'VDQLy3wicb1vX8kJKqcDS4hATp26WqblDT7nQmH8iPc42             
+                    Z1sDBserw==')])                                             
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'GET']>                                  
+           DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 200, b'OK',                      
+                    [(b'Content-Type', b'application/json;                      
+                    charset=utf-8'), (b'Content-Length', b'483'),               
+                    (b'Connection', b'keep-alive'), (b'Date',                   
+                    b'Sun, 21 Jun 2026 17:52:58 GMT'), (b'ETag',                
+                    b'W/"1e3-nCViddPX2cNy9sIqP/V1NHaQmtI"'),                    
+                    (b'X-Powered-By', b'huggingface-moon'),                     
+                    (b'X-Request-Id',                                           
+                    b'Root=1-6a3824fa-090a1ed60ffc1bad1978e91a;d702             
+                    20cf-56a2-44c3-a7f6-4938c90b5d27'),                         
+                    (b'RateLimit', b'"api";r=983;t=159'),                       
+                    (b'RateLimit-Policy', b'"fixed                              
+                    window";"api";q=1000;w=300'),                               
+                    (b'cross-origin-opener-policy',                             
+                    b'same-origin'), (b'Referrer-Policy',                       
+                    b'strict-origin-when-cross-origin'),                        
+                    (b'Access-Control-Max-Age', b'86400'),                      
+                    (b'Access-Control-Allow-Origin',                            
+                    b'https://huggingface.co'), (b'Vary',                       
+                    b'Origin'), (b'Access-Control-Expose-Headers',              
+                    b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Err             
+                    or-Message,X-Total-Count,ETag,Link,Accept-Range             
+                    s,Content-Range,X-Linked-Size,X-Linked-ETag,X-X             
+                    et-Hash'), (b'X-Cache', b'Miss from                         
+                    cloudfront'), (b'Via', b'1.1                                
+                    37485b4aa4feacfc1ca26cfa4163e76a.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P2'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'WM5JtNvkSW7Sb4SjeyGgbyF--UyJW3CGgwNrsWlvvepvj             
+                    P5iOUhpDg==')])                                             
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'GET']>                                                   
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    send_request_headers.started request=<Request   _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_headers.complete                   _trace.py:47
+           DEBUG    send_request_body.started request=<Request      _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    send_request_body.complete                      _trace.py:47
+           DEBUG    receive_response_headers.started                _trace.py:47
+                    request=<Request [b'HEAD']>                                 
+           DEBUG    receive_response_headers.complete               _trace.py:47
+                    return_value=(b'HTTP/1.1', 404, b'Not Found',               
+                    [(b'Content-Type', b'text/plain;                            
+                    charset=utf-8'), (b'Content-Length', b'15'),                
+                    (b'Connection', b'keep-alive'), (b'Date',                   
+                    b'Sun, 21 Jun 2026 17:52:58 GMT'), (b'ETag',                
+                    b'W/"f-mY2VvLxuxB7KhsoOdQTlMTccuAQ"'),                      
+                    (b'X-Powered-By', b'huggingface-moon'),                     
+                    (b'X-Request-Id',                                           
+                    b'Root=1-6a3824fa-550515e14643e60a2450c694;dc72             
+                    85e1-e994-412b-98a4-a36625d08ae7'),                         
+                    (b'RateLimit', b'"resolvers";r=4980;t=159'),                
+                    (b'RateLimit-Policy', b'"fixed                              
+                    window";"resolvers";q=5000;w=300'),                         
+                    (b'cross-origin-opener-policy',                             
+                    b'same-origin'), (b'Referrer-Policy',                       
+                    b'strict-origin-when-cross-origin'),                        
+                    (b'Access-Control-Max-Age', b'86400'),                      
+                    (b'Access-Control-Allow-Origin',                            
+                    b'https://huggingface.co'), (b'Vary',                       
+                    b'Origin'), (b'Access-Control-Expose-Headers',              
+                    b'X-Repo-Commit,X-Request-Id,X-Error-Code,X-Err             
+                    or-Message,X-Total-Count,ETag,Link,Accept-Range             
+                    s,Content-Range,X-Linked-Size,X-Linked-ETag,X-X             
+                    et-Hash'), (b'X-Repo-Commit',                               
+                    b'740312add88f781978c0658806c59bc2815b9866'),               
+                    (b'Accept-Ranges', b'bytes'), (b'X-Hub-Cache',              
+                    b'MISS'), (b'X-Error-Code', b'EntryNotFound'),              
+                    (b'X-Error-Message', b'Entry not found'),                   
+                    (b'X-Cache', b'Error from cloudfront'),                     
+                    (b'Via', b'1.1                                              
+                    37485b4aa4feacfc1ca26cfa4163e76a.cloudfront.net             
+                    (CloudFront)'), (b'X-Amz-Cf-Pop', b'HEL51-P2'),             
+                    (b'X-Amz-Cf-Id',                                            
+                    b'l3V28UV8E53umbM6hka8v4mnGd-P5iRwI5HO2ZzHK6fBo             
+                    eBwydKwPA==')])                                             
+           DEBUG    receive_response_body.started request=<Request  _trace.py:47
+                    [b'HEAD']>                                                  
+           DEBUG    receive_response_body.complete                  _trace.py:47
+           DEBUG    response_closed.started                         _trace.py:47
+           DEBUG    response_closed.complete                        _trace.py:47
+           DEBUG    Attempting to acquire lock 138900954386640 on    _api.py:536
+                    /home/andreipc/.cache/huggingface/datasets/_home            
+                    _andreipc_.cache_huggingface_datasets_openai___g            
+                    sm8k_main_0.0.0_740312add88f781978c0658806c59bc2            
+                    815b9866.lock                                               
+           DEBUG    Lock 138900954386640 acquired on                 _api.py:539
+                    /home/andreipc/.cache/huggingface/datasets/_home            
+                    _andreipc_.cache_huggingface_datasets_openai___g            
+                    sm8k_main_0.0.0_740312add88f781978c0658806c59bc2            
+                    815b9866.lock                                               
+           DEBUG    open file:                                      local.py:382
+                    /home/andreipc/.cache/huggingface/datasets/open             
+                    ai___gsm8k/main/0.0.0/740312add88f781978c065880             
+                    6c59bc2815b9866/dataset_info.json                           
+           DEBUG    Attempting to release lock 138900954386640 on    _api.py:568
+                    /home/andreipc/.cache/huggingface/datasets/_home            
+                    _andreipc_.cache_huggingface_datasets_openai___g            
+                    sm8k_main_0.0.0_740312add88f781978c0658806c59bc2            
+                    815b9866.lock                                               
+           DEBUG    Lock 138900954386640 released on                 _api.py:572
+                    /home/andreipc/.cache/huggingface/datasets/_home            
+                    _andreipc_.cache_huggingface_datasets_openai___g            
+                    sm8k_main_0.0.0_740312add88f781978c0658806c59bc2            
+                    815b9866.lock                                               
+           DEBUG    Attempting to acquire lock 138900296359552 on    _api.py:536
+                    /home/andreipc/.cache/huggingface/datasets/opena            
+                    i___gsm8k/main/0.0.0/740312add88f781978c0658806c            
+                    59bc2815b9866_builder.lock                                  
+           DEBUG    Lock 138900296359552 acquired on                 _api.py:539
+                    /home/andreipc/.cache/huggingface/datasets/opena            
+                    i___gsm8k/main/0.0.0/740312add88f781978c0658806c            
+                    59bc2815b9866_builder.lock                                  
+           DEBUG    open file:                                      local.py:382
+                    /home/andreipc/.cache/huggingface/datasets/open             
+                    ai___gsm8k/main/0.0.0/740312add88f781978c065880             
+                    6c59bc2815b9866/dataset_info.json                           
+           DEBUG    Attempting to release lock 138900296359552 on    _api.py:568
+                    /home/andreipc/.cache/huggingface/datasets/opena            
+                    i___gsm8k/main/0.0.0/740312add88f781978c0658806c            
+                    59bc2815b9866_builder.lock                                  
+           DEBUG    Lock 138900296359552 released on                 _api.py:572
+                    /home/andreipc/.cache/huggingface/datasets/opena            
+                    i___gsm8k/main/0.0.0/740312add88f781978c0658806c            
+                    59bc2815b9866_builder.lock                                  
+           INFO     Tokenizing 1 text sample(s)                    runner.py:369
+           INFO     Tokenization complete                          runner.py:374
+           INFO     BenchmarkCollector initialized:              collector.py:88
+                    name=smoke_test                                             
+           INFO     Starting speculative generation:          speculative.py:112
+                    prompt_len=66 max_new_tokens=32                             
+                    draft_length=5                                              
+           DEBUG    Using fixed draft length k=5              speculative.py:248
+           DEBUG    Decode step 1 selected draft length k=5   speculative.py:156
+                    (new_tokens=0/32)                                           
+           DEBUG    Cache lookup for context length 66        speculative.py:295
+           DEBUG    Cache MISS for key=(108, 210, 116)              ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:304
+           INFO     Drafting 5 token(s) from context length 66     drafter.py:92
+                    (temperature=1.0)                                           
+           DEBUG    Draft token 1/5: 44                           drafter.py:119
+           DEBUG    Draft token 2/5: 48                           drafter.py:119
+           DEBUG    Draft token 3/5: 100                          drafter.py:119
+           DEBUG    Draft token 4/5: 17                           drafter.py:119
+           DEBUG    Draft token 5/5: 27                           drafter.py:119
+           INFO     Draft complete: generated 5 token(s)          drafter.py:128
+           DEBUG    Translating drafter logits to target      speculative.py:320
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:90
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:118
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:344
+                    token(s)                                                    
+           INFO     Target verification context_len=66            drafter.py:208
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6, 50272)  drafter.py:225
+           DEBUG    Running acceptance test for 5 draft       speculative.py:357
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=44            speculative.py:507
+                    accept_prob=0.2226                                          
+           INFO     Rejected draft token 1: token=44          speculative.py:521
+                    accept_prob=0.2226                                          
+           INFO     Acceptance result: accepted=0             speculative.py:363
+                    rejected_at=0                                               
+[20:52:59] DEBUG    Sequence recorded: prompt_len=66            collector.py:122
+                    new_tokens=0 wall_time=0.542s acc=0.000                     
+           ERROR    Experiment 1/1 (smoke_test) FAILED: Expected a runner.py:223
+                    'cuda' device type for generator but found                  
+                    'cpu'                                                       
+Traceback (most recent call last):
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 208, in run_all
+    exp_result = self.run_one_experiment(exp)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 267, in run_one_experiment
+    return exp.run(self)
+           ^^^^^^^^^^^^^
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/base.py", line 608, in run
+    decoder.generate(
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 123, in generate
+    return self._generate_loop(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 164, in _generate_loop
+    result = self._decode_step(generated, k, distiller=distiller, rng=rng)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 371, in _decode_step
+    bonus = self._residual_sample(target_logits, translated_probs, rejected_at, rng=rng)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 573, in _residual_sample
+    token = torch.multinomial(residual, 1, generator=rng).item()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Expected a 'cuda' device type for generator but found 'cpu'
+           INFO     Saving experiment result to                    runner.py:385
+                    results/smoke_test.json                                     
+           INFO     GPU memory: 8.5 MB used / 23.1 MB total        runner.py:174
+           INFO     Writing comparison table to                    runner.py:394
+                    results/comparison_table.csv                                
+
+Comparison table saved to: results/comparison_table.csv
+           INFO     Comparison table saved                         runner.py:404
+           INFO     Finished run_all with 1 result(s)              runner.py:247
+           INFO     Smoke test run finished                          main.py:204
+
+=== Final Comparison ===
+Experiment                       Acc Rate        TPS    Speedup
+-----------------------------------------------------------------
+smoke_test                      0.000       0.0      0.00x
+           DEBUG    close.started                                   _trace.py:47
+           DEBUG    close.complete                                  _trace.py:47
+           DEBUG    close.started                                   _trace.py:47
+           DEBUG    close.complete                                  _trace.py:47
+           DEBUG    close.started                                   _trace.py:47
+           DEBUG    close.complete                                  _trace.py:47
+
+[Showing lines 2160-2797 of 2797 (50.0KB limit). Full output: /tmp/pi-bash-10e4a354b465fa58.log]

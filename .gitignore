@@ -74,3 +74,9 @@ dmypy.json
 *.bin
 *.checkpoint
 wandb/
+
+# Pi agent artifacts
+.pi/
+
+# Profiling results
+results_profile/

@@ -1,0 +1,252 @@
+        #    Apply the decoder's temperature to the drafter logits BEFORE
+        #    translation so ``q`` is at the same temperature as ``p``
+        #    (H1 fix: previously ``p`` was at temperature T but ``q`` was
+        #    at temperature 1, distorting the acceptance ratio p/q).
+        #    The translator is NOT trained, so wrap in no_grad to prevent
+        #    intermediate activations from being retained on the graph.
+        if draft_logits is not None:
+            logger.debug("Translating drafter logits to target vocab (T=%s)", self.temperature)
+            with torch.no_grad():
+                t_eff = max(self.temperature, 1e-6)
+                translated_probs = self.translator.translate(draft_logits / t_eff)
+                # Defensive alignment to the translator's declared target
+                # vocab size (which may differ from a target model's actual
+                # lm_head dim by a few padded rows for OPT/GPT-2 — we'll
+                # re-align to the actual target_logits width after
+                # target.verify() returns).
+                translated_probs = _align_last_dim(
+                    translated_probs, self.translator.rule1.target_size
+                )
+        else:
+            logger.debug("No drafter logits; skipping translation")
+            translated_probs = None
+
+        # 4. Translate drafter-vocab token ids → target-vocab token ids.
+        #    Required for cross-tokenizer setups (C3 fix). For same-tokenizer
+        #    pairs this is a no-op (Rule1 maps every token to itself).
+        draft_tokens_target = self._translate_draft_tokens(
+            draft_tokens_drafter, translated_probs
+        )
+
+        # 5. Target verifies the (target-vocab) draft tokens in one pass.
+        logger.info(
+            "Running target verification for %d draft token(s)", len(draft_tokens_target)
+        )
+        target_logits = self.target.verify(context, draft_tokens_target)
+        # target_logits: (k+1, target_vocab_size) — the +1 is the bonus token
+
+        # Re-align translated_probs to the target_logits width (defensive:
+        # translator width may differ from target model's actual lm_head
+        # dim by a few padded rows for OPT/GPT-2).
+        if translated_probs is not None:
+            translated_probs = _align_last_dim(translated_probs, target_logits.shape[-1])
+
+        # 6. Acceptance / rejection in target-vocab space.
+        logger.debug(
+            "Running acceptance test for %d draft token(s)", len(draft_tokens_target)
+        )
+        accepted, rejected_at = self._accept_reject(
+            draft_tokens_target, target_logits, translated_probs
+        )
+        logger.info(
+            "Acceptance result: accepted=%d rejected_at=%d",
+            len(accepted),
+            rejected_at,
+        )
+        accepted_count = len(accepted)
+
+        # 7. Bonus token from residual distribution at rejection point.
+        bonus = self._residual_sample(target_logits, translated_probs, rejected_at)
+        if bonus is not None:
+            logger.debug("Sampled residual bonus token: %d", bonus)
+            accepted = accepted + [bonus]
+
+        # 8. Update cache (stats + acceptance EMA).
+        #    Use accepted_count (without bonus) so the EMA reflects how
+        #    often the DRAFT was accepted, not whether a bonus was sampled
+        #    (the bonus is always sampled, so including it would inflate
+        #    the acceptance rate toward 1).
+        logger.debug(
+            "Updating cache acceptance for context length %d (accepted=%d)",
+            len(ctx_list),
+            accepted_count,
+        )
+        self.cache.update_acceptance(ctx_list, accepted=accepted_count > 0)
+        if accepted:
+            logger.debug("Inserting %d accepted token(s) into cache", len(accepted))
+            self.cache.insert(
+                ctx_list,
+                accepted,
+                logits=target_logits[: len(accepted)].detach().cpu()
+                if target_logits is not None
+                else None,
+            )
+
+        # 9. Optional online distillation.
+        #    Pass the ORIGINAL drafter-vocab tokens (draft_tokens_drafter)
+        #    because draft_logits is in drafter vocab space. The NLL loss
+        #    indexes draft_logits with these tokens, so they MUST match
+        #    the drafter vocab.
+        if distiller is not None and draft_logits is not None:
+            logger.debug("Running online distillation step")
+            accepted_mask = [
+                (i < rejected_at) if rejected_at >= 0 else True
+                for i in range(len(draft_tokens_drafter))
+            ]
+            distiller.step(
+                draft_logits=draft_logits,
+                target_logits=target_logits[: len(draft_tokens_target)],
+                draft_tokens=draft_tokens_drafter,
+                accepted_mask=accepted_mask,
+                prompt_ids=context[0].tolist(),
+            )
+            logger.debug("Online distillation step complete")
+
+        return StepResult(
+            draft_length=k,
+            accepted_count=accepted_count,
+            rejected_at=rejected_at,
+            cache_hit=cache_hit,
+            draft_tokens=draft_tokens_target,
+            accepted_tokens=accepted,
+        )
+
+    def _translate_draft_tokens(
+        self,
+        draft_tokens_drafter: list[int],
+        translated_probs: torch.Tensor | None,
+    ) -> list[int]:
+        """
+        Map drafter-vocab token ids → target-vocab token ids.
+
+        For each drafter token:
+          - If Rule1 has a direct mapping, use it.
+          - Otherwise, fall back to the argmax of ``translated_probs`` at
+            that position (the most likely target token under the
+            translated drafter distribution).
+
+        For same-tokenizer drafter/target pairs, Rule1 maps every token
+        to itself, so this is a no-op.
+        """
+        if not draft_tokens_drafter:
+            return []
+        mapping = self.translator.rule1._mapping  # (drafter_vocab,) → target_idx or -1
+        result: list[int] = []
+        for i, d_idx in enumerate(draft_tokens_drafter):
+            t_idx = -1
+            if 0 <= d_idx < mapping.shape[0]:
+                t_idx = int(mapping[d_idx].item())
+            if t_idx < 0:
+                # No direct Rule1 mapping: use translated argmax at this position.
+                if translated_probs is not None and i < translated_probs.shape[0]:
+                    t_idx = int(translated_probs[i].argmax().item())
+                else:
+                    # Last-resort fallback: pass through the drafter id.
+                    # target.verify may clip or raise on out-of-range ids;
+                    # this branch should only trigger in degenerate test setups.
+                    t_idx = d_idx
+            result.append(t_idx)
+        return result
+
+    def _accept_reject(
+        self,
+        draft_tokens: list[int],
+        target_logits: torch.Tensor,
+        translated_probs: torch.Tensor | None,
+    ) -> tuple[list[int], int]:
+        """
+        Standard speculative decoding acceptance test.
+
+        For each position i:
+          p(x) = target_prob(draft_tokens[i] | context + draft[:i])
+          q(x) = translated drafter prob (or uniform 1/V fallback)
+          Accept with prob min(1, p/q).
+
+        The uniform 1/V fallback preserves the target distribution when
+        the drafter's proposal is unknown (defensive path; in normal
+        operation ``translated_probs`` is always provided).
+
+        Returns (accepted_list, first_rejection_index).
+        """
+        accepted: list[int] = []
+        V = target_logits.shape[-1]
+
+        for i, tok in enumerate(draft_tokens):
+            t_logit = target_logits[i]  # (target_vocab,)
+            p = F.softmax(t_logit.float() / max(self.temperature, 1e-6), dim=-1)
+            p_tok = p[tok].item()
+
+            if translated_probs is not None:
+                q_tok = translated_probs[i, tok].item()
+                q_tok = max(q_tok, 1e-8)
+                accept_prob = min(1.0, p_tok / q_tok)
+            else:
+                # Uniform-proposal fallback: q = 1/V.
+                # accept_prob = min(1, p_tok / (1/V)) = min(1, p_tok * V).
+                # Combined with the matching uniform residual in
+                # _residual_sample, this preserves the target distribution.
+                accept_prob = min(1.0, p_tok * V)
+
+            logger.debug(
+                "Acceptance token %d/%d: token=%d accept_prob=%.4f",
+                i + 1,
+                len(draft_tokens),
+                tok,
+                accept_prob,
+            )
+            if torch.rand(1).item() < accept_prob:
+                accepted.append(tok)
+            else:
+                logger.info(
+                    "Rejected draft token %d: token=%d accept_prob=%.4f", i + 1, tok, accept_prob
+                )
+                return accepted, i
+
+        logger.info("All %d draft token(s) accepted", len(draft_tokens))
+        return accepted, -1  # all accepted
+
+    def _residual_sample(
+        self,
+        target_logits: torch.Tensor,
+        translated_probs: torch.Tensor | None,
+        rejected_at: int,
+    ) -> int | None:
+        """
+        Sample one bonus token from the residual distribution at the
+        rejection point (or the position after a fully-accepted draft).
+
+        Residual = norm(max(0, p - q)).
+
+        When ``translated_probs`` is None (defensive path), use the
+        uniform proposal q = 1/V so the marginal of the produced token
+        is still exactly ``p``. When all draft tokens are accepted
+        (``rejected_at < 0``), there is no rejection residual to sample
+        from, so we sample directly from ``p`` at the bonus position
+        (this is the standard "bonus token" rule and preserves ``p``).
+        """
+        pos = rejected_at if rejected_at >= 0 else len(target_logits) - 1
+        if pos >= target_logits.shape[0]:
+            logger.debug("Skipping residual sample: position %d out of range", pos)
+            return None
+
+        t_logit = target_logits[pos]
+        p = F.softmax(t_logit.float() / max(self.temperature, 1e-6), dim=-1)
+
+        if rejected_at >= 0:
+            # Rejection occurred at position `pos`; sample from residual.
+            if translated_probs is not None:
+                q = translated_probs[rejected_at]
+            else:
+                V = p.shape[-1]
+                q = torch.full_like(p, 1.0 / max(V, 1))
+            residual = F.relu(p - q)
+            s = residual.sum()
+            if s > 1e-8:
+                residual = residual / s
+                token = torch.multinomial(residual, 1).item()
+                logger.debug(
+                    "Residual sample at position %d: token=%d", pos, token
+                )
+                return token
+
+[23 more lines in file. Use offset=530 to continue.]

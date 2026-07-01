@@ -1,0 +1,625 @@
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Target KV cache failed (PKV has no       target_model.py:312
+                    get_seq_length (type=tuple)). Falling                       
+                    back to full forward.                                       
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  Autoregressive baseline (verify()-based, k=1):   base.py:614
+                    49.6 tok/s over 32 tokens                                   
+smoke_test:   0%|                               | 0/1 [00:00<?, ?it/s]           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+[21:52:30] WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+           WARNING  PKV tuple→Cache failed: 'DynamicCache'   target_model.py:154
+                    object has no attribute 'layers'                            
+           WARNING  PKV list→Cache failed: 'DynamicCache'    target_model.py:171
+                    object has no attribute 'layers'                            
+           WARNING  Unexpected PKV type=tuple — KV cache may target_model.py:172
+                    not work                                                    
+smoke_test:   0%|          | 0/1 [00:00<?, ?it/s, acc=0.400, tps=33.8]smoke_test: 100%|██| 1/1 [00:00<00:00,  1.06it/s, acc=0.400, tps=33.8]                                                                      
+Comparison table saved to: results/comparison_table.csv
+
+
+================================================================================
+==========
+  Final Comparison
+================================================================================
+==========
+┏━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━┳━━━━━━┳━━━━━┳━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━━┓
+┃  ┃                        ┃     ┃      ┃     ┃      ┃       ┃  Wall ┃    GPU ┃
+┃  ┃Experiment              ┃ Acc ┃Acc/… ┃Dra… ┃  TPS ┃Speed… ┃   (s) ┃   (GB) ┃
+┡━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━╇━━━━━━╇━━━━━╇━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━━┩
+│  │smoke_test Fastest      │40.… │ 2.00 │   5 │ 33.8 │ 0.68x │  0.95 │   0.69 │
+└──┴────────────────────────┴─────┴──────┴─────┴──────┴───────┴───────┴────────┘
+  Results: results/smoke_test.json
+  CSV:     results/comparison_table.csv
+================================================================================
+==========
+
+[Showing lines 90-712 of 712 (50.0KB limit). Full output: /tmp/pi-bash-7c096dc405ed3af6.log]

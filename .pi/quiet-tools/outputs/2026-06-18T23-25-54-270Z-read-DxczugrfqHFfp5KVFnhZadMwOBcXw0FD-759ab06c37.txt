@@ -1,0 +1,252 @@
+"""
+core/distillation/online.py
+
+Online distillation during speculative decoding.
+
+Loss:
+  L = L_direct (KL divergence on Rule1-matched tokens)
+    + λ * L_ngram (NLL on accepted n-gram sequences)
+
+Supports:
+  - Full fine-tuning
+  - LoRA fine-tuning (via PEFT)
+  - Gradient accumulation
+"""
+
+from __future__ import annotations
+
+import logging
+
+import torch
+import torch.nn.functional as F
+
+logger = logging.getLogger(__name__)
+
+
+class OnlineDistiller:
+    """
+    Accumulates training signal from accepted speculative steps and
+    periodically updates the drafter weights.
+
+    Parameters
+    ----------
+    drafter_model   : DraftModel whose weights will be updated
+    translator      : CrossVocabTranslator (used to get Rule1 mask)
+    optimizer       : torch Optimizer (pre-configured with drafter params)
+    lambda_ngram    : weight for N-gram NLL loss
+    accum_steps     : gradient accumulation steps before weight update
+    use_lora        : whether PEFT LoRA adapters are active
+    """
+
+    def __init__(
+        self,
+        drafter_model,
+        translator,
+        optimizer: torch.optim.Optimizer,
+        lambda_ngram: float = 0.5,
+        accum_steps: int = 8,
+        use_lora: bool = False,
+        max_grad_norm: float = 1.0,
+    ) -> None:
+        self.drafter = drafter_model
+        self.translator = translator
+        self.optimizer = optimizer
+        self.lambda_ngram = lambda_ngram
+        self.accum_steps = accum_steps
+        self.use_lora = use_lora
+        self.max_grad_norm = max_grad_norm
+
+        self._accum_loss = torch.tensor(0.0)
+        self._accum_count = 0
+        self._step_count = 0
+
+        # Running stats
+        self.losses: list[float] = []
+        self.kl_losses: list[float] = []
+        self.nll_losses: list[float] = []
+        self.cont_losses: list[float] = []
+
+        # Optional contrastive loss module (set by runner when use_contrastive=True)
+        self._contrastive_loss = None  # ContrastiveLoss | None
+        logger.info(
+            "OnlineDistiller initialized: lambda_ngram=%.2f accum_steps=%d use_lora=%s lr=%s",
+            lambda_ngram,
+            accum_steps,
+            use_lora,
+            optimizer.param_groups[0]["lr"] if optimizer.param_groups else "N/A",
+        )
+
+    # ------------------------------------------------------------------
+    # Public
+    # ------------------------------------------------------------------
+
+    def step(
+        self,
+        draft_logits: torch.Tensor,  # (k, drafter_vocab)
+        target_logits: torch.Tensor,  # (k, target_vocab)
+        draft_tokens: list[int],
+        accepted_mask: list[bool],
+        prompt_ids: list | None = None,
+    ) -> float | None:
+        """
+        Accumulate one step of distillation loss.
+
+        Returns the combined loss value if a weight update was performed,
+        else None.
+        """
+        loss = self._compute_loss(draft_logits, target_logits, draft_tokens, accepted_mask)
+        if loss is None:
+            return None
+
+        (loss / self.accum_steps).backward()
+        # Detach immediately after backward to free the computation graph.
+        # Storing only the scalar loss value on CPU to avoid GPU memory leaks.
+        loss_scalar = loss.detach().item()
+        self._accum_loss = self._accum_loss + torch.tensor(loss_scalar, dtype=torch.float32)
+        self._accum_count += 1
+
+        if self._accum_count >= self.accum_steps:
+            return self._update_weights()
+        return None
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _compute_loss(
+        self,
+        draft_logits: torch.Tensor,
+        target_logits: torch.Tensor,
+        draft_tokens: list[int],
+        accepted_mask: list[bool],
+    ) -> torch.Tensor | None:
+        """
+        Hybrid loss:
+          L_direct  = KL(target_prob_in_drafter_space || drafter_prob)
+                      computed only for tokens that have direct Rule1 mappings
+          L_ngram   = NLL of accepted tokens under drafter
+        """
+        if not any(accepted_mask):
+            logger.debug("No accepted tokens, skipping distillation loss")
+            return None
+
+        # Translate target logits back to drafter vocab for KL comparison
+        # (We use the inverse of Rule1: direct-mapped tokens only)
+        direct_mask = self._get_direct_mask(
+            draft_logits.shape[-1], device=draft_logits.device
+        )  # (drafter_vocab,)
+
+        # --- KL divergence loss (direct mappings) ---
+        drafter_log_probs = F.log_softmax(draft_logits.float(), dim=-1)  # (k, Vd)
+        # Target probs projected back to drafter space via Rule1 transpose
+        target_in_drafter = self._project_target_to_drafter(target_logits)  # (k, Vd)
+
+        # Only compute KL where we have direct mappings
+        if direct_mask.any():
+            kl = F.kl_div(
+                drafter_log_probs[:, direct_mask],
+                target_in_drafter[:, direct_mask].clamp(min=1e-8),
+                reduction="batchmean",
+                log_target=False,
+            )
+        else:
+            kl = torch.tensor(0.0, device=draft_logits.device)
+
+        # --- N-gram NLL loss (accepted tokens) ---
+        accepted_indices = [i for i, a in enumerate(accepted_mask) if a]
+        if accepted_indices:
+            acc_tokens = torch.tensor(
+                [draft_tokens[i] for i in accepted_indices],
+                dtype=torch.long,
+                device=draft_logits.device,
+            )
+            nll = F.cross_entropy(
+                draft_logits[accepted_indices],
+                acc_tokens,
+            )
+        else:
+            nll = torch.tensor(0.0, device=draft_logits.device)
+
+        total = kl + self.lambda_ngram * nll
+        self.kl_losses.append(kl.item())
+        self.nll_losses.append(nll.item())
+
+        # --- Contrastive loss (optional) ---
+        if self._contrastive_loss is not None:
+            cont_loss, cont_stats = self._contrastive_loss(
+                draft_logits=draft_logits,
+                target_logits=target_logits,
+                accepted_mask=accepted_mask,
+                draft_tokens=draft_tokens,
+                target_to_draft_mapping=self._get_target_to_draft_mapping(target_logits.shape[-1]),
+            )
+            total = total + cont_loss
+            self.cont_losses.append(cont_stats["contrastive"])
+            logger.debug(
+                "Contrastive loss added: cont=%.4f total=%.4f",
+                cont_loss.item(),
+                total.item(),
+            )
+
+        return total
+
+    def _update_weights(self) -> float:
+        torch.nn.utils.clip_grad_norm_(self.drafter.model.parameters(), self.max_grad_norm)
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+        loss_val = (self._accum_loss / self._accum_count).item()
+        self.losses.append(loss_val)
+        self._accum_loss = torch.tensor(0.0)
+        self._accum_count = 0
+        self._step_count += 1
+        logger.info(
+            "Weight update step=%d loss=%.6f kl=%.6f nll=%.6f",
+            self._step_count,
+            loss_val,
+            sum(self.kl_losses[-self.accum_steps :]) / max(self.accum_steps, 1),
+            sum(self.nll_losses[-self.accum_steps :]) / max(self.accum_steps, 1),
+        )
+        return loss_val
+
+    def _get_direct_mask(self, drafter_vocab_size: int, device=None) -> torch.Tensor:
+        mapping = self.translator.rule1._mapping  # (drafter_vocab,)
+        mask = mapping >= 0
+        if device is not None and mask.device != device:
+            mask = mask.to(device, non_blocking=True)
+        return mask
+
+    def _project_target_to_drafter(self, target_logits: torch.Tensor) -> torch.Tensor:
+        """
+        Project target logits back to drafter vocab using Rule1 inverse mapping.
+        Tokens without a mapping get zero probability mass.
+        """
+        device = target_logits.device
+        mapping = self.translator.rule1._mapping.to(device, non_blocking=True)
+        drafter_vocab = mapping.shape[0]
+        k = target_logits.shape[0]
+
+        target_probs = F.softmax(target_logits.float(), dim=-1)  # (k, Vt)
+        drafter_proj = torch.zeros(k, drafter_vocab, device=device)
+
+        valid = mapping >= 0
+        d_idx = torch.where(valid)[0]  # (M,)
+        t_idx = mapping[d_idx]  # (M,)
+        drafter_proj[:, d_idx] = target_probs[:, t_idx]
+
+        return drafter_proj
+
+    def _get_target_to_draft_mapping(
+        self, target_vocab_size: int, device=None
+    ) -> torch.Tensor:
+        """
+        Build a tensor mapping target vocab indices → drafter vocab indices.
+
+        Returns (target_vocab_size,) where:
+          mapping[t] = drafter_idx if target token t has a direct Rule1 match,
+          mapping[t] = -1           otherwise.
+        """
+        mapping = self.translator.rule1._mapping  # (drafter_vocab,) → target_vocab
+        # mapping[d] = t means drafter token d maps to target token t
+        # We need the inverse: target → drafter
+
+[21 more lines in file. Use offset=251 to continue.]

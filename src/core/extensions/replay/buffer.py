@@ -199,12 +199,15 @@ class ReplayDistiller:
     ) -> float | None:
         """Process one live decoding step with full trace info (legacy interface)."""
         acc_rate = sum(accepted_mask) / max(len(accepted_mask), 1)
+        # CRITICAL: Copy all lists to prevent mutation after storage.
+        # The caller (speculative decoder) mutates ctx_list after this returns,
+        # which would corrupt prompt_ids if we stored a reference.
         trace = Trace(
-            prompt_ids=prompt_ids,
+            prompt_ids=list(prompt_ids),
             prompt_len=len(prompt_ids),
-            draft_tokens=draft_tokens,
-            accepted_tokens=accepted_tokens,
-            rejected_tokens=rejected_tokens,
+            draft_tokens=list(draft_tokens),
+            accepted_tokens=list(accepted_tokens),
+            rejected_tokens=list(rejected_tokens),
             acceptance_rate=acc_rate,
         )
         self.buffer.add(trace)
