@@ -179,8 +179,13 @@ class DraftModel:
         sampled_tokens: list[torch.Tensor] = []
 
         # --- Steps 0..k-2: KV cache + no_grad ---
+        # FIX: Pass DynamicCache() explicitly — without it, some models
+        # (e.g. pythia) return a plain tuple as past_key_values, which
+        # lacks get_seq_length() and crashes on subsequent forward calls.
+        from transformers.cache_utils import DynamicCache
+        past_key_values = DynamicCache()
         with torch.no_grad():
-            out = self.model(context, use_cache=True)
+            out = self.model(context, past_key_values=past_key_values, use_cache=True)
         past_key_values = out.past_key_values
 
         for i in range(k - 1):
@@ -236,22 +241,22 @@ class DraftModel:
         """Detach all tensors in past_key_values to prevent graph corruption."""
         if pkv is None:
             return None
-        # transformers 5.x Cache — detach each layer's keys/values
-        if isinstance(pkv, Cache):
-            for layer in pkv.layers:
-                if layer.is_initialized:
-                    if layer.keys is not None:
-                        layer.keys = layer.keys.detach()
-                    if layer.values is not None:
-                        layer.values = layer.values.detach()
-            return pkv
-        # Old-style DynamicCache (transformers 4.x)
+        # Old-style DynamicCache (transformers 4.x) — key_cache / value_cache
         if hasattr(pkv, "key_cache"):
             for i in range(len(pkv.key_cache)):
                 if pkv.key_cache[i] is not None:
                     pkv.key_cache[i] = pkv.key_cache[i].detach()
                 if pkv.value_cache[i] is not None:
                     pkv.value_cache[i] = pkv.value_cache[i].detach()
+            return pkv
+        # transformers 5.x Cache — detach each layer's keys/values
+        if isinstance(pkv, Cache) and hasattr(pkv, "layers"):
+            for layer in pkv.layers:
+                if layer.is_initialized:
+                    if layer.keys is not None:
+                        layer.keys = layer.keys.detach()
+                    if layer.values is not None:
+                        layer.values = layer.values.detach()
             return pkv
         # Legacy tuple-of-tuples
         return tuple(

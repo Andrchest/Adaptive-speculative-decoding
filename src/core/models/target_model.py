@@ -35,15 +35,15 @@ def _get_pkv_len(pkv: object) -> int:
             return pkv.get_seq_length()
         except Exception:
             pass
+    # transformers 4.x DynamicCache — key_cache list of tensors
+    if isinstance(pkv, DynamicCache) and hasattr(pkv, "key_cache") and len(pkv.key_cache) > 0 and pkv.key_cache[0] is not None:
+        return pkv.key_cache[0].shape[-2]
     # transformers 5.x DynamicCache — layers[i].keys.shape[-2]
-    if isinstance(pkv, DynamicCache):
+    if isinstance(pkv, DynamicCache) and hasattr(pkv, "layers"):
         for layer in pkv.layers:
             if layer.is_initialized and layer.keys is not None and layer.keys.numel() > 0:
                 return layer.keys.shape[-2]
         return 0
-    # Old-style DynamicCache (transformers 4.x) — key_cache list of tensors
-    if hasattr(pkv, "key_cache") and len(pkv.key_cache) > 0 and pkv.key_cache[0] is not None:
-        return pkv.key_cache[0].shape[-2]
     # Detached PKV (list of (k, v) tuples per layer)
     if isinstance(pkv, (list, tuple)) and len(pkv) > 0:
         if isinstance(pkv[0], (list, tuple)) and len(pkv[0]) >= 1 and hasattr(pkv[0][0], "shape"):
@@ -116,17 +116,29 @@ def _normalize_cache(cache: object) -> object:
     """
     if not isinstance(cache, Cache):
         return cache
-    for layer in cache.layers:
-        if layer.is_initialized:
-            if layer.keys is not None and layer.keys.ndim == 5:
-                # Extra dim between heads and seq_len: [B, H, 1, T, D]
-                if layer.keys.shape[2] == 1:
-                    layer.keys = layer.keys.squeeze(2)
-                    layer.values = layer.values.squeeze(2)
-                # Extra leading dim: [1, B, H, T, D]
-                elif layer.keys.shape[0] == 1:
-                    layer.keys = layer.keys.squeeze(0)
-                    layer.values = layer.values.squeeze(0)
+    # transformers 5.x Cache — has .layers attribute
+    if hasattr(cache, 'layers'):
+        for layer in cache.layers:
+            if layer.is_initialized:
+                if layer.keys is not None and layer.keys.ndim == 5:
+                    # Extra dim between heads and seq_len: [B, H, 1, T, D]
+                    if layer.keys.shape[2] == 1:
+                        layer.keys = layer.keys.squeeze(2)
+                        layer.values = layer.values.squeeze(2)
+                    # Extra leading dim: [1, B, H, T, D]
+                    elif layer.keys.shape[0] == 1:
+                        layer.keys = layer.keys.squeeze(0)
+                        layer.values = layer.values.squeeze(0)
+    # transformers 4.x DynamicCache — has .key_cache and .value_cache
+    elif hasattr(cache, 'key_cache'):
+        for i in range(len(cache.key_cache)):
+            if cache.key_cache[i] is not None and cache.key_cache[i].ndim == 5:
+                if cache.key_cache[i].shape[2] == 1:
+                    cache.key_cache[i] = cache.key_cache[i].squeeze(2)
+                    cache.value_cache[i] = cache.value_cache[i].squeeze(2)
+                elif cache.key_cache[i].shape[0] == 1:
+                    cache.key_cache[i] = cache.key_cache[i].squeeze(0)
+                    cache.value_cache[i] = cache.value_cache[i].squeeze(0)
     return cache
 
 
@@ -147,8 +159,12 @@ def _to_cache(pkv: object) -> object:
                     if hasattr(k, "shape") and hasattr(v, "shape"):
                         k, v = _normalize_kv_dims(k, v)
                         cache.update(k, v, i)
-            if cache.layers:
-                logger.debug("Converted legacy PKV to DynamicCache (%d layers)", len(cache.layers))
+            # Check for layers (transformers 5.x) or key_cache (transformers 4.x)
+            has_content = hasattr(cache, 'layers') and cache.layers or \
+                          hasattr(cache, 'key_cache') and len(cache.key_cache) > 0
+            if has_content:
+                n = len(cache.layers) if hasattr(cache, 'layers') else len(cache.key_cache)
+                logger.debug("Converted legacy PKV to DynamicCache (%d layers)", n)
                 return cache
         except Exception as e:
             logger.warning("PKV tuple→Cache failed: %s", e)
@@ -164,8 +180,12 @@ def _to_cache(pkv: object) -> object:
                         cache.update(k, v, i)
                     else:
                         raise TypeError(f"Expected tensors, got {type(k).__name__}, {type(v).__name__}")
-            if cache.layers:
-                logger.debug("Converted list-of-tuples PKV to DynamicCache (%d layers)", len(cache.layers))
+            # Check for layers (transformers 5.x) or key_cache (transformers 4.x)
+            has_content = hasattr(cache, 'layers') and cache.layers or \
+                          hasattr(cache, 'key_cache') and len(cache.key_cache) > 0
+            if has_content:
+                n = len(cache.layers) if hasattr(cache, 'layers') else len(cache.key_cache)
+                logger.debug("Converted list-of-tuples PKV to DynamicCache (%d layers)", n)
                 return cache
         except Exception as e:
             logger.warning("PKV list→Cache failed: %s", e)
