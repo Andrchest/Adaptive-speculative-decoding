@@ -22,6 +22,23 @@ from transformers.cache_utils import Cache
 logger = logging.getLogger(__name__)
 
 
+def _load_tokenizer(model_name_or_path: str) -> AutoTokenizer:
+    """Load tokenizer with automatic fallback to slow if fast fails.
+
+    Some models (e.g. JackFram/llama-68m) have a broken fast tokenizer
+    config (use_fast=true) but a SentencePiece protobuf tokenizer.model.
+    This function tries fast first, then falls back to slow on error.
+    """
+    try:
+        return AutoTokenizer.from_pretrained(model_name_or_path)
+    except Exception as e:
+        logger.warning(
+            "Fast tokenizer failed for %s: %s. Falling back to slow tokenizer.",
+            model_name_or_path, e,
+        )
+        return AutoTokenizer.from_pretrained(model_name_or_path, use_fast=False)
+
+
 class DraftModel:
     """
     Wraps a small causal LM as a drafter.
@@ -44,7 +61,7 @@ class DraftModel:
         **model_kwargs,
     ) -> None:
         logger.info("Loading drafter tokenizer from %s", model_name_or_path)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = _load_tokenizer(model_name_or_path)
         logger.info("Loading drafter model from %s on %s", model_name_or_path, device)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,

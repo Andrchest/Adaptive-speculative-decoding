@@ -8,6 +8,22 @@ name: adaptive_speculative_default
 # ─── Models ────────────────────────────────────────────────────────────────
 drafter_model_path: TinyLlama/TinyLlama-1.1B-Chat-v1.0
 target_model_path:  meta-llama/Llama-2-7b-chat-hf
+
+# ─── Available models (for reference) ──────────────────────────────────────
+# drafter candidates:
+#   EleutherAI/pythia-70m          (70M params, very fast)
+#   JackFram/llama-68m             (68M params, very fast)
+#   facebook/opt-125m              (125M, used in lora_distil)
+#   TinyLlama/TinyLlama-1.1B-Chat-v1.0  (1.1B, default drafter)
+#   Qwen/Qwen2.5-0.5B-Instruct   (0.5B, used in ExperimentConfig)
+#   Qwen/Qwen2.5-1.5B-Instruct   (1.5B, multi-drafter routing)
+#   Qwen/Qwen2.5-3B-Instruct     (3B)
+# target candidates:
+#   facebook/opt-350m              (350M, used in lora_distil)
+#   Qwen/Qwen2.5-7B-Instruct     (7B, used in ExperimentConfig)
+#   Qwen/Qwen2.5-14B-Instruct    (14B)
+#   Qwen/Qwen2.5-32B-Instruct    (32B)
+#   meta-llama/Llama-2-7b-chat-hf (7B, default)
 device: cuda
 dtype: float16
 
