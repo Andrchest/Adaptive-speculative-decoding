@@ -436,7 +436,13 @@ class SpeculativeDecoder:
 
         still_negative = mapped < 0
         if still_negative.any():
-            mapped[still_negative] = draft_tensor[still_negative]
+            # FIX: Don't use raw drafter token id as fallback — it may be
+            # >= target model's vocab_size, causing embedding OOB errors.
+            # Use target UNK token (or pad token) as safe fallback.
+            unk_id = getattr(self.target.tokenizer, 'unk_token_id', None)
+            pad_id = getattr(self.target.tokenizer, 'pad_token_id', None)
+            fallback_id = unk_id if unk_id is not None else (pad_id if pad_id is not None else 0)
+            mapped[still_negative] = fallback_id
 
         return mapped.tolist()
 
