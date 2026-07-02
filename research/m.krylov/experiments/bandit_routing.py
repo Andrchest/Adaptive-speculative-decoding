@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import math
-import random
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -230,7 +229,7 @@ class ThompsonSamplingRouter:
         drafters: list[DrafterEntry],
         prior_mean: float = 0.0,
         prior_kappa: float = 1.0,
-        prior_alpha: float = 1.0,
+        prior_alpha: float = 2.0,
         prior_beta: float = 1.0,
     ) -> None:
         self.arms = [
@@ -408,17 +407,19 @@ class _LinUCBArm:
         denom = 1.0 + float(x.dot(Ainv_x.squeeze(1)))
 
         if abs(denom) > 1e-8:
+            self.A.addmm_(x_col, x_col.T, beta=1.0, alpha=1.0)
             self.A_inv.addmm_(x_col, Ainv_x.T, beta=1.0, alpha=-1.0 / denom)
             self.theta = self.A_inv @ self.b
         else:
             # Fallback: full Cholesky recompute
+            self.A += torch.ger(x, x)
             try:
-                L = torch.linalg.cholesky(self.A + torch.ger(x, x))
+                L = torch.linalg.cholesky(self.A)
                 self.A_inv = torch.cholesky_inverse(L)
                 self.theta = torch.cholesky_solve(self.b.unsqueeze(1), L).squeeze(1)
             except torch.linalg.LinAlgError:
                 try:
-                    self.A_inv = torch.linalg.inv(self.A + torch.ger(x, x))
+                    self.A_inv = torch.linalg.inv(self.A)
                     self.theta = self.A_inv @ self.b
                 except torch.linalg.LinAlgError:
                     logger.warning(
@@ -1775,15 +1776,8 @@ class BanditExplorationSweepExperiment(BanditRoutingExperiment):
         # MLflow setup
         runner._setup_mlflow(cfg)
 
-        # Measure baseline TPS once
+        # Baseline TPS not measured in sweep (no autoregressive baseline method)
         baseline_tps = 0.0
-        try:
-            pid, plen = prompts[0]
-            pid = pid.to(runner.device)
-            bl_result = self._measure_autoregressive_baseline(target, pid, 128)
-            baseline_tps = bl_result["tokens_per_sec"]
-        except Exception:
-            logger.warning("Baseline TPS measurement failed", exc_info=True)
 
         # ----------------------------------------------------------------
         # Sweep loop
