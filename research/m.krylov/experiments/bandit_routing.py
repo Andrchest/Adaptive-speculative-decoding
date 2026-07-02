@@ -731,6 +731,10 @@ class BanditRoutingExperiment(BaseExperiment):
             logger.warning("No translator found; skipping distillation setup")
             return None
 
+        # build_distiller runs before build_router, so _drafters may not be loaded yet
+        if not self._drafters:
+            self._load_drafters(ctx)
+
         self._buffer = PerArmBuffer(
             num_arms=len(self._drafters),
             capacity_per_arm=max(self.buffer_capacity // len(self._drafters), 256),
