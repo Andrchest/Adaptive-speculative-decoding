@@ -85,19 +85,22 @@ class LatentRegimeK:
         drafter,
         *,
         k_min: int = 1,
-        k_max: int = 8,
-        lambdas: tuple[float, float, float, float] = (8.0, 6.0, 3.0, 2.0),
-        lambda_min: float = 2.0,
-        regime_lambda_floor: tuple[float, float, float, float] = (3.0, 2.0, 1.0, 1.0),
+        k_max: int = 10,
+        lambdas: tuple[float, float, float, float] = (10.0, 8.0, 4.0, 2.0),
+        lambda_min: float = 3.0,
+        regime_lambda_floor: tuple[float, float, float, float] = (4.0, 3.0, 2.0, 1.0),
+        initial_posterior: tuple[float, float, float, float] = (0.6, 0.3, 0.08, 0.02),
         transition_stay_prob: float = 0.9,
         reward_penalty: float = 0.5,
         lambda_lr: float = 0.05,
-        shrink_lr_scale: float = 0.5,
-        target_acceptance: float = 0.55,
-        full_accept_bonus: float = 0.25,
-        default_entropy: float = 0.5,
-        unknown_token_class: float = 0.2,
+        shrink_lr_scale: float = 0.25,
+        target_acceptance: float = 0.4,
+        full_accept_bonus: float = 0.3,
+        default_entropy: float = 0.35,
+        unknown_token_class: float = 0.0,
+        change_point_scale: float = 0.5,
         use_drafter_entropy: bool = False,
+        use_token_class: bool = False,
         seed: int = 42,
     ) -> None:
         _validate_k_bounds(k_min, k_max)
@@ -105,18 +108,26 @@ class LatentRegimeK:
             raise ValueError("lambdas must contain one value per regime")
         if len(regime_lambda_floor) != len(self.regime_names):
             raise ValueError("regime_lambda_floor must contain one value per regime")
+        if len(initial_posterior) != len(self.regime_names):
+            raise ValueError("initial_posterior must contain one value per regime")
         if any(value <= 0 for value in lambdas):
             raise ValueError("all regime lambdas must be positive")
         if lambda_min <= 0:
             raise ValueError("lambda_min must be positive")
         if any(value <= 0 for value in regime_lambda_floor):
             raise ValueError("all regime lambda floors must be positive")
+        if any(value < 0 for value in initial_posterior):
+            raise ValueError("initial_posterior values must be non-negative")
+        if sum(initial_posterior) <= 0:
+            raise ValueError("initial_posterior must have positive mass")
         if not 0.0 <= transition_stay_prob <= 1.0:
             raise ValueError("transition_stay_prob must be in [0, 1]")
         if not 0.0 <= target_acceptance <= 1.0:
             raise ValueError("target_acceptance must be in [0, 1]")
         if shrink_lr_scale <= 0:
             raise ValueError("shrink_lr_scale must be positive")
+        if change_point_scale < 0:
+            raise ValueError("change_point_scale must be non-negative")
         if not 0.0 <= default_entropy <= 1.0:
             raise ValueError("default_entropy must be in [0, 1]")
         if not 0.0 <= unknown_token_class <= 1.0:
@@ -127,7 +138,10 @@ class LatentRegimeK:
         self.k_max = k_max
         self.lambdas = torch.tensor(lambdas, dtype=torch.float32)
         self.lambda_min = lambda_min
-        self.regime_lambda_floor = torch.tensor(regime_lambda_floor, dtype=torch.float32)
+        self.regime_lambda_floor = torch.tensor(
+            [min(value, k_max) for value in regime_lambda_floor],
+            dtype=torch.float32,
+        )
         self.transition = self._build_transition(transition_stay_prob)
         self.reward_penalty = reward_penalty
         self.lambda_lr = lambda_lr
@@ -136,10 +150,13 @@ class LatentRegimeK:
         self.full_accept_bonus = full_accept_bonus
         self.default_entropy = default_entropy
         self.unknown_token_class = unknown_token_class
+        self.change_point_scale = change_point_scale
         self.use_drafter_entropy = use_drafter_entropy
+        self.use_token_class = use_token_class
         self.rng = torch.Generator(device="cpu").manual_seed(seed)
 
-        self.posterior = torch.full((len(self.regime_names),), 1.0 / len(self.regime_names))
+        self.posterior = torch.tensor(initial_posterior, dtype=torch.float32)
+        self.posterior = self.posterior / self.posterior.sum()
         self.feature_mean = torch.tensor(
             [
                 [0.9, 0.25, 0.1, 1.0, 0.0],
@@ -164,7 +181,7 @@ class LatentRegimeK:
         self._pending_entropy = self._draft_entropy(context)
         self._pending_token_class = self._token_class(context)
 
-        change_point_prob = 1.0 - float(self.posterior.max().item())
+        change_point_prob = (1.0 - float(self.posterior.max().item())) * self.change_point_scale
         regime_idx = int(self.posterior.argmax().item())
         lambda_regime = float(self.lambdas[regime_idx].item())
         lambda_t = (1.0 - change_point_prob) * lambda_regime
@@ -219,6 +236,7 @@ class LatentRegimeK:
                 f"{prefix}_regime_distribution": dict(sorted(counts.items())),
                 f"{prefix}_target_acceptance": self.target_acceptance,
                 f"{prefix}_default_entropy": self.default_entropy,
+                f"{prefix}_change_point_scale": self.change_point_scale,
             }
         )
         return metrics
@@ -249,11 +267,8 @@ class LatentRegimeK:
 
     def _sample_truncated_poisson(self, lambda_t: float) -> int:
         lam = torch.tensor(max(lambda_t, 1e-3), dtype=torch.float32)
-        for _ in range(20):
-            sample = int(torch.poisson(lam, generator=self.rng).item())
-            if self.k_min <= sample <= self.k_max:
-                return sample
-        return max(self.k_min, min(round(lambda_t), self.k_max))
+        sample = int(torch.poisson(lam, generator=self.rng).item())
+        return max(self.k_min, min(sample, self.k_max))
 
     def _update_lambda_from_acceptance(self, old_lambda: float, result: StepResult) -> float:
         acceptance = result.accepted_count / max(result.draft_length, 1)
@@ -280,6 +295,8 @@ class LatentRegimeK:
             return float((entropy / math.log(max(logits.shape[-1], 2))).item())
 
     def _token_class(self, context: torch.Tensor) -> float:
+        if not self.use_token_class:
+            return self.unknown_token_class
         token_id = int(context.reshape(-1)[-1].item())
         if not self._token_in_drafter_vocab(token_id):
             return self.unknown_token_class
@@ -386,9 +403,9 @@ class LatentRegimeKExperiment(BaseExperiment):
             use_speedup_adaptive=True,
             use_dynamic_routing=False,
             use_universal_drafter=False,
-            draft_length=5,
+            draft_length=6,
             k_min=1,
-            k_max=8,
+            k_max=10,
         )
 
     def build_adaptive_controller(self, ctx: BuildContext) -> LatentRegimeK:

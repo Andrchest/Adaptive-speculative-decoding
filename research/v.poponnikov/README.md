@@ -237,8 +237,8 @@ Real-run interpretation:
 ## Next Tuning Direction
 
 - Re-run the 70M/125M model matrix after the less-conservative update.
-- Compare whether the higher easy/normal floors improve throughput without
-  losing too much acceptance.
+- Compare whether the higher easy/normal floors and `k_max = 10` improve
+  throughput without losing too much acceptance.
 - Continue changing the reward from raw acceptance toward throughput-aware
   utility if `k` is still too small.
 - Run larger comparisons with multiple seeds and confidence intervals.
@@ -266,8 +266,10 @@ Real-run interpretation:
   `latent_regime_k` across the required 70M/125M drafter matrix.
 - Each drafter-target pair writes a per-pair `metrics.csv` and one combined
   `comparison.png`.
-- `LatentRegimeK` was tuned to be less conservative: unavailable entropy and
-  token-class signals now use neutral defaults, easy/normal regimes have higher
-  lambda floors, and successful full drafts grow lambda faster than failed
-  drafts shrink it.
+- `LatentRegimeK` was tuned to be less conservative and cheaper to run:
+  unavailable entropy and token-class signals now use neutral defaults,
+  token-class decoding and drafter entropy probes are disabled by default,
+  easy/normal regimes have higher lambda floors, successful full drafts grow
+  lambda faster than failed drafts shrink it, and the research cap is now
+  `k_max = 10`.
 - Unit tests updated in `tests/unit/test_v_poponnikov_dynamic_k.py`.

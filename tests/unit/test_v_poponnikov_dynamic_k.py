@@ -107,7 +107,7 @@ def test_latent_regime_updates_posterior_and_lambdas() -> None:
 
 def test_latent_regime_uses_tokenizer_for_token_class() -> None:
     module = _load_research_module()
-    controller = module.LatentRegimeK(_ScriptedDrafter(), k_min=1, k_max=4)
+    controller = module.LatentRegimeK(_ScriptedDrafter(), k_min=1, k_max=4, use_token_class=True)
 
     token_class = controller._token_class(torch.tensor([[3]], dtype=torch.long))
 
@@ -123,8 +123,8 @@ def test_latent_regime_avoids_drafter_forward_for_out_of_vocab_context() -> None
 
     assert 1 <= selected <= 4
     assert drafter.model.calls == 0
-    assert controller._pending_entropy == pytest.approx(0.5)
-    assert controller._pending_token_class == pytest.approx(0.2)
+    assert controller._pending_entropy == pytest.approx(0.35)
+    assert controller._pending_token_class == pytest.approx(0.0)
 
 
 def test_latent_regime_entropy_probe_checks_vocab_when_enabled() -> None:
@@ -134,7 +134,7 @@ def test_latent_regime_entropy_probe_checks_vocab_when_enabled() -> None:
 
     entropy = controller._draft_entropy(torch.tensor([[0, 99]], dtype=torch.long))
 
-    assert entropy == pytest.approx(0.5)
+    assert entropy == pytest.approx(0.35)
     assert drafter.model.calls == 0
 
 
@@ -172,6 +172,8 @@ def test_invalid_dynamic_k_parameters_raise() -> None:
         module.LatentRegimeK(_ScriptedDrafter(), lambdas=(1.0, 2.0))
     with pytest.raises(ValueError, match="regime_lambda_floor"):
         module.LatentRegimeK(_ScriptedDrafter(), regime_lambda_floor=(1.0, 2.0))
+    with pytest.raises(ValueError, match="initial_posterior"):
+        module.LatentRegimeK(_ScriptedDrafter(), initial_posterior=(1.0, 0.0))
     with pytest.raises(ValueError, match="transition_stay_prob"):
         module.LatentRegimeK(_ScriptedDrafter(), transition_stay_prob=1.1)
 
@@ -203,6 +205,7 @@ def test_research_experiment_configs_are_valid() -> None:
         cfg = experiment.get_config()
         assert isinstance(cfg, ExperimentConfig)
         assert cfg.use_speedup_adaptive is True
+        assert cfg.k_max == 10
         assert "v.poponnikov" in experiment.meta.tags
 
 
@@ -268,3 +271,23 @@ def test_model_matrix_helpers_build_pair_outputs(tmp_path) -> None:
     assert "EleutherAI/pythia-70m" in text
     assert "Qwen/Qwen2.5-1.5B-Instruct" in text
     assert "regime_k_mean_selected_k" in text
+
+
+def test_comparison_select_experiments_reuses_cached_prototypes() -> None:
+    module = _load_comparison_module()
+
+    class _FakeExperiment:
+        def __init__(self) -> None:
+            self.meta = type("Meta", (), {"name": "latent_regime_k"})()
+
+    previous = module._EXPERIMENT_PROTOTYPES
+    module._EXPERIMENT_PROTOTYPES = {"latent_regime_k": _FakeExperiment()}
+    try:
+        first = module.select_experiments(["latent_regime_k"])
+        second = module.select_experiments(["latent_regime_k"])
+    finally:
+        module._EXPERIMENT_PROTOTYPES = previous
+
+    assert first[0] is not second[0]
+    assert first[0].meta.name == "latent_regime_k"
+    assert second[0].meta.name == "latent_regime_k"

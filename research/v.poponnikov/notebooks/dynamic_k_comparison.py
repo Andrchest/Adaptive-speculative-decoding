@@ -8,6 +8,7 @@ experiments, writes merged metrics, and produces plots for the research folder.
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import json
 import os
@@ -29,6 +30,8 @@ DEFAULT_EXPERIMENTS = (
     "08_+speedup_adapt",
     "latent_regime_k",
 )
+
+_EXPERIMENT_PROTOTYPES: dict[str, object] | None = None
 
 PRIMARY_METRICS = (
     "tokens_per_sec",
@@ -191,14 +194,32 @@ def select_experiments(names: Sequence[str]) -> list[object]:
     Raises:
         ValueError: If any requested experiment is not discoverable.
     """
-    from experiments import discover_experiments
-
-    available = {experiment.meta.name: experiment for experiment in discover_experiments()}
+    available = _get_experiment_prototypes()
     missing = [name for name in names if name not in available]
     if missing:
         known = ", ".join(sorted(available))
         raise ValueError(f"Unknown experiment(s): {missing}. Known experiments: {known}")
-    return [available[name] for name in names]
+    return [_fresh_experiment(available[name]) for name in names]
+
+
+def _get_experiment_prototypes() -> dict[str, object]:
+    """Discover experiments once and reuse prototypes across matrix pairs."""
+    global _EXPERIMENT_PROTOTYPES
+    if _EXPERIMENT_PROTOTYPES is None:
+        from experiments import discover_experiments
+
+        _EXPERIMENT_PROTOTYPES = {
+            experiment.meta.name: experiment for experiment in discover_experiments()
+        }
+    return _EXPERIMENT_PROTOTYPES
+
+
+def _fresh_experiment(prototype: object) -> object:
+    """Create a clean experiment instance from a discovered prototype."""
+    try:
+        return type(prototype)()
+    except TypeError:
+        return copy.deepcopy(prototype)
 
 
 def apply_common_overrides(
