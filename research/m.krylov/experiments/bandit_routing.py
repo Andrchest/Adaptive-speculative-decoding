@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 from collections import deque
 from dataclasses import dataclass, field
 
 import torch
+import torch.distributions as D
 import torch.optim as optim
 
 from experiments.base import BaseExperiment, BuildContext, DecodeContext, ExperimentMeta
@@ -41,6 +43,9 @@ class DrafterEntry:
     When ``reward_window`` > 0 only the most recent rewards are used
     for ``mean_reward`` so the bandit can adapt when drafter quality
     changes over time (e.g. during online distillation).
+
+    Uses an O(1) running-sum sliding window to avoid recomputing
+    ``sum(history)`` on every ``mean_reward`` access.
     """
 
     name: str
@@ -51,6 +56,7 @@ class DrafterEntry:
 
     # Internal buffer for sliding window (only used when reward_window > 0)
     _reward_history: deque = field(default_factory=deque, repr=False)
+    _window_sum: float = 0.0
 
     def record_reward(self, reward: float) -> None:
         """Record a reward (call this instead of mutating fields directly)."""
@@ -58,13 +64,15 @@ class DrafterEntry:
         self.total_reward += reward
         if self.reward_window > 0:
             self._reward_history.append(reward)
-            while len(self._reward_history) > self.reward_window:
-                self._reward_history.popleft()
+            self._window_sum += reward
+            if len(self._reward_history) > self.reward_window:
+                evicted = self._reward_history.popleft()
+                self._window_sum -= evicted
 
     @property
     def mean_reward(self) -> float:
         if self.reward_window > 0 and self._reward_history:
-            return sum(self._reward_history) / len(self._reward_history)
+            return self._window_sum / len(self._reward_history)
         return self.total_reward / max(self.pulls, 1)
 
 
@@ -100,23 +108,27 @@ class UCBBanditRouter:
             self._last_selected_idx = idx
             return self.arms[idx].model, idx
 
-        scores: list[float] = []
-        for arm in self.arms:
+        log_total = math.log(max(self.total_pulls, 1))
+        best_idx = 0
+        best_score = -1e30
+        for i, arm in enumerate(self.arms):
             exploitation = arm.mean_reward
-            exploration = self.c * math.sqrt(math.log(self.total_pulls) / max(arm.pulls, 1))
-            scores.append(exploitation + exploration)
+            exploration = self.c * math.sqrt(log_total / max(arm.pulls, 1))
+            score = exploitation + exploration
+            if score > best_score:
+                best_score = score
+                best_idx = i
 
-        idx = int(max(range(n_arms), key=lambda i: scores[i]))
-        self._last_selected_idx = idx
+        self._last_selected_idx = best_idx
         logger.debug(
             "UCB select: arm=%d (%s) score=%.4f mean=%.4f pulls=%d",
-            idx,
-            self.arms[idx].name,
-            scores[idx],
-            self.arms[idx].mean_reward,
-            self.arms[idx].pulls,
+            best_idx,
+            self.arms[best_idx].name,
+            best_score,
+            self.arms[best_idx].mean_reward,
+            self.arms[best_idx].pulls,
         )
-        return self.arms[idx].model, idx
+        return self.arms[best_idx].model, best_idx
 
     def update(self, reward: float) -> None:
         arm = self.arms[self._last_selected_idx]
@@ -163,7 +175,7 @@ class _GaussianArm:
     S2: float = 0.0  # sum of squared rewards
     mu_0: float = 0.0  # prior mean
     kappa_0: float = 1.0  # prior "pseudo-count" for mean
-    alpha_0: float = 1.0  # prior shape for precision
+    alpha_0: float = 2.0  # prior shape for precision (alpha=2 gives finite variance)
     beta_0: float = 1.0  # prior rate for precision
 
     @property
@@ -191,16 +203,11 @@ class _GaussianArm:
 
     def sample(self, rng: torch.Generator | None = None) -> float:
         """Draw a sample from the posterior over mu."""
-        # Draw precision tau ~ Gamma(alpha_N, beta_N)
-        # PyTorch distributions.Gamma uses (concentration=shape, rate) parameterisation
-        import torch.distributions as D
-
         gamma_dist = D.Gamma(
             concentration=torch.tensor(self.alpha_N),
             rate=torch.tensor(self.beta_N),
         )
         tau = gamma_dist.sample().item()
-        # Draw mu ~ N(mu_N, 1 / (kappa_N * tau))
         std = 1.0 / math.sqrt(max(self.kappa_N * tau, 1e-10))
         mu = self.mu_N + std * torch.randn(1, generator=rng).item()
         return mu
@@ -242,6 +249,7 @@ class ThompsonSamplingRouter:
         self._round_robin_count: int = 0  # tracks initial exploration phase
         self._rng = torch.Generator()
         self._rng.manual_seed(42)
+        self._samples: list[float] = [0.0] * len(drafters)
 
     def select_drafter(self, input_ids: torch.Tensor) -> tuple[object | None, int]:
         n_arms = len(self.arms)
@@ -254,8 +262,16 @@ class ThompsonSamplingRouter:
             return self._drafters[idx].model, idx
 
         # Sample from each arm's posterior and pick the best
-        samples = [arm.sample(self._rng) for arm in self.arms]
-        idx = int(max(range(n_arms), key=lambda i: samples[i]))
+        samples = self._samples
+        for i, arm in enumerate(self.arms):
+            samples[i] = arm.sample(self._rng)
+        best_idx = 0
+        best_val = -1e30
+        for i, v in enumerate(samples):
+            if v > best_val:
+                best_val = v
+                best_idx = i
+        idx = best_idx
         self._last_selected_idx = idx
         logger.debug(
             "TS select: arm=%d (%s) sample=%.4f posterior_mean=%.4f N=%d",
@@ -317,36 +333,32 @@ def _extract_prompt_features(
     (e.g. ~50k for OPT, ~151k for Qwen2.5) so features 2–3 stay in
     a sensible [0, 1] range.
 
-    Returns a 1-D tensor of length ``max_features``.
+    All features are computed as a single GPU tensor to avoid
+    multiple ``.item()`` syncs that stall the GPU pipeline.
+
+    Returns a 1-D tensor of length ``max_features`` on CPU.
     """
     ids = input_ids.flatten().float()
-    n = ids.numel()
+    n = ids.size(0)
     if n == 0:
         return torch.zeros(max_features)
 
-    unique = ids.unique().numel()
-    mean_id = ids.mean().item()
-    std_id = ids.std().item() if n > 1 else 0.0
-
-    vs = max(vocab_size, 1)
-    features = [
-        math.log(n + 1),
-        unique / n,
-        mean_id / vs,
-        std_id / vs,
-        (ids < 100).float().mean().item(),
-        ((ids >= 100) & (ids < 1000)).float().mean().item(),
-        ((ids >= 1000) & (ids < 5000)).float().mean().item(),
-        (ids >= 5000).float().mean().item(),
-    ]
-    features = features[:max_features]
-    x = torch.tensor(features, dtype=torch.float32)
-
-    # L2 normalise
-    norm = x.norm()
+    vs = float(max(vocab_size, 1))
+    features = torch.stack([
+        torch.tensor(math.log(n + 1), device=ids.device),
+        torch.tensor(ids.unique().size(0), device=ids.device) / n,
+        ids.mean() / vs,
+        (ids.std() if n > 1 else torch.tensor(0.0, device=ids.device)) / vs,
+        (ids < 100).float().mean(),
+        ((ids >= 100) & (ids < 1000)).float().mean(),
+        ((ids >= 1000) & (ids < 5000)).float().mean(),
+        (ids >= 5000).float().mean(),
+    ])
+    features = features[:max_features].cpu()
+    norm = features.norm()
     if norm > 0:
-        x = x / norm
-    return x
+        features = features / norm
+    return features
 
 
 # ---------------------------------------------------------------------------
@@ -383,27 +395,38 @@ class _LinUCBArm:
     def update(self, x: torch.Tensor, reward: float) -> None:
         """Update posterior with new (x, reward) observation.
 
-        Uses the standard ridge-regression rank-1 update:
-            A += x x^T
-            b += reward * x
-            θ = A^{-1} b
+        Uses Sherman-Morrison for O(d²) rank-1 update of A_inv with
+        full Cholesky recompute as fallback when the denominator is
+        near zero.
         """
         x = x.float()
-        self.A += torch.ger(x, x)
         self.b += reward * x
-        # Recompute theta = A^{-1} b via Cholesky for numerical stability
-        try:
-            L = torch.linalg.cholesky(self.A)
-            theta = torch.cholesky_solve(self.b.unsqueeze(1), L).squeeze(1)
-            self.theta = theta
-            self.A_inv = torch.cholesky_inverse(L) @ torch.cholesky_inverse(L).T
-        except torch.linalg.LinAlgError:
-            # Fallback: direct inverse if Cholesky fails
+
+        # Sherman-Morrison: (A + x x^T)^{-1} = A^{-1} - (A^{-1} x x^T A^{-1}) / (1 + x^T A^{-1} x)
+        x_col = x.unsqueeze(1)  # (d, 1)
+        Ainv_x = self.A_inv @ x_col  # (d, 1)
+        denom = 1.0 + float(x.dot(Ainv_x.squeeze(1)))
+
+        if abs(denom) > 1e-8:
+            self.A_inv.addmm_(x_col, Ainv_x.T, beta=1.0, alpha=-1.0 / denom)
+            self.theta = self.A_inv @ self.b
+        else:
+            # Fallback: full Cholesky recompute
             try:
-                self.A_inv = torch.linalg.inv(self.A)
-                self.theta = self.A_inv @ self.b
+                L = torch.linalg.cholesky(self.A + torch.ger(x, x))
+                self.A_inv = torch.cholesky_inverse(L)
+                self.theta = torch.cholesky_solve(self.b.unsqueeze(1), L).squeeze(1)
             except torch.linalg.LinAlgError:
-                logger.warning("LinUCB arm %s: matrix inversion failed, skipping update", self.name)
+                try:
+                    self.A_inv = torch.linalg.inv(self.A + torch.ger(x, x))
+                    self.theta = self.A_inv @ self.b
+                except torch.linalg.LinAlgError:
+                    logger.warning(
+                        "LinUCB arm %s: matrix inversion failed, skipping update", self.name
+                    )
+                    self.N += 1
+                    self.total_reward += reward
+                    return
         self.N += 1
         self.total_reward += reward
 
@@ -494,7 +517,6 @@ class ContextualBanditRouter:
 class BufferEntry:
     """One training example in the distillation buffer."""
 
-    arm_index: int
     draft_logits: torch.Tensor  # (k, drafter_vocab)
     target_logits: torch.Tensor  # (k, target_vocab)
     draft_tokens: list[int]
@@ -502,17 +524,25 @@ class BufferEntry:
 
 
 class PerArmBuffer:
-    """FIFO buffer that tags entries with the drafter arm index.
+    """Per-arm FIFO buffers for distillation replay.
 
-    When replaying, entries are filtered by arm so each drafter is only
-    trained on data it generated.
+    Each arm gets its own ``deque(maxlen=capacity_per_arm)`` so push is
+    O(1), sampling is O(k), and there are no cross-arm index bugs.
 
     Uses a seeded RNG for reproducible sampling across runs.
     """
 
-    def __init__(self, capacity: int = 4096, seed: int = 42) -> None:
-        self.capacity = capacity
-        self._entries: list[BufferEntry] = []
+    def __init__(
+        self,
+        num_arms: int,
+        capacity_per_arm: int = 2048,
+        seed: int = 42,
+    ) -> None:
+        self.num_arms = num_arms
+        self.capacity_per_arm = capacity_per_arm
+        self._queues: dict[int, deque] = {
+            i: deque(maxlen=capacity_per_arm) for i in range(num_arms)
+        }
         self._rng = torch.Generator()
         self._rng.manual_seed(seed)
 
@@ -524,37 +554,33 @@ class PerArmBuffer:
         draft_tokens: list[int],
         accepted_mask: list[bool],
     ) -> None:
+        if arm_index not in self._queues:
+            return
         entry = BufferEntry(
-            arm_index=arm_index,
             draft_logits=draft_logits.detach().cpu(),
             target_logits=target_logits.detach().cpu(),
             draft_tokens=list(draft_tokens),
             accepted_mask=list(accepted_mask),
         )
-        self._entries.append(entry)
-        if len(self._entries) > self.capacity:
-            self._entries.pop(0)
+        self._queues[arm_index].append(entry)
 
     def sample_for_arm(self, arm_index: int, batch_size: int = 8) -> list[BufferEntry]:
-        """Return up to batch_size entries for the given arm.
-
-        Uses a seeded RNG so results are reproducible across runs.
-        """
-        arm_entries = [e for e in self._entries if e.arm_index == arm_index]
-        if not arm_entries:
+        """Return up to batch_size entries for the given arm."""
+        q = self._queues.get(arm_index)
+        if not q:
             return []
-        # Reproducible random sample via seeded generator
-        indices = torch.randperm(len(arm_entries), generator=self._rng)[:batch_size].tolist()
-        return [arm_entries[i] for i in indices]
+        entries = list(q)
+        if len(entries) <= batch_size:
+            return entries
+        indices = torch.randperm(len(entries), generator=self._rng)[:batch_size].tolist()
+        return [entries[i] for i in indices]
 
     def __len__(self) -> int:
-        return len(self._entries)
+        return sum(len(q) for q in self._queues.values())
 
     def stats(self) -> dict:
-        arm_counts: dict[int, int] = {}
-        for e in self._entries:
-            arm_counts[e.arm_index] = arm_counts.get(e.arm_index, 0) + 1
-        return {"total": len(self._entries), "per_arm": arm_counts}
+        per_arm = {str(i): len(q) for i, q in self._queues.items()}
+        return {"total": len(self), "per_arm": per_arm}
 
 
 # ---------------------------------------------------------------------------
@@ -697,7 +723,9 @@ class BanditRoutingExperiment(BaseExperiment):
             return None
 
         self._buffer = PerArmBuffer(
-            capacity=self.buffer_capacity, seed=getattr(ctx.config, "seed", 42)
+            num_arms=len(self._drafters),
+            capacity_per_arm=self.buffer_capacity,
+            seed=getattr(ctx.config, "seed", 42),
         )
         self._distillers = []
 
@@ -725,6 +753,26 @@ class BanditRoutingExperiment(BaseExperiment):
         # distillation target is swapped in on_decode_step based on the
         # router's selection.
         return self._distillers[0] if self._distillers else None
+
+    # ------------------------------------------------------------------
+    # Reward helpers
+    # ------------------------------------------------------------------
+
+    def _compute_reward(self, accepted: int, wall_ms: float) -> float:
+        """Compute reward from accepted tokens and wall-clock time.
+
+        Reward = accepted / wall_seconds, clipped to [clip_min, clip_max]
+        to prevent outliers from destabilising bandit learning.
+        """
+        wall_seconds = max(wall_ms / 1000.0, 1e-6)
+        reward = accepted / wall_seconds
+        return float(
+            torch.clamp(
+                torch.tensor(reward),
+                min=self.reward_clip_min,
+                max=self.reward_clip_max,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Decode hooks
@@ -781,7 +829,7 @@ class BanditRoutingExperiment(BaseExperiment):
         if total_wall_ms <= 0:
             total_wall_ms = total_draft * 1.0 + len(step_results) * 2.0
 
-        reward = total_accepted / max(total_wall_ms / 1000.0, 1e-6)
+        reward = self._compute_reward(total_accepted, total_wall_ms)
 
         ctx.extra_state["reward_history"].append(
             {
@@ -822,7 +870,7 @@ class BanditRoutingExperiment(BaseExperiment):
             if wall_ms <= 0:
                 wall_ms = sr.draft_length * 1.0 + 2.0
 
-            reward = accepted / max(wall_ms / 1000.0, 1e-6)
+            reward = self._compute_reward(accepted, wall_ms)
             total_wall_ms += wall_ms
 
             ctx.extra_state["reward_history"].append(
@@ -850,7 +898,13 @@ class BanditRoutingExperiment(BaseExperiment):
             self._replay_for_arm(ctx, arm_idx)
 
     def _replay_for_arm(self, ctx: DecodeContext, arm_idx: int) -> None:
-        """Run a distillation step using buffered data for the given arm."""
+        """Run a distillation step using buffered data for the given arm.
+
+        Processes each entry sequentially through the distiller's
+        gradient accumulation, then calls optimizer.step() once the
+        accumulator has enough steps.  This avoids async threading
+        issues and gives correct gradient behaviour.
+        """
         if self._buffer is None or not self._distillers:
             return
         if arm_idx >= len(self._distillers):
@@ -861,11 +915,13 @@ class BanditRoutingExperiment(BaseExperiment):
             return
 
         distiller = self._distillers[arm_idx]
+        device_d = ctx.decoder.drafter.device
+        device_t = ctx.decoder.target.device
         for entry in batch:
             try:
                 distiller.step(
-                    draft_logits=entry.draft_logits.to(ctx.decoder.drafter.device),
-                    target_logits=entry.target_logits.to(ctx.decoder.target.device),
+                    draft_logits=entry.draft_logits.to(device_d),
+                    target_logits=entry.target_logits.to(device_t),
                     draft_tokens=entry.draft_tokens,
                     accepted_mask=entry.accepted_mask,
                 )
@@ -1022,31 +1078,7 @@ class BanditContextualExperiment(BanditRoutingExperiment):
 
     def build_router(self, ctx: BuildContext):
         """Build LinUCB contextual bandit router."""
-        from core.models.drafter import DraftModel
-
-        cfg = ctx.config
-        drafter_paths = getattr(cfg, "drafter_model_paths", [])
-        if not drafter_paths:
-            drafter_paths = [cfg.drafter_model_path]
-
-        # Grab actual vocab size from the drafter model config
-        self._vocab_size = getattr(getattr(ctx.drafter.model, "config", None), "vocab_size", 50257)
-
-        self._drafters = []
-        default_name = cfg.drafter_model_path
-        for path in drafter_paths:
-            if path == default_name:
-                model = ctx.drafter
-                logger.info("Reusing runner drafter for %s", path)
-            else:
-                model = DraftModel(path, device=ctx.device)
-            self._drafters.append(
-                DrafterEntry(
-                    name=path,
-                    model=model,
-                    reward_window=self.reward_window,
-                )
-            )
+        self._drafters = self._load_drafters(ctx)
 
         logger.info(
             "Building LinUCB contextual router with %d drafters, %d features (vocab_size=%d)",
@@ -1200,28 +1232,13 @@ class BanditVsMLPExperiment(BanditRoutingExperiment):
 
     def build_router(self, ctx: BuildContext):
         """Build both bandit and MLP routers, wrapped in a DualRouter."""
-        # Build the bandit router (reuse parent logic)
         from core.extensions.routing.router import (
             DrafterSpec,
             DynamicRouter,
             RouterModel,
         )
-        from core.models.drafter import DraftModel
 
-        cfg = ctx.config
-        drafter_paths = getattr(cfg, "drafter_model_paths", [])
-        if not drafter_paths:
-            drafter_paths = [cfg.drafter_model_path]
-
-        self._drafters = []
-        default_name = cfg.drafter_model_path
-        for path in drafter_paths:
-            if path == default_name:
-                model = ctx.drafter
-                logger.info("Reusing runner drafter for %s", path)
-            else:
-                model = DraftModel(path, device=ctx.device)
-            self._drafters.append(DrafterEntry(name=path, model=model))
+        self._drafters = self._load_drafters(ctx)
 
         # Build bandit router (primary)
         if self.algorithm == "thompson":
@@ -1303,7 +1320,7 @@ class BanditVsMLPExperiment(BanditRoutingExperiment):
         if total_wall_ms <= 0:
             total_wall_ms = total_draft * 1.0 + len(step_results) * 2.0
 
-        reward = total_accepted / max(total_wall_ms / 1000.0, 1e-6)
+        reward = self._compute_reward(total_accepted, total_wall_ms)
 
         ctx.extra_state["reward_history"].append(
             {
@@ -1473,7 +1490,7 @@ class BanditMultiDatasetExperiment(BanditRoutingExperiment):
         if total_wall_ms <= 0:
             total_wall_ms = total_draft * 1.0 + len(step_results) * 2.0
 
-        reward = total_accepted / max(total_wall_ms / 1000.0, 1e-6)
+        reward = self._compute_reward(total_accepted, total_wall_ms)
 
         ctx.extra_state["reward_history"].append(
             {
