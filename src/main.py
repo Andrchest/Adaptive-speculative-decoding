@@ -323,6 +323,16 @@ def main(  # noqa: C901
     if smoke:
         logger.info("Starting smoke test run")
         experiments = [_SmokeTestExperiment()]
+        # Apply CLI overrides to smoke test (so --drafter-model / --target-model work)
+        _apply_overrides(
+            experiments,
+            tiny_models=tiny_models,
+            drafter_model=drafter_model,
+            target_model=target_model,
+            max_samples=max_samples or 0,
+            max_new_tokens=max_new_tokens or 0,
+            no_mlflow=no_mlflow,
+        )
         runner = ExperimentRunner(experiments=experiments, output_dir=output_dir, device=device)
         logger.info("Running smoke test")
         results = runner.run_all()

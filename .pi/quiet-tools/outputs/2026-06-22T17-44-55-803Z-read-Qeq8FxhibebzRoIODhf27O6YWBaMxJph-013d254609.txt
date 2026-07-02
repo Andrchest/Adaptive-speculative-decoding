@@ -1,0 +1,252 @@
+"""Built-in: Full System experiment.
+
+All components enabled simultaneously: learned translator, online distillation
+with prioritized replay and contrastive loss, adaptive drafting, dynamic routing,
+and universal drafter.
+Corresponds to ``11_full_system`` in the original ABLATION_SUITE.
+"""
+
+from __future__ import annotations
+
+import logging
+
+import torch
+import torch.optim as optim
+
+from experiments.base import BaseExperiment, BuildContext, ExperimentMeta
+from experiments.runner import ExperimentConfig
+
+logger = logging.getLogger(__name__)
+
+
+class _UniversalDrafterAdapter:
+    """Thin adapter to make UniversalDrafter match the DraftModel interface."""
+
+    def __init__(
+        self,
+        base,
+        universal: torch.nn.Module,
+        target_model_path: str,
+    ) -> None:
+        self.base = base
+        self.universal = universal
+        self.tokenizer = base.tokenizer
+        self.model = base.model
+        self._target_model_path = target_model_path
+
+    def draft(
+        self,
+        context: torch.Tensor,
+        k: int,
+        distill: bool = False,
+        temperature: float = 1.0,
+    ) -> tuple[list[int], torch.Tensor]:
+        if distill:
+            return self.base.draft(context, k, distill=True, temperature=temperature)
+        with torch.no_grad():
+            return self.universal.draft(context, k, target_name=self._target_model_path)
+
+
+class FullSystemExperiment(BaseExperiment):
+    """Full system with all components enabled.
+
+    Combines: learned translator + online distillation + prioritized replay
+    + contrastive loss + adaptive drafting + dynamic routing + universal drafter.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            ExperimentMeta(
+                name="11_full_system",
+                description="All components: translator + distill + replay + contrastive + adaptive + routing + universal",
+                tags=["full-system"],
+                dimensions=[
+                    "translation_strategy",
+                    "distillation_strategy",
+                    "replay_strategy",
+                    "draft_length_strategy",
+                    "drafter_selection",
+                    "drafter_architecture",
+                ],
+                depends_on=[
+                    "03_+translator",
+                    "06_+replay_prio",
+                    "07_+contrastive",
+                    "08_+speedup_adapt",
+                    "09_+routing",
+                    "10_+universal",
+                ],
+            )
+        )
+
+    def get_config(self) -> ExperimentConfig:
+        return ExperimentConfig(
+            name=self.meta.name,
+            use_rule1=True,
+            use_lattice=False,
+            use_translator=True,
+            use_online_distil=True,
+            use_replay=True,
+            replay_strategy="prioritized",
+            use_contrastive=True,
+            use_speedup_adaptive=True,
+            use_dynamic_routing=True,
+            use_universal_drafter=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_lora(drafter, cfg) -> None:
+        """Wrap the drafter model with PEFT LoRA adapters."""
+        from peft import LoraConfig, TaskType, get_peft_model
+
+        config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=getattr(cfg, "lora_rank", 8),
+            lora_alpha=getattr(cfg, "lora_alpha", 16.0),
+            lora_dropout=getattr(cfg, "lora_dropout", 0.05),
+            target_modules=getattr(
+                cfg, "lora_target_modules", ["q_proj", "v_proj"]
+            ),
+        )
+        drafter.model = get_peft_model(drafter.model, config)
+        for p in drafter.model.parameters():
+            if p.requires_grad:
+                p.data = p.data.float() # will cast to fp32
+
+        trainable = sum(p.numel() for p in drafter.model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in drafter.model.parameters())
+        logger.info(
+            "LoRA applied: rank=%d alpha=%.1f trainable=%d/%d (%.2f%%)",
+            getattr(cfg, "lora_rank", 8),
+            getattr(cfg, "lora_alpha", 16.0),
+            trainable,
+            total,
+            100.0 * trainable / max(total, 1),
+        )
+
+    # ------------------------------------------------------------------
+    # Build methods — each enables one component
+    # ------------------------------------------------------------------
+
+    def build_translator(self, ctx: BuildContext):
+        """Build translator with learned TranslatorModel (no lattice)."""
+        translator = super().build_translator(ctx)
+
+        from core.extensions.translator.model import TranslatorModel
+
+        learned = TranslatorModel(
+            drafter_vocab_size=ctx.drafter.model.config.vocab_size,
+            target_vocab_size=ctx.target.model.config.vocab_size,
+        ).to(ctx.device)
+        translator.learned_model = learned
+        translator.learned_weight = getattr(ctx.config, "translator_weight", 0.3)
+        logger.info("Learned translator attached (full system)")
+        return translator
+
+    def build_distiller(self, ctx: BuildContext):
+        """Build distiller with replay + contrastive."""
+        translator = ctx.components.get("translator")
+        drafter = ctx.drafter
+        cfg = ctx.config
+
+        # Prepare drafter for training
+        if getattr(cfg, "use_lora", False):
+            self._apply_lora(drafter, cfg)
+        else:
+            drafter.prepare_for_training(torch.float32)
+
+        drafter.model.train()
+        if not getattr(cfg, "use_lora", False):
+            for p in drafter.model.parameters():
+                p.requires_grad_(True)
+
+        from core.distillation.online import OnlineDistiller
+
+        opt = optim.Adam(drafter.model.parameters(), lr=getattr(cfg, "distil_lr", 1e-5))
+        distiller = OnlineDistiller(
+            drafter_model=drafter,
+            translator=translator,
+            optimizer=opt,
+            lambda_ngram=getattr(cfg, "lambda_ngram", 0.5),
+            use_lora=getattr(cfg, "use_lora", False),
+        )
+
+        # Add contrastive loss
+        from core.extensions.contrastive.loss import ContrastiveLoss
+
+        distiller.set_contrastive_loss(
+            ContrastiveLoss(
+                lambda_nll=getattr(cfg, "lambda_ngram", 0.5),
+                lambda_contrastive=getattr(cfg, "lambda_contrastive", 0.1),
+                temperature=0.07,
+            )
+        )
+
+        # Wrap with replay buffer
+        from core.extensions.replay.buffer import ReplayBuffer, ReplayDistiller
+
+        buf = ReplayBuffer(
+            capacity=getattr(cfg, "replay_capacity", 4096),
+            strategy="prioritized",
+        )
+        replay_distiller = ReplayDistiller(
+            distiller=distiller,
+            buffer=buf,
+            replay_every=getattr(cfg, "replay_every", 32),
+            replay_batch=getattr(cfg, "replay_batch", 8),
+        )
+        logger.info("Full distiller ready: online + contrastive + replay(prioritized)")
+        return replay_distiller
+
+    def build_adaptive_controller(self, ctx: BuildContext):
+        """Build SpeedupPredictor + AdaptiveDraftController."""
+        from core.extensions.adaptive.speedup_predictor import (
+            AdaptiveDraftController,
+            SpeedupPredictor,
+        )
+
+        cfg = ctx.config
+        pred = SpeedupPredictor(
+            d_hidden=ctx.drafter.model.config.hidden_size,
+            k_max=getattr(cfg, "k_max", 8),
+        ).to(ctx.device)
+        controller = AdaptiveDraftController(
+            pred, ctx.drafter, getattr(cfg, "k_min", 1), getattr(cfg, "k_max", 8)
+        )
+        logger.info("AdaptiveDraftController ready (full system)")
+        return controller
+
+    def build_router(self, ctx: BuildContext):
+        """Build DynamicRouter with multiple drafter specs."""
+        from core.extensions.routing.router import (
+            DrafterSpec,
+            DynamicRouter,
+            RouterModel,
+        )
+
+        d_input = ctx.drafter.model.config.hidden_size
+        router_model = RouterModel(d_input=d_input, n_drafters=3).to(ctx.device)
+
+        specs = [
+            DrafterSpec(
+                name="Qwen/Qwen2.5-0.5B-Instruct",
+                model=ctx.drafter,
+                n_params=500_000_000,
+                size_penalty=1.0,
+            ),
+            DrafterSpec(
+                name="Qwen/Qwen2.5-1.5B-Instruct",
+                model=None,
+                n_params=1_500_000_000,
+                size_penalty=2.0,
+            ),
+            DrafterSpec(
+                name="Qwen/Qwen2.5-7B-Instruct",
+                model=None,
+                n_params=7_000_000_000,
+
+[43 more lines in file. Use offset=251 to continue.]

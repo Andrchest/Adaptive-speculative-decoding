@@ -1,0 +1,302 @@
+    @abc.abstractmethod
+    def get_config(self) -> object:
+        """Return the base configuration for this experiment.
+
+        Returns
+        -------
+        ExperimentConfig
+            The configuration dataclass with model paths, dataset,
+            hyperparameters, etc.  Subclasses should call
+            ``super().get_config()`` and override specific fields,
+            or construct from scratch.
+
+        Raises
+        ------
+        NotImplementedError
+            If the subclass does not override this method.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement get_config(). "
+            "Return an ExperimentConfig with at minimum `name` set."
+        )
+
+    # ------------------------------------------------------------------
+    # Build methods (override selectively)
+    # ------------------------------------------------------------------
+
+    def build_translator(self, ctx: BuildContext) -> CrossVocabTranslator:
+        """Build the cross-vocabulary translator.
+
+        Default: Rule1 + Rule2 via ``CrossVocabTranslator.from_tokenizers()``.
+
+        Override this to add lattice, learned translator, or custom
+        translation logic.
+
+        Parameters
+        ----------
+        ctx : BuildContext
+            Shared build context with drafter, target, and config.
+
+        Returns
+        -------
+        CrossVocabTranslator
+            Configured translator instance.
+        """
+        from core.translation.vocabulary import CrossVocabTranslator
+
+        translator = CrossVocabTranslator.from_tokenizers(
+            ctx.drafter.tokenizer,
+            ctx.target.tokenizer,
+            device=ctx.device,
+            drafter_vocab_size=ctx.drafter.model.config.vocab_size,
+            target_vocab_size=ctx.target.model.config.vocab_size,
+        )
+        return translator
+
+    def build_cache(self, ctx: BuildContext) -> NgramCache:
+        """Build the N-gram cache.
+
+        Default: ``NgramCache(max_size=65536, eviction="hybrid")``.
+
+        Override this to change eviction strategy or capacity.
+
+        Parameters
+        ----------
+        ctx : BuildContext
+            Shared build context.
+
+        Returns
+        -------
+        NgramCache
+            Configured cache instance.
+        """
+        from core.cache.ngram import NgramCache
+
+        # Import ExperimentConfig to read fields without circular import
+        max_size = getattr(ctx.config, "cache_max_size", 65536)
+        eviction = getattr(ctx.config, "cache_eviction", "hybrid")
+        return NgramCache(max_size=max_size, eviction=eviction)
+
+    def build_distiller(self, ctx: BuildContext) -> OnlineDistiller | None:
+        """Build the online distiller.
+
+        Default: ``None`` (no distillation).
+
+        Override this to enable distillation, replay buffers,
+        contrastive loss, etc.
+
+        Parameters
+        ----------
+        ctx : BuildContext
+            Shared build context.  The translator is available at
+            ``ctx.components["translator"]``.
+
+        Returns
+        -------
+        OnlineDistiller or None
+            Configured distiller, or ``None`` to skip distillation.
+        """
+        return None
+
+    def build_adaptive_controller(self, ctx: BuildContext) -> object | None:
+        """Build the adaptive draft-length controller.
+
+        Default: ``None`` (fixed draft length from config).
+
+        Override this to enable SpeedupPredictor or custom adaptive logic.
+
+        Parameters
+        ----------
+        ctx : BuildContext
+            Shared build context.
+
+        Returns
+        -------
+        callable or None
+            A callable ``context_tensor -> k`` or ``None``.
+        """
+        return None
+
+    def build_router(self, ctx: BuildContext) -> object | None:
+        """Build the dynamic multi-drafter router.
+
+        Default: ``None`` (single drafter).
+
+        Override this to enable dynamic routing between drafters.
+
+        Parameters
+        ----------
+        ctx : BuildContext
+            Shared build context.
+
+        Returns
+        -------
+        DynamicRouter or None
+            Configured router, or ``None``.
+        """
+        return None
+
+    def build_universal_drafter(self, ctx: BuildContext) -> object | None:
+        """Build the universal drafter adapter.
+
+        Default: ``None`` (single-target drafter).
+
+        Override this to enable multi-target drafting via UniversalDrafter.
+
+        Parameters
+        ----------
+        ctx : BuildContext
+            Shared build context.
+
+        Returns
+        -------
+        object or None
+            A drafter adapter compatible with the DraftModel interface,
+            or ``None``.
+        """
+        return None
+
+    # ------------------------------------------------------------------
+    # Decode hooks (override selectively)
+    # ------------------------------------------------------------------
+
+    def on_before_decode(self, ctx: DecodeContext) -> None:
+        """Called once before the decode loop starts.
+
+        Override to set up state, start timers, or initialize
+        per-experiment counters.
+
+        Parameters
+        ----------
+        ctx : DecodeContext
+            Mutable decode context.
+        """
+        del ctx  # unused in base
+
+    def on_decode_step(
+        self,
+        ctx: DecodeContext,
+        step_result: StepResult,
+        prompt_index: int,
+    ) -> None:
+        """Called after each decode step (one prompt completion).
+
+        Override to implement per-step logic: distillation triggers,
+        routing decisions, custom metric collection, etc.
+
+        Parameters
+        ----------
+        ctx : DecodeContext
+            Mutable decode context.
+        step_result : StepResult
+            Statistics for the completed step.
+        prompt_index : int
+            Zero-based index of the current prompt.
+        """
+        del ctx, step_result, prompt_index  # unused in base
+
+    def on_after_decode(self, ctx: DecodeContext) -> None:
+        """Called once after all prompts have been decoded.
+
+        Override to finalize state, flush buffers, or compute
+        post-decode statistics.
+
+        Parameters
+        ----------
+        ctx : DecodeContext
+            Mutable decode context.
+        """
+        del ctx  # unused in base
+
+    # ------------------------------------------------------------------
+    # Metrics
+    # ------------------------------------------------------------------
+
+    def on_extra_metrics(self, summary: dict) -> dict:
+        """Augment the collector summary with experiment-specific metrics.
+
+        Default: returns the summary unchanged.
+
+        Parameters
+        ----------
+        summary : dict
+            Aggregated metrics from ``BenchmarkCollector.summary()``.
+
+        Returns
+        -------
+        dict
+            The (possibly modified) summary dictionary.
+        """
+        return summary
+
+    # ------------------------------------------------------------------
+    # Execution (usually don't override)
+    # ------------------------------------------------------------------
+
+    def run(self, runner: ExperimentRunner) -> ExperimentResult:
+        """Execute the full experiment lifecycle.
+
+        This method orchestrates: build components → load dataset →
+        decode loop → collect metrics → save result.
+
+        Subclasses generally should NOT override this.  Instead, override
+        the individual ``build_*`` and ``on_*`` methods.
+
+        Parameters
+        ----------
+        runner : ExperimentRunner
+            The runner providing shared utilities (model loading,
+            dataset loading, persistence).
+
+        Returns
+        -------
+        ExperimentResult
+            Named tuple with metadata, config, metrics, and optional error.
+        """
+        import logging
+        import random as _random
+
+        import numpy as np
+        import torch
+
+        logger = logging.getLogger(__name__)
+
+        cfg = self.get_config()
+        # Apply CLI overrides (e.g. --tiny, --max-samples)
+        for key, value in self._overrides.items():
+            setattr(cfg, key, value)
+        cfg_dict = runner._asdict_config(cfg)
+        logger.info("Running experiment: %s", self.meta.name)
+
+        # Deterministic seeding
+        seed = getattr(cfg, "seed", 42)
+        torch.manual_seed(seed)
+        _random.seed(seed)
+        np.random.seed(seed)
+        torch_rng = torch.Generator()
+        torch_rng.manual_seed(seed)
+
+        # Load models
+        drafter, target = runner._build_models(cfg)
+
+        # GPU memory tracking: collect samples during setup
+        mem_samples: list[float] = []
+        if torch.cuda.is_available():
+            mem_samples.append(
+                torch.cuda.memory_allocated(runner.device) / 1024**3
+            )
+            logger.info("GPU memory after models: %.2f GB", mem_samples[-1])
+
+        # Build components
+        build_ctx = BuildContext(
+            device=runner.device,
+            drafter=drafter,
+            target=target,
+            config=cfg,
+            components={},
+        )
+
+        translator = self.build_translator(build_ctx)
+        build_ctx.components["translator"] = translator
+
+[197 more lines in file. Use offset=550 to continue.]

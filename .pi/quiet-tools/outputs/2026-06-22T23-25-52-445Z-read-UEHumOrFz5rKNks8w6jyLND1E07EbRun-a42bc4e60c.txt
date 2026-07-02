@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""
+Profiling script for Adaptive Speculative Decoding experiments.
+
+Breaks down wall-clock time by:
+  1. High-level stages: model_loading, build_components, dataset_loading, decode_loop
+  2. Per-step phases: cache_lookup, drafter_forward, translation, target_verify, accept_reject, residual
+  3. GPU memory at each major stage
+  4. Speculative decoding vs plain target model throughput
+
+Uses small models (opt-125m / opt-350m) for fast runs.
+
+Usage:
+    python src/profiler.py --samples 10 --compare
+    python src/profiler.py --suite ablation --samples 5
+"""
+
+from __future__ import annotations
+
+import cProfile
+import io
+import json
+import logging
+import pstats
+import sys
+import time
+from dataclasses import dataclass, field
+from typing import Any, Annotated
+
+import numpy as np
+import torch
+import typer
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(message)s",
+    datefmt="[%H:%M:%S]",
+)
+for noisy in ("urllib3", "httpx", "requests", "transformers", "huggingface_hub"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
+console = Console()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Data structures
+# ──────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class StageTimings:
+    stage: str = ""
+    duration_s: float = 0.0
+    pct_of_total: float = 0.0
+
+
+@dataclass
+class StepTimings:
+    cache_lookup_ms: float = 0.0
+    draft_forward_ms: float = 0.0
+    translate_ms: float = 0.0
+    target_verify_ms: float = 0.0
+    accept_reject_ms: float = 0.0
+    residual_sample_ms: float = 0.0
+    total_ms: float = 0.0
+    draft_len: int = 0
+    accepted: int = 0
+
+
+@dataclass
+class ExperimentProfile:
+    name: str = ""
+    stages: list[StageTimings] = field(default_factory=list)
+    step_timings: list[StepTimings] = field(default_factory=list)
+    gpu_mem_after_models_gb: float = 0.0
+    gpu_mem_after_setup_gb: float = 0.0
+    gpu_mem_peak_gb: float = 0.0
+    gpu_mem_final_gb: float = 0.0
+    total_wall_s: float = 0.0
+    n_prompts: int = 0
+    n_steps: int = 0
+    n_accepted_total: int = 0
+    n_draft_total: int = 0
+    error: str = ""
+
+
+@dataclass
+class PlainModelProfile:
+    name: str = ""
+    total_wall_s: float = 0.0
+    tokens_generated: int = 0
+    tokens_per_sec: float = 0.0
+    n_prompts: int = 0
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Monkey-patch _decode_step for per-phase timing
+# ──────────────────────────────────────────────────────────────────────
+
+
+_original_decode_step = None
+
+
+def _profiled_decode_step(self, context, k, distiller=None, rng=None):
+    """Instrumented version of SpeculativeDecoder._decode_step."""
+    from dataclasses import dataclass, field
+    from core.decoder.speculative import StepResult as _StepResult
+
+    ctx_list = context[0].tolist()
+
+    # Phase 1: cache lookup
+    t0 = time.perf_counter()
+    _ = self.cache.lookup(ctx_list)
+    cache_ms = (time.perf_counter() - t0) * 1000
+
+    # Phase 2: drafter forward
+    t0 = time.perf_counter()
+    draft_tokens_drafter, draft_logits = self.drafter.draft(
+        context, k, distill=(distiller is not None), temperature=self.temperature
+    )
+    draft_ms = (time.perf_counter() - t0) * 1000
+
+    if not draft_tokens_drafter:
+        return _StepResult(
+            draft_length=0, accepted_count=0, rejected_at=-1, cache_hit=False
+        )
+
+    # Phase 3: translate
+    t0 = time.perf_counter()
+    if draft_logits is not None:
+        with torch.no_grad():
+            t_eff = max(self.temperature, 1e-6)
+            from core.translation.vocabulary import _align_last_dim
+
+            translated_probs = self.translator.translate(draft_logits / t_eff)
+            translated_probs = _align_last_dim(
+                translated_probs, self.translator.rule1.target_size
+            )
+    else:
+        translated_probs = None
+
+    draft_tokens_target = self._translate_draft_tokens(draft_tokens_drafter, translated_probs)
+    translate_ms = (time.perf_counter() - t0) * 1000
+
+    # Phase 4: target verify
+    t0 = time.perf_counter()
+    target_logits = self.target.verify(context, draft_tokens_target)
+    verify_ms = (time.perf_counter() - t0) * 1000
+
+    if translated_probs is not None:
+        translated_probs = _align_last_dim(translated_probs, target_logits.shape[-1])
+
+    # Phase 5: accept/reject
+    t0 = time.perf_counter()
+    accepted, rejected_at = self._accept_reject(
+        draft_tokens_target, target_logits, translated_probs, rng=rng
+    )
+    ar_ms = (time.perf_counter() - t0) * 1000
+
+    # Phase 6: residual sample
+    t0 = time.perf_counter()
+    bonus = self._residual_sample(target_logits, translated_probs, rejected_at, rng=rng)
+    rs_ms = (time.perf_counter() - t0) * 1000
+
+    if bonus is not None:
+        accepted = accepted + [bonus]
+
+    accepted_count = len(accepted) - (1 if bonus is not None and rejected_at >= 0 else 0)
+    # accepted_count was already returned by _accept_reject; bonus is extra
+    if bonus is None:
+        accepted_count = len(accepted)
+
+    # Update cache
+    self.cache.update_acceptance(ctx_list, accepted=accepted_count > 0)
+    if accepted:
+        self.cache.insert(
+            ctx_list,
+            accepted,
+            logits=target_logits[: len(accepted)].detach().cpu()
+            if target_logits is not None
+            else None,
+        )
+
+    # Online distillation
+    if distiller is not None and draft_logits is not None:
+        accepted_mask = [
+            (i < rejected_at) if rejected_at >= 0 else True
+            for i in range(len(draft_tokens_drafter))
+        ]
+        distiller.step(
+            draft_logits=draft_logits,
+            target_logits=target_logits[: len(draft_tokens_target)],
+            draft_tokens=draft_tokens_drafter,
+            accepted_mask=accepted_mask,
+            prompt_ids=context[0].tolist(),
+        )
+
+    # Collect step timing
+    total_ms = cache_ms + draft_ms + translate_ms + verify_ms + ar_ms + rs_ms
+    step_timings_collector.append(
+        StepTimings(
+            cache_lookup_ms=cache_ms,
+            draft_forward_ms=draft_ms,
+            translate_ms=translate_ms,
+            target_verify_ms=verify_ms,
+            accept_reject_ms=ar_ms,
+            residual_sample_ms=rs_ms,
+            total_ms=total_ms,
+            draft_len=k,
+            accepted=accepted_count,
+        )
+    )
+
+    return _StepResult(
+        draft_length=k,
+        accepted_count=accepted_count,
+        rejected_at=rejected_at,
+        cache_hit=False,
+        draft_tokens=draft_tokens_target,
+        accepted_tokens=accepted,
+    )
+
+
+step_timings_collector: list[StepTimings] = []
+
+
+def install_profiled_decode_step():
+    """Monkey-patch SpeculativeDecoder._decode_step with profiled version."""
+    from core.decoder.speculative import SpeculativeDecoder
+
+    global _original_decode_step
+    _original_decode_step = SpeculativeDecoder._decode_step
+    SpeculativeDecoder._decode_step = _profiled_decode_step
+
+
+def restore_decode_step():
+    """Restore original _decode_step."""
+    global _original_decode_step
+    if _original_decode_step:
+        from core.decoder.speculative import SpeculativeDecoder
+        SpeculativeDecoder._decode_step = _original_decode_step
+        _original_decode_step = None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Main profiler
+
+[570 more lines in file. Use offset=251 to continue.]

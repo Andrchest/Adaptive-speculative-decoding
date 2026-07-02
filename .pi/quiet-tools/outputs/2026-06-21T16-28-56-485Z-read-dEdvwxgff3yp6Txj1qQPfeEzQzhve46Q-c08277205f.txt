@@ -1,0 +1,252 @@
+"""
+extensions/lattice/tokenizer_lattice.py
+
+Exact cross-tokenizer probability mapping via a tokenizer lattice DAG.
+
+Replaces the approximate Rule 2 heuristic with DP-exact computation.
+
+Algorithm:
+----------
+Given a target token string s_t (e.g. "flake"):
+  1. Enumerate all valid drafter tokenisations of s_t using the drafter's
+     vocabulary (i.e. all ways the drafter can cover s_t exactly).
+  2. Build a DAG where:
+       - node i = character offset i in s_t
+       - edge (i→j) labelled with drafter token covering s_t[i:j]
+  3. The probability of target token s_t under the drafter is:
+       P(s_t) = Σ_{paths p in DAG} Π_{tokens e in p} q(e)
+     where q(e) is the drafter's probability for token e.
+  4. This is computed exactly via forward DP on the DAG.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+
+import torch
+import torch.nn.functional as F
+
+logger = logging.getLogger(__name__)
+
+
+try:
+    import networkx as nx
+
+    _HAS_NX = True
+except ImportError:
+    _HAS_NX = False
+
+
+class TokenizerLattice:
+    """
+    Builds and caches character-level DAGs for target tokens,
+    then computes exact probability mass via DP.
+
+    Parameters
+    ----------
+    drafter_tokenizer : HF tokenizer for the drafter
+    target_tokenizer  : HF tokenizer for the target
+    max_cache_size    : number of (target_token_string → lattice) to cache
+    """
+
+    def __init__(
+        self,
+        drafter_tokenizer,
+        target_tokenizer,
+        max_cache_size: int = 8192,
+        drafter_vocab_size: int | None = None,
+        target_vocab_size: int | None = None,
+    ) -> None:
+        self.drafter_tok = drafter_tokenizer
+        self.target_tok = target_tokenizer
+
+        # String look-ups: idx → clean string
+        self._drafter_vocab = self._build_vocab(drafter_tokenizer)  # idx → str
+        self._drafter_by_string: dict[str, int] = {v: k for k, v in self._drafter_vocab.items()}
+        self._target_vocab = self._build_vocab(target_tokenizer)  # idx → str
+
+        # Prefer model.config.vocab_size (lm_head output dim) over the
+        # tokenizer dict size — see Rule1Mapping for why these can differ.
+        self.drafter_size = (
+            drafter_vocab_size if drafter_vocab_size is not None else len(self._drafter_vocab)
+        )
+        self.target_size = (
+            target_vocab_size if target_vocab_size is not None else len(self._target_vocab)
+        )
+
+        # Lattice cache: target_string → list of drafter-token-id paths
+        self._lattice_cache: dict[str, list[list[int]]] = {}
+        self._last_access: dict[str, float] = {}
+        self._max_cache = max_cache_size
+
+        # Precomputed match index for fast DP: target_string → [(start, end, d_id)]
+        self._match_index = self._build_match_index()
+
+        # Build valid mappings
+        filtered_str_to_ids: dict[str, list[int]] = {}
+        for t_str, t_ids in self._build_str_to_ids().items():
+            matches = self._match_index.get(t_str)
+            if matches is None:
+                continue
+            filtered_str_to_ids[t_str] = t_ids
+        self._str_to_ids = filtered_str_to_ids
+
+        # =========================================================
+        # Global Vectorized DP Data Structures
+        # =========================================================
+        self._valid_strs = list(self._str_to_ids.keys())
+        self._N = len(self._valid_strs)
+        self._str_to_idx = {s: i for i, s in enumerate(self._valid_strs)}
+
+        if self._N > 0:
+            self._max_L = max(len(s) for s in self._valid_strs)
+        else:
+            self._max_L = 0
+
+        # Compute flat 1D offsets to tightly pack the DAG states of all strings
+        node_offsets = []
+        current_offset = 0
+        for s in self._valid_strs:
+            node_offsets.append(current_offset)
+            current_offset += len(s) + 1
+
+        self._num_nodes = current_offset
+        self._zero_nodes = torch.tensor(node_offsets, dtype=torch.long)
+
+        final_nodes = [offset + len(s) for offset, s in zip(node_offsets, self._valid_strs)]
+        self._final_nodes = torch.tensor(final_nodes, dtype=torch.long)
+
+        # Group matches over ALL strings strictly by their `end` character offset.
+        # This inherently ensures valid topological sort in the parallel DP.
+        edges_by_end = {j: ([], [], []) for j in range(1, self._max_L + 1)}
+        for s, ids in self._str_to_ids.items():
+            i = self._str_to_idx[s]
+            offset = node_offsets[i]
+            matches = self._match_index.get(s, [])
+            for start, end, d_id in matches:
+                edges_by_end[end][0].append(offset + start)
+                edges_by_end[end][1].append(offset + end)
+                edges_by_end[end][2].append(d_id)
+
+        self._edges_by_end = {}
+        for j in range(1, self._max_L + 1):
+            if len(edges_by_end[j][0]) > 0:
+                self._edges_by_end[j] = (
+                    torch.tensor(edges_by_end[j][0], dtype=torch.long),
+                    torch.tensor(edges_by_end[j][1], dtype=torch.long),
+                    torch.tensor(edges_by_end[j][2], dtype=torch.long),
+                )
+
+        self._target_to_str_idx = torch.zeros(self.target_size, dtype=torch.long)
+        self._target_mask = torch.zeros(self.target_size, dtype=torch.bool)
+
+        for s, ids in self._str_to_ids.items():
+            i = self._str_to_idx[s]
+            for t_id in ids:
+                self._target_to_str_idx[t_id] = i
+                self._target_mask[t_id] = True
+
+        self._dp_device: torch.device | None = None
+
+        logger.info(
+            "TokenizerLattice initialized: drafter_vocab=%d target_vocab=%d max_cache=%d",
+            self.drafter_size,
+            self.target_size,
+            max_cache_size,
+        )
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def build(self, target_string: str) -> list[list[int]]:
+        """
+        Return all valid drafter tokenisation paths for *target_string*.
+        Each path is a list of drafter token ids.
+        """
+        if target_string in self._lattice_cache:
+            self._last_access[target_string] = time.time()
+            return self._lattice_cache[target_string]
+
+        paths = self._enumerate_paths(target_string)
+        logger.debug(
+            "Lattice build for '%s': %d paths (cache size=%d)",
+            target_string[:20],
+            len(paths),
+            len(self._lattice_cache),
+        )
+
+        if len(self._lattice_cache) >= self._max_cache:
+            # LRU eviction: remove the least recently accessed entry
+            oldest_key = min(self._last_access, key=self._last_access.get)
+            del self._lattice_cache[oldest_key]
+            del self._last_access[oldest_key]
+
+        self._lattice_cache[target_string] = paths
+        self._last_access[target_string] = time.time()
+        return paths
+
+    def forward(
+        self,
+        drafter_probs: torch.Tensor,  # (drafter_vocab,)
+        target_token_id: int,
+    ) -> torch.Tensor:
+        """
+        Compute the exact probability mass assigned by the drafter to a
+        given target token. P(target_token) = Σ_paths Π_{token in path} drafter_probs[token]
+        """
+        t_str = self._target_vocab.get(target_token_id, "")
+        if not t_str:
+            return torch.tensor(0.0, device=drafter_probs.device, dtype=drafter_probs.dtype)
+
+        matches = self._match_index.get(t_str)
+        if not matches:
+            return torch.tensor(0.0, device=drafter_probs.device, dtype=drafter_probs.dtype)
+
+        n = len(t_str)
+        fwd = torch.zeros(n + 1, device=drafter_probs.device, dtype=drafter_probs.dtype)
+        fwd[0] = 1.0
+
+        for start, end, d_id in matches:
+            if fwd[start] > 0:
+                fwd[end] += fwd[start] * drafter_probs[d_id]
+
+        return fwd[n]
+
+    def backward(
+        self,
+        drafter_probs: torch.Tensor,  # (drafter_vocab,)
+        target_probs: torch.Tensor,  # (target_vocab,)
+    ) -> torch.Tensor:
+        """
+        Compute the KL divergence KL(target || lattice_approx) over the target vocabulary.
+        This drives the lattice-aware distillation loss.
+        """
+        lattice_probs = self._compute_lattice_probs(drafter_probs.unsqueeze(0)).squeeze(0)
+
+        # Normalise (may not sum to 1 if drafter can't cover all target tokens)
+        lattice_probs = lattice_probs / lattice_probs.sum().clamp(min=1e-8)
+        log_lattice = lattice_probs.clamp(min=1e-8).log()
+        kl = F.kl_div(log_lattice, target_probs.clamp(min=1e-8), reduction="sum", log_target=False)
+        return kl
+
+    def exact_map_logits(self, drafter_logits: torch.Tensor) -> torch.Tensor:
+        squeeze = drafter_logits.dim() == 1
+        if squeeze:
+            drafter_logits = drafter_logits.unsqueeze(0)
+
+        drafter_probs = F.softmax(drafter_logits.float(), dim=-1)
+        target_probs = self._compute_lattice_probs(drafter_probs)
+
+        if squeeze:
+            return target_probs.squeeze(0)
+        return target_probs
+
+    def _compute_lattice_probs(self, drafter_probs: torch.Tensor) -> torch.Tensor:
+        """
+        Global parallelized DP step vectorizing exact prob assignments across all possible target
+        tokens universally. It bypasses python iteration overheads natively.
+        """
+
+[111 more lines in file. Use offset=251 to continue.]

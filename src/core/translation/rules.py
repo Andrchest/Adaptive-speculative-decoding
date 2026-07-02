@@ -119,6 +119,18 @@ class Rule1Mapping:
             self._mapping[d_idx] = t_idx
 
         self._valid_mask = self._mapping >= 0  # (drafter_vocab,)
+
+        # Build reverse mapping: target_idx → drafter_idx (-1 if no match)
+        # When multiple drafter tokens map to the same target token,
+        # keep the one with the highest drafter index (last wins).
+        self._reverse_mapping: torch.Tensor = torch.full(
+            (self.target_size,), -1, dtype=torch.long, device=device
+        )
+        for d_idx in range(self.drafter_size):
+            t_idx = self._mapping[d_idx].item()
+            if t_idx >= 0:
+                self._reverse_mapping[t_idx] = d_idx
+
         self.device = device
         n_mapped = self._valid_mask.sum().item()
         logger.info(

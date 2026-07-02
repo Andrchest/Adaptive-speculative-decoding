@@ -1,0 +1,640 @@
+           INFO     Acceptance result: accepted=4 rejected_at=4                 
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 94                  
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=94 draft_tokens=5           
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 100                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=100 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 106                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=106 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 112                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=112 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Weight update step=8 loss=0.861677 kl=0.157362 nll=1.408630 
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 118                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=118 draft_tokens=5          
+           INFO     Rejected draft token 3: token=164 accept_prob=0.8789        
+           INFO     Acceptance result: accepted=2 rejected_at=2                 
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 121                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=121 draft_tokens=8          
+           INFO     Rejected draft token 8: token=548 accept_prob=0.2166        
+           INFO     Acceptance result: accepted=7 rejected_at=7                 
+           INFO     Cache hit: reusing 5 token(s)                               
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=129 draft_tokens=5          
+[03:24:57] INFO     Rejected draft token 1: token=224 accept_prob=0.2893        
+           INFO     Acceptance result: accepted=0 rejected_at=0                 
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 130                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=130 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 136                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=136 draft_tokens=8          
+           INFO     All 8 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=8 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=6                         
+           INFO     Drafting 6 token(s) from context length 145                 
+           INFO     Draft complete: generated 6 token(s)                        
+           INFO     Running target verification for 6 draft token(s)            
+           INFO     Target verification context_len=145 draft_tokens=6          
+           INFO     All 6 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=6 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 152                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=152 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Replay phase: 8 traces from buffer (size=64)                
+           INFO     Weight update step=9 loss=0.672347 kl=0.177588 nll=0.989517 
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 155                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=155 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Cache hit: reusing 5 token(s)                               
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=158 draft_tokens=5          
+           INFO     Rejected draft token 3: token=686 accept_prob=0.1907        
+           INFO     Acceptance result: accepted=2 rejected_at=2                 
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 161                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=161 draft_tokens=8          
+           INFO     Rejected draft token 3: token=24 accept_prob=0.1143         
+           INFO     Acceptance result: accepted=2 rejected_at=2                 
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 164                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=164 draft_tokens=8          
+           INFO     All 8 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=8 rejected_at=-1                
+           INFO     Cache hit: reusing 2 token(s)                               
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=173 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 176                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=176 draft_tokens=5          
+           INFO     Rejected draft token 1: token=552 accept_prob=0.1164        
+           INFO     Acceptance result: accepted=0 rejected_at=0                 
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 177                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=177 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Weight update step=10 loss=0.643897 kl=0.335294 nll=0.617207
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 180                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=180 draft_tokens=2          
+           INFO     Rejected draft token 2: token=218 accept_prob=0.7561        
+           INFO     Acceptance result: accepted=1 rejected_at=1                 
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 182                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=182 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 185                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=185 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 188                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=188 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Finished speculative generation: generated_tokens=142       
+                    steps=32 cache_hit_rate=0.240                               
+           INFO     Finished prompt 3/5 output_len=191                          
+           INFO     Decoding prompt 4/5 prompt_len=32                           
+           INFO     Router selected drafter 0 (0/1) for prompt 3                
+           INFO     Starting speculative generation: prompt_len=32              
+                    max_new_tokens=32 draft_length=5                            
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 32                  
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=32 draft_tokens=8           
+           INFO     Rejected draft token 5: token=1237 accept_prob=0.9116       
+           INFO     Acceptance result: accepted=4 rejected_at=4                 
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 37                  
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=37 draft_tokens=8           
+           INFO     Rejected draft token 5: token=12631 accept_prob=0.2452      
+           INFO     Acceptance result: accepted=4 rejected_at=4                 
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 42                  
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=42 draft_tokens=8           
+           INFO     All 8 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=8 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=6                         
+           INFO     Drafting 6 token(s) from context length 51                  
+           INFO     Draft complete: generated 6 token(s)                        
+           INFO     Running target verification for 6 draft token(s)            
+           INFO     Target verification context_len=51 draft_tokens=6           
+[03:24:58] INFO     All 6 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=6 rejected_at=-1                
+           INFO     Weight update step=11 loss=0.697657 kl=0.167567 nll=1.060181
+           INFO     Cache miss: running drafter for k=6                         
+           INFO     Drafting 6 token(s) from context length 58                  
+           INFO     Draft complete: generated 6 token(s)                        
+           INFO     Running target verification for 6 draft token(s)            
+           INFO     Target verification context_len=58 draft_tokens=6           
+           INFO     Rejected draft token 5: token=24 accept_prob=0.5074         
+           INFO     Acceptance result: accepted=4 rejected_at=4                 
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 63                  
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=63 draft_tokens=5           
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 69                  
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=69 draft_tokens=5           
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 75                  
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=75 draft_tokens=5           
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 81                  
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=81 draft_tokens=5           
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=6                         
+           INFO     Drafting 6 token(s) from context length 87                  
+           INFO     Draft complete: generated 6 token(s)                        
+           INFO     Running target verification for 6 draft token(s)            
+           INFO     Target verification context_len=87 draft_tokens=6           
+           INFO     Rejected draft token 4: token=4 accept_prob=0.5825          
+           INFO     Acceptance result: accepted=3 rejected_at=3                 
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 91                  
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=91 draft_tokens=5           
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=1                         
+           INFO     Drafting 1 token(s) from context length 97                  
+           INFO     Draft complete: generated 1 token(s)                        
+           INFO     Running target verification for 1 draft token(s)            
+           INFO     Target verification context_len=97 draft_tokens=1           
+           INFO     All 1 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=1 rejected_at=-1                
+           INFO     Weight update step=12 loss=0.631854 kl=0.184138 nll=0.895432
+           INFO     Cache hit: reusing 4 token(s)                               
+           INFO     Running target verification for 4 draft token(s)            
+           INFO     Target verification context_len=99 draft_tokens=4           
+           INFO     All 4 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=4 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=1                         
+           INFO     Drafting 1 token(s) from context length 104                 
+           INFO     Draft complete: generated 1 token(s)                        
+           INFO     Running target verification for 1 draft token(s)            
+           INFO     Target verification context_len=104 draft_tokens=1          
+           INFO     All 1 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=1 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 106                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=106 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=1                         
+           INFO     Drafting 1 token(s) from context length 112                 
+           INFO     Draft complete: generated 1 token(s)                        
+           INFO     Running target verification for 1 draft token(s)            
+           INFO     Target verification context_len=112 draft_tokens=1          
+           INFO     All 1 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=1 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 114                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=114 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache hit: reusing 1 token(s)                               
+           INFO     Running target verification for 1 draft token(s)            
+           INFO     Target verification context_len=120 draft_tokens=1          
+           INFO     All 1 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=1 rejected_at=-1                
+           INFO     Cache hit: reusing 6 token(s)                               
+           INFO     Running target verification for 6 draft token(s)            
+           INFO     Target verification context_len=122 draft_tokens=6          
+           INFO     Rejected draft token 1: token=114 accept_prob=0.0064        
+           INFO     Acceptance result: accepted=0 rejected_at=0                 
+           INFO     Cache hit: reusing 5 token(s)                               
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=123 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache hit: reusing 5 token(s)                               
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=129 draft_tokens=5          
+           INFO     Rejected draft token 1: token=50118 accept_prob=0.7963      
+           INFO     Acceptance result: accepted=0 rejected_at=0                 
+           INFO     Cache hit: reusing 5 token(s)                               
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=130 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache hit: reusing 2 token(s)                               
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=136 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Cache hit: reusing 5 token(s)                               
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=139 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache hit: reusing 2 token(s)                               
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=145 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Cache hit: reusing 1 token(s)                               
+           INFO     Running target verification for 1 draft token(s)            
+           INFO     Target verification context_len=148 draft_tokens=1          
+           INFO     All 1 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=1 rejected_at=-1                
+           INFO     Cache hit: reusing 5 token(s)                               
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=150 draft_tokens=5          
+           INFO     Rejected draft token 4: token=50118 accept_prob=0.8599      
+           INFO     Acceptance result: accepted=3 rejected_at=3                 
+           INFO     Cache hit: reusing 6 token(s)                               
+           INFO     Running target verification for 6 draft token(s)            
+           INFO     Target verification context_len=154 draft_tokens=6          
+           INFO     Rejected draft token 5: token=47 accept_prob=0.9662         
+           INFO     Acceptance result: accepted=4 rejected_at=4                 
+           INFO     Cache hit: reusing 5 token(s)                               
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=159 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache hit: reusing 1 token(s)                               
+           INFO     Running target verification for 1 draft token(s)            
+           INFO     Target verification context_len=165 draft_tokens=1          
+[03:24:59] INFO     All 1 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=1 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 167                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=167 draft_tokens=8          
+           INFO     Rejected draft token 1: token=860 accept_prob=0.4498        
+           INFO     Acceptance result: accepted=0 rejected_at=0                 
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 168                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=168 draft_tokens=5          
+           INFO     Rejected draft token 5: token=114 accept_prob=0.0904        
+           INFO     Acceptance result: accepted=4 rejected_at=4                 
+           INFO     Finished speculative generation: generated_tokens=141       
+                    steps=32 cache_hit_rate=0.289                               
+           INFO     Finished prompt 4/5 output_len=173                          
+           INFO     Decoding prompt 5/5 prompt_len=105                          
+           INFO     Router selected drafter 0 (0/1) for prompt 4                
+           INFO     Starting speculative generation: prompt_len=105             
+                    max_new_tokens=32 draft_length=5                            
+           INFO     Cache miss: running drafter for k=3                         
+           INFO     Drafting 3 token(s) from context length 105                 
+           INFO     Draft complete: generated 3 token(s)                        
+           INFO     Running target verification for 3 draft token(s)            
+           INFO     Target verification context_len=105 draft_tokens=3          
+           INFO     All 3 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=3 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 109                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=109 draft_tokens=5          
+           INFO     Rejected draft token 5: token=18 accept_prob=0.9626         
+           INFO     Acceptance result: accepted=4 rejected_at=4                 
+           INFO     Cache miss: running drafter for k=4                         
+           INFO     Drafting 4 token(s) from context length 114                 
+           INFO     Draft complete: generated 4 token(s)                        
+           INFO     Running target verification for 4 draft token(s)            
+           INFO     Target verification context_len=114 draft_tokens=4          
+           INFO     Rejected draft token 1: token=7 accept_prob=0.6195          
+           INFO     Acceptance result: accepted=0 rejected_at=0                 
+           INFO     Cache miss: running drafter for k=4                         
+           INFO     Drafting 4 token(s) from context length 115                 
+           INFO     Draft complete: generated 4 token(s)                        
+           INFO     Running target verification for 4 draft token(s)            
+           INFO     Target verification context_len=115 draft_tokens=4          
+           INFO     All 4 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=4 rejected_at=-1                
+           INFO     Weight update step=13 loss=0.549707 kl=0.186698 nll=0.726019
+           INFO     Cache miss: running drafter for k=7                         
+           INFO     Drafting 7 token(s) from context length 120                 
+           INFO     Draft complete: generated 7 token(s)                        
+           INFO     Running target verification for 7 draft token(s)            
+           INFO     Target verification context_len=120 draft_tokens=7          
+           INFO     Rejected draft token 3: token=11130 accept_prob=0.0540      
+           INFO     Acceptance result: accepted=2 rejected_at=2                 
+           INFO     Replay phase: 8 traces from buffer (size=96)                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 123                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=123 draft_tokens=5          
+           INFO     Rejected draft token 2: token=4 accept_prob=0.2425          
+           INFO     Acceptance result: accepted=1 rejected_at=1                 
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 125                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=125 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Weight update step=14 loss=0.954455 kl=0.387954 nll=1.133003
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 131                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=131 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 137                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=137 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=4                         
+           INFO     Drafting 4 token(s) from context length 143                 
+           INFO     Draft complete: generated 4 token(s)                        
+           INFO     Running target verification for 4 draft token(s)            
+           INFO     Target verification context_len=143 draft_tokens=4          
+           INFO     Rejected draft token 2: token=1437 accept_prob=0.7751       
+           INFO     Acceptance result: accepted=1 rejected_at=1                 
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 145                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=145 draft_tokens=8          
+           INFO     Rejected draft token 4: token=18 accept_prob=0.8177         
+           INFO     Acceptance result: accepted=3 rejected_at=3                 
+           INFO     Cache miss: running drafter for k=4                         
+           INFO     Drafting 4 token(s) from context length 149                 
+           INFO     Draft complete: generated 4 token(s)                        
+           INFO     Running target verification for 4 draft token(s)            
+           INFO     Target verification context_len=149 draft_tokens=4          
+           INFO     All 4 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=4 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 154                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=154 draft_tokens=5          
+           INFO     Rejected draft token 5: token=11130 accept_prob=0.1244      
+           INFO     Acceptance result: accepted=4 rejected_at=4                 
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 159                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=159 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 162                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=162 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Weight update step=15 loss=0.843193 kl=0.286888 nll=1.112610
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 165                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=165 draft_tokens=5          
+[03:25:00] INFO     Rejected draft token 3: token=24 accept_prob=0.0634         
+           INFO     Acceptance result: accepted=2 rejected_at=2                 
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 168                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=168 draft_tokens=8          
+           INFO     Rejected draft token 7: token=581 accept_prob=0.3022        
+           INFO     Acceptance result: accepted=6 rejected_at=6                 
+           INFO     Cache miss: running drafter for k=4                         
+           INFO     Drafting 4 token(s) from context length 175                 
+           INFO     Draft complete: generated 4 token(s)                        
+           INFO     Running target verification for 4 draft token(s)            
+           INFO     Target verification context_len=175 draft_tokens=4          
+           INFO     Rejected draft token 1: token=5 accept_prob=0.7581          
+           INFO     Acceptance result: accepted=0 rejected_at=0                 
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 176                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=176 draft_tokens=5          
+           INFO     Rejected draft token 3: token=473 accept_prob=0.6850        
+           INFO     Acceptance result: accepted=2 rejected_at=2                 
+           INFO     Cache miss: running drafter for k=4                         
+           INFO     Drafting 4 token(s) from context length 179                 
+           INFO     Draft complete: generated 4 token(s)                        
+           INFO     Running target verification for 4 draft token(s)            
+           INFO     Target verification context_len=179 draft_tokens=4          
+           INFO     All 4 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=4 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 184                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=184 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 190                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=190 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 196                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=196 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 199                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=199 draft_tokens=8          
+           INFO     All 8 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=8 rejected_at=-1                
+           INFO     Weight update step=16 loss=0.965286 kl=0.247605 nll=1.435364
+           INFO     Cache miss: running drafter for k=2                         
+           INFO     Drafting 2 token(s) from context length 208                 
+           INFO     Draft complete: generated 2 token(s)                        
+           INFO     Running target verification for 2 draft token(s)            
+           INFO     Target verification context_len=208 draft_tokens=2          
+           INFO     All 2 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=2 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 211                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=211 draft_tokens=8          
+           INFO     All 8 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=8 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=5                         
+           INFO     Drafting 5 token(s) from context length 220                 
+           INFO     Draft complete: generated 5 token(s)                        
+           INFO     Running target verification for 5 draft token(s)            
+           INFO     Target verification context_len=220 draft_tokens=5          
+           INFO     All 5 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=5 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=6                         
+           INFO     Drafting 6 token(s) from context length 226                 
+           INFO     Draft complete: generated 6 token(s)                        
+           INFO     Running target verification for 6 draft token(s)            
+           INFO     Target verification context_len=226 draft_tokens=6          
+           INFO     All 6 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=6 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=3                         
+           INFO     Drafting 3 token(s) from context length 233                 
+           INFO     Draft complete: generated 3 token(s)                        
+           INFO     Running target verification for 3 draft token(s)            
+           INFO     Target verification context_len=233 draft_tokens=3          
+           INFO     All 3 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=3 rejected_at=-1                
+           INFO     Cache miss: running drafter for k=8                         
+           INFO     Drafting 8 token(s) from context length 237                 
+           INFO     Draft complete: generated 8 token(s)                        
+           INFO     Running target verification for 8 draft token(s)            
+           INFO     Target verification context_len=237 draft_tokens=8          
+           INFO     All 8 draft token(s) accepted                               
+           INFO     Acceptance result: accepted=8 rejected_at=-1                
+           INFO     Cache hit: reusing 1 token(s)                               
+           INFO     Running target verification for 1 draft token(s)            
+           INFO     Target verification context_len=246 draft_tokens=1          
+           INFO     Rejected draft token 1: token=47 accept_prob=0.0019         
+           INFO     Acceptance result: accepted=0 rejected_at=0                 
+           INFO     Cache hit: reusing 3 token(s)                               
+           INFO     Running target verification for 3 draft token(s)            
+           INFO     Target verification context_len=247 draft_tokens=3          
+           INFO     Rejected draft token 1: token=47 accept_prob=0.7797         
+           INFO     Acceptance result: accepted=0 rejected_at=0                 
+           INFO     Finished speculative generation: generated_tokens=143       
+                    steps=32 cache_hit_rate=0.244                               
+           INFO     Finished prompt 5/5 output_len=248                          
+           INFO     Benchmark summary for 11_full_system: n_seq=5 acc=0.759     
+                    tps=72.2 cache_hit=0.244                                    
+           INFO     Router stats: {'selected_drafter': 0, 'drafter_counts':     
+                    {'0': 5}}                                                   
+           INFO     Distillation stats: {'update_steps': 16, 'mean_loss':       
+                    0.5739485358353704, 'mean_kl': 0.20448960515670478,         
+                    'mean_nll': 0.9527348327636719}                             
+           INFO     Benchmark summary for 11_full_system: {'name':              
+                    '11_full_system', 'n_sequences': 5, 'acceptance_rate':      
+                    0.7590881953508635, 'avg_accepted_tokens': 3.58125,         
+                    'avg_draft_length': 4.73125, 'cache_hit_rate': 0.24375,     
+                    'tokens_per_sec': 72.21927129913328, 'wall_time_mean_s':    
+                    1.6118672233540565, 'gpu_mem_peak_gb': 0.0, 'router':       
+                    {'selected_drafter': 0, 'drafter_counts': {'0': 5}},        
+                    'update_steps': 16, 'mean_loss': 0.5739485358353704,        
+                    'mean_kl': 0.20448960515670478, 'mean_nll':                 
+                    0.9527348327636719}                                         
+           INFO     Logging final metrics to MLflow                             
+[03:25:01] INFO     Freeing GPU memory before return                            
+           INFO     GPU memory freed                                            
+           INFO     Saving experiment result to results/11_full_system.json     
+           INFO     Finished experiment 11/11: 11_full_system                   
+           INFO     Releasing GPU memory after experiment 11                    
+           INFO     GPU memory: 17.0 MB used / 41.9 MB total                    
+           INFO     Writing comparison table to results/comparison_table.csv    
+
+Comparison table saved to: results/comparison_table.csv
+           INFO     Comparison table saved                                      
+           INFO     Finished run_all with 11 result(s)                          
+           INFO     All experiments finished                                    
+
+=== Final Comparison ===
+Experiment                       Acc Rate        TPS    Speedup
+-----------------------------------------------------------------
+01_baseline                     0.620      75.1      0.00x
+02_+lattice                     0.620      81.2      0.00x
+03_+translator                  0.754      89.0      0.00x
+04_+online_distil               0.775      78.3      0.00x
+05_+replay_fifo                 0.775      78.2      0.00x
+06_+replay_prio                 0.775      78.5      0.00x
+07_+contrastive                 0.775      76.6      0.00x
+08_+speedup_adapt               0.507      57.8      0.00x
+09_+routing                     0.576      71.2      0.00x
+10_+universal                   0.629      77.4      0.00x
+11_full_system                  0.759      72.2      0.00x
+
+[Showing lines 8346-8983 of 8983 (50.0KB limit). Full output: /tmp/pi-bash-428ee7e1478c3938.log]

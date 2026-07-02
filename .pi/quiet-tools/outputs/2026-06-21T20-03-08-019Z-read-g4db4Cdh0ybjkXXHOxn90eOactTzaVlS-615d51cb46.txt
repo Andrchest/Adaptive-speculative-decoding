@@ -1,0 +1,252 @@
+"""
+Unit tests proving the critical-bug fixes in this PR.
+
+These tests use FAKE lightweight models / tokenizers (no network, no GPU)
+so they run in <10s on any machine and exercise the algorithmic
+correctness properties we care about.
+
+What's covered
+--------------
+- test_acceptance_preserves_target_distribution_* :
+    The flagship correctness test. Empirically verifies that the
+    decoder's accept/reject + residual-sample loop produces tokens with
+    a marginal distribution ≈ the target's softmax distribution p.
+    This is the core promise of speculative decoding (Leviathan 2023,
+    Theorem 1) and was BROKEN before this PR (C1, C2, H1).
+
+- test_max_new_tokens_limits_tokens_not_steps :
+    Verifies C12 fix — the loop now stops when max_new_tokens NEW
+    tokens have been emitted, not after max_new_tokens decode steps.
+
+- test_drafter_temperature_propagates_to_q :
+    Verifies H1 fix — temperature is applied to BOTH p (target) and
+    q (drafter translated), so p/q is a valid acceptance ratio.
+
+- test_drafter_samples_at_unit_temperature :
+    Verifies C1 fix — the drafter actually samples (not argmax) at
+    temperature=1.0, so the acceptance theorem applies.
+
+- test_draft_token_translation_cross_vocab :
+    Verifies C3 fix — drafter-vocab token ids are translated to
+    target-vocab ids before being sent to target.verify.
+
+- test_ngram_cache_eviction_does_not_thrash :
+    Verifies C11 fix — newly-inserted entries are not evicted on the
+    next insert (hybrid strategy).
+
+- test_speedup_predictor_masks_unobserved_k :
+    Verifies C18 fix — the MSE loss is masked to observed positions
+    only; the predictor is no longer trained to output 0 for
+    unobserved k.
+
+- test_infonce_temperature_applied_to_all :
+    Verifies C7 fix — InfoNCE temperature is applied to both positive
+    and negative scores.
+
+- test_replay_re_runs_drafter_forward :
+    Verifies C5 + C6 fixes — replay re-runs the drafter to obtain
+    grad-enabled logits and reconstructs accepted_mask positionally.
+
+- test_distiller_set_contrastive_loss :
+    Verifies C4 fix — the public setter actually attaches the loss.
+
+- test_universal_drafter_no_double_adapter :
+    Verifies C16 fix — the adapter is applied once (via hooks), not
+    twice.
+"""
+from __future__ import annotations
+
+import pathlib
+import sys
+
+# Ensure src/ is on the path (pytest is invoked from repo root)
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+import math
+import random
+from collections import Counter
+
+import pytest
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+# ---------------------------------------------------------------------------
+# Fake model / tokenizer fixtures
+# ---------------------------------------------------------------------------
+
+
+class FakeTokenizer:
+    """
+    Minimal tokenizer stub with the only methods the translator uses:
+    ``get_vocab()``.
+
+    Two instances can be constructed with different vocab strings to
+    exercise the cross-vocabulary translation path.
+    """
+
+    def __init__(self, vocab: dict[str, int]):
+        # Make a copy so the caller can mutate the original.
+        self._vocab = dict(vocab)
+
+    def get_vocab(self) -> dict[str, int]:
+        return self._vocab
+
+    def encode(self, text: str, return_tensors: str | None = None):
+        # Map each character to its vocab id (used by tests that need
+        # to build a prompt). Falls back to id 0 for unknown chars.
+        ids = [self._vocab.get(c, 0) for c in text]
+        if return_tensors == "pt":
+            return torch.tensor([ids], dtype=torch.long)
+        return ids
+
+
+class FakeDrafterModel(nn.Module):
+    """
+    Tiny deterministic "drafter" — a single linear layer over a one-hot
+    input, with a learned bias that determines the next-token logits.
+
+    Used by DraftModel.draft through the ``.model`` attribute. We
+    implement the minimum interface: ``__call__(input_ids)`` returns
+    an object with ``.logits`` of shape (1, seq, V).
+    """
+
+    def __init__(self, vocab_size: int, hidden: int = 16, seed: int = 0):
+        super().__init__()
+        g = torch.Generator().manual_seed(seed)
+        self.embed = nn.Embedding(vocab_size, hidden)
+        self.lm_head = nn.Linear(hidden, vocab_size, bias=True)
+        # Random init so different drafters have different distributions
+        with torch.no_grad():
+            self.embed.weight.normal_(generator=g, std=0.5)
+            self.lm_head.weight.normal_(generator=g, std=0.5)
+            self.lm_head.bias.normal_(generator=g, std=0.5)
+        self.config = type("c", (), {"vocab_size": vocab_size, "hidden_size": hidden})()
+
+    def forward(self, input_ids, use_cache: bool = False, output_hidden_states: bool = False, **kw):
+        h = self.embed(input_ids)  # (1, seq, H)
+        logits = self.lm_head(h)  # (1, seq, V)
+        out = type("o", (), {})()
+        out.logits = logits
+        out.hidden_states = (h,) if output_hidden_states else None
+        return out
+
+
+class FakeTargetModel:
+    """
+    Minimal target model wrapper exposing:
+      - .verify(context, draft_tokens) -> target_logits (k+1, V)
+      - .model.config.{vocab_size, eos_token_id}
+      - .tokenizer
+    """
+
+    def __init__(self, vocab_size: int, model: FakeDrafterModel, tokenizer):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.model.config.eos_token_id = None  # disable EOS for tests
+
+    @torch.no_grad()
+    def verify(self, context, draft_tokens):
+        # Build the full input: context + draft_tokens, run the model,
+        # return logits at positions [ctx_len-1 .. ctx_len+k-1] (k+1 rows).
+        if draft_tokens:
+            draft_tensor = torch.tensor(
+                draft_tokens, dtype=torch.long, device=context.device
+            ).unsqueeze(0)
+            full = torch.cat([context, draft_tensor], dim=1)
+        else:
+            full = context
+        out = self.model(full)
+        ctx_len = context.shape[1]
+        k = len(draft_tokens)
+        return out.logits[0, ctx_len - 1 : ctx_len + k, :]  # (k+1, V)
+
+
+class FakeDrafterWrapper:
+    """
+    Adapter that makes FakeDrafterModel match the DraftModel interface
+    used by SpeculativeDecoder (``.draft``, ``.model``, ``.tokenizer``).
+    """
+
+    def __init__(self, model: FakeDrafterModel, tokenizer):
+        self.model = model
+        self.tokenizer = tokenizer
+
+    @staticmethod
+    def _sample_next_token(logits: torch.Tensor, temperature: float, greedy: bool) -> torch.Tensor:
+        """Sample (or argmax) the next token from logits of shape (1, V)."""
+        if greedy:
+            return logits.argmax(dim=-1)  # (1,)
+        probs = F.softmax(logits.float() / max(temperature, 1e-6), dim=-1)
+        return torch.multinomial(probs, 1).squeeze(-1)  # (1,)
+
+    def draft(self, context, k, distill: bool = False, temperature: float = 1.0):
+        tokens: list[int] = []
+        step_logits: list[torch.Tensor] = []
+        all_logits: list[torch.Tensor] = []
+        cur = context.clone()
+        greedy = temperature <= 1e-6
+        for i in range(k):
+            is_last = i == k - 1
+            if distill and not is_last:
+                with torch.no_grad():
+                    out = self.model(cur, use_cache=True)
+            else:
+                out = self.model(cur, use_cache=not distill)
+                all_logits.append(out.logits[0, -1, :].detach())
+            logits = out.logits[:, -1, :]  # (1, V)
+            step_logits.append(logits)
+            next_tok = self._sample_next_token(logits, temperature, greedy)
+            tokens.append(next_tok.item())
+            cur = torch.cat([cur, next_tok.unsqueeze(0)], dim=1)
+        if distill:
+            stacked = torch.cat(step_logits, dim=0)
+        else:
+            stacked = torch.stack(all_logits, dim=0)
+        return tokens, stacked
+
+    def forward_logits(self, input_ids):
+        return self.model(input_ids).logits.squeeze(0)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def same_vocab_tokenizer():
+    # 8-token vocab — small enough that multinomial sampling is fast.
+    return FakeTokenizer({f"tok_{i}": i for i in range(8)})
+
+
+@pytest.fixture
+def different_vocab_tokenizer():
+    # Same vocab strings as same_vocab_tokenizer but different ids —
+    # exercises the cross-vocab translation path.
+    return FakeTokenizer({f"tok_{i}": 7 - i for i in range(8)})
+
+
+# ---------------------------------------------------------------------------
+# The flagship correctness test: acceptance preserves p
+# ---------------------------------------------------------------------------
+
+
+def _build_decoder(vocab_size=8, k=3, temperature=1.0, seed=0):
+    """Build a SpeculativeDecoder with fake models and a same-vocab translator."""
+    from core.cache.ngram import NgramCache
+    from core.decoder.speculative import SpeculativeDecoder
+    from core.translation.vocabulary import CrossVocabTranslator
+
+    tok = FakeTokenizer({f"tok_{i}": i for i in range(vocab_size)})
+    drafter_model = FakeDrafterModel(vocab_size, seed=seed)
+    target_model = FakeDrafterModel(vocab_size, seed=seed + 100)
+    drafter = FakeDrafterWrapper(drafter_model, tok)
+    target = FakeTargetModel(vocab_size, target_model, tok)
+
+    translator = CrossVocabTranslator.from_tokenizers(
+        tok, tok, device="cpu",
+        drafter_vocab_size=vocab_size, target_vocab_size=vocab_size,
+
+[665 more lines in file. Use offset=251 to continue.]

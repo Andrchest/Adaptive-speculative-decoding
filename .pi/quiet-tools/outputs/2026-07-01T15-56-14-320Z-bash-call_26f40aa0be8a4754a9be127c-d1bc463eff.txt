@@ -1,0 +1,378 @@
+diff --git a/src/core/decoder/speculative.py b/src/core/decoder/speculative.py
+index 626c1d0..c14fc8c 100644
+--- a/src/core/decoder/speculative.py
++++ b/src/core/decoder/speculative.py
+@@ -163,6 +163,11 @@ class SpeculativeDecoder:
+         consec_zero = 0
+         ctx_list: list[int] = input_ids[0].tolist()
+ 
++        # CRITICAL: Maintain a separate drafter context in drafter vocab.
++        # The output buffer contains accepted tokens in target vocab,
++        # but the drafter needs drafter vocab tokens for embedding.
++        drafter_context_ids: list[int] = input_ids[0].tolist()  # drafter vocab
++
+         for step_idx in range(max_new_tokens):
+             new_tokens = pos - prompt_len
+             if new_tokens >= max_new_tokens:
+@@ -170,11 +175,16 @@ class SpeculativeDecoder:
+ 
+             generated = output[:, :pos]
+ 
++            # Build drafter context tensor from drafter vocab token IDs
++            drafter_ctx = torch.tensor(
++                [drafter_context_ids], dtype=input_ids.dtype, device=input_ids.device
++            )
++
+             k = self._choose_draft_length(generated, adaptive_length_fn)
+ 
+             result = self._decode_step(
+                 generated, k, ctx_list,
+-                drafter_ctx=generated,  # full context — KV cache handles efficiency
++                drafter_ctx=drafter_ctx,  # always in drafter vocab
+                 distiller=distiller,
+                 rng=rng,
+             )
+@@ -188,6 +198,18 @@ class SpeculativeDecoder:
+                     output[0, pos + i] = tok
+                 pos += len(emitted)
+                 ctx_list.extend(emitted)
++
++                # CRITICAL: Translate accepted tokens (target vocab) back to
++                # drafter vocab for the drafter's context.
++                if not self._same_vocab:
++                    drafter_emitted = self.translator.translate_target_to_drafter(emitted)
++                else:
++                    drafter_emitted = emitted
++                drafter_context_ids.extend(drafter_emitted)
++
++                # Also update ctx_list with drafter vocab for cache consistency
++                ctx_list = drafter_context_ids[:]
++
+                 consec_zero = 0
+             else:
+                 consec_zero += 1
+@@ -273,6 +295,10 @@ class SpeculativeDecoder:
+ 
+         # Update drafter KV state for this step
+         self._drafter_kv = new_drafter_kv
++        # FIX: KV cache has context.shape[1] + k entries after drafting,
++        # but on the next step the context grows by len(accepted) tokens.
++        # The drafter only needs to process the NEW tokens beyond past_len,
++        # so we store the actual KV cache length here.
+         self._drafter_kv_len = context.shape[1] + k
+         self._cached_drafter_logits = None  # Consumed
+ 
+@@ -325,39 +351,58 @@ class SpeculativeDecoder:
+         #    Then, if there's a bonus token, forward it through the drafter
+         #    to extend the KV cache AND extract hidden states for the
+         #    adaptive controller (eliminates a redundant forward pass).
++        #
++        #    CRITICAL: drafter_ctx_len is the length of the drafter context
++        #    (in drafter vocab), not the output buffer length.
++        drafter_ctx_len = drafter_ctx.shape[1] if drafter_ctx is not None else context.shape[1]
+         if self._drafter_kv is not None and not distiller:
+-            drafter_keep = context.shape[1] + accepted_count
++            drafter_keep = drafter_ctx_len + accepted_count
+             self._drafter_kv = _truncate_pkv(self._drafter_kv, drafter_keep)
+             self._drafter_kv_len = drafter_keep
+ 
+             if bonus is not None:
+-                bonus_tensor = torch.tensor(
+-                    [[bonus]], dtype=context.dtype, device=context.device
+-                )
+-                with torch.no_grad():
+-                    from core.models.target_model import _to_cache
+-                    need_hidden = hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None
+-                    try:
+-                        bonus_out = self.drafter.model(
+-                            bonus_tensor,
+-                            past_key_values=_to_cache(self._drafter_kv),
+-                            output_hidden_states=need_hidden,
+-                            use_cache=True,
+-                        )
+-                    except RuntimeError as e:
+-                        if "same number of dimensions" not in str(e):
+-                            raise
+-                        logger.warning(
+-                            "KV dim mismatch in bonus forward (%s) — full forward", e
+-                        )
+-                        bonus_out = self.drafter.model(
+-                            bonus_tensor,
+-                            output_hidden_states=True,
+-                            use_cache=True,
+-                        )
+-                self._drafter_kv = bonus_out.past_key_values
+-                self._drafter_kv_len += 1
+-                self._cached_drafter_logits = bonus_out.logits[:, -1, :]
++                # Translate bonus token to drafter vocab for the drafter.
++                # The bonus token is sampled from target logits (target vocab),
++                # but the drafter expects drafter vocab ids.
++                drafter_vocab_size = self.drafter.model.config.vocab_size
++                if not self._same_vocab:
++                    bonus_drafter = self.translator.translate_target_to_drafter([bonus])[0]
++                else:
++                    bonus_drafter = bonus
++
++                if bonus_drafter < drafter_vocab_size:
++                    bonus_tensor = torch.tensor(
++                        [[bonus_drafter]], dtype=context.dtype, device=context.device
++                    )
++                    with torch.no_grad():
++                        from core.models.target_model import _to_cache
++                        need_hidden = hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None
++                        try:
++                            bonus_out = self.drafter.model(
++                                bonus_tensor,
++                                past_key_values=_to_cache(self._drafter_kv),
++                                output_hidden_states=need_hidden,
++                                use_cache=True,
++                            )
++                        except RuntimeError as e:
++                            if "same number of dimensions" not in str(e):
++                                raise
++                            logger.warning(
++                                "KV dim mismatch in bonus forward (%s) — full forward", e
++                            )
++                            bonus_out = self.drafter.model(
++                                bonus_tensor,
++                                output_hidden_states=True,
++                                use_cache=True,
++                            )
++                    self._drafter_kv = bonus_out.past_key_values
++                    self._drafter_kv_len += 1
++                    self._cached_drafter_logits = bonus_out.logits[:, -1, :]
++                else:
++                    logger.debug(
++                        "Skipping drafter bonus forward: token %d >= drafter vocab %d (cross-vocab)",
++                        bonus_drafter, drafter_vocab_size,
++                    )
+ 
+                 # Share hidden state with adaptive controller if attached
+                 if hasattr(self, '_adaptive_controller_ref'):
+@@ -382,7 +427,12 @@ class SpeculativeDecoder:
+         # 9. Update cache stats + acceptance EMA (lookup removed for speed).
+         self.cache.update_acceptance(ctx_list, accepted=accepted_count > 0)
+         if accepted:
+-            self.cache.insert(ctx_list, accepted, logits=None)
++            # Translate accepted tokens to drafter vocab for cache consistency
++            if not self._same_vocab:
++                accepted_drafter = self.translator.translate_target_to_drafter(accepted)
++            else:
++                accepted_drafter = accepted
++            self.cache.insert(ctx_list, accepted_drafter, logits=None)
+ 
+         # 10. Optional online distillation.
+         if distiller is not None and draft_logits is not None:
+diff --git a/src/core/distillation/online.py b/src/core/distillation/online.py
+index 0d58fe7..e232d09 100644
+--- a/src/core/distillation/online.py
++++ b/src/core/distillation/online.py
+@@ -117,7 +117,6 @@ class OnlineDistiller:
+         # This prevents a single distillation error from crashing the entire experiment.
+         try:
+             loss = self._compute_loss(draft_logits, target_logits, draft_tokens, accepted_mask)
+-            logger.debug(f'Loss {loss}')
+             if loss is None:
+                 return None
+ 
+diff --git a/src/core/extensions/replay/buffer.py b/src/core/extensions/replay/buffer.py
+index e910056..988034c 100644
+--- a/src/core/extensions/replay/buffer.py
++++ b/src/core/extensions/replay/buffer.py
+@@ -199,12 +199,15 @@ class ReplayDistiller:
+     ) -> float | None:
+         """Process one live decoding step with full trace info (legacy interface)."""
+         acc_rate = sum(accepted_mask) / max(len(accepted_mask), 1)
++        # CRITICAL: Copy all lists to prevent mutation after storage.
++        # The caller (speculative decoder) mutates ctx_list after this returns,
++        # which would corrupt prompt_ids if we stored a reference.
+         trace = Trace(
+-            prompt_ids=prompt_ids,
++            prompt_ids=list(prompt_ids),
+             prompt_len=len(prompt_ids),
+-            draft_tokens=draft_tokens,
+-            accepted_tokens=accepted_tokens,
+-            rejected_tokens=rejected_tokens,
++            draft_tokens=list(draft_tokens),
++            accepted_tokens=list(accepted_tokens),
++            rejected_tokens=list(rejected_tokens),
+             acceptance_rate=acc_rate,
+         )
+         self.buffer.add(trace)
+diff --git a/src/core/models/draft_model.py b/src/core/models/draft_model.py
+index 8cecfb9..3039ad1 100644
+--- a/src/core/models/draft_model.py
++++ b/src/core/models/draft_model.py
+@@ -120,7 +120,14 @@ class DraftModel:
+             new_input = next_token.unsqueeze(0).unsqueeze(0)
+             remaining = k - 1
+         elif past_key_values is not None and past_len > 0:
+-            new_input = context[:, past_len:]   # only the unseen tail
++            # FIX: past_len may exceed context.shape[1] when the context
++            # grows by fewer tokens than were drafted. Clamp to avoid
++            # empty/negative slicing.
++            actual_past = min(past_len, context.shape[1])
++            new_input = context[:, actual_past:]   # only the unseen tail
++            if new_input.shape[1] == 0:
++                # Nothing new to process — just use last token from context
++                new_input = context[:, -1:]
+             out = self.model(new_input, past_key_values=past_key_values, use_cache=True)
+             out_pkv = out.past_key_values
+             logits = out.logits[:, -1, :].squeeze(0)
+@@ -130,7 +137,11 @@ class DraftModel:
+             new_input = next_token.unsqueeze(0).unsqueeze(0)
+             remaining = k - 1
+         else:
+-            out = self.model(context, use_cache=True)
++            # FIX: Pass DynamicCache() explicitly — without it, some models
++            # return a plain tuple as past_key_values which crashes later.
++            from transformers.cache_utils import DynamicCache
++            init_pkv = DynamicCache()
++            out = self.model(context, past_key_values=init_pkv, use_cache=True)
+             out_pkv = out.past_key_values
+             logits = out.logits[:, -1, :].squeeze(0)
+             next_token = self._sample_next_token(logits, temperature, greedy)
+diff --git a/src/core/translation/rules.py b/src/core/translation/rules.py
+index 707e835..343132b 100644
+--- a/src/core/translation/rules.py
++++ b/src/core/translation/rules.py
+@@ -119,6 +119,18 @@ class Rule1Mapping:
+             self._mapping[d_idx] = t_idx
+ 
+         self._valid_mask = self._mapping >= 0  # (drafter_vocab,)
++
++        # Build reverse mapping: target_idx → drafter_idx (-1 if no match)
++        # When multiple drafter tokens map to the same target token,
++        # keep the one with the highest drafter index (last wins).
++        self._reverse_mapping: torch.Tensor = torch.full(
++            (self.target_size,), -1, dtype=torch.long, device=device
++        )
++        for d_idx in range(self.drafter_size):
++            t_idx = self._mapping[d_idx].item()
++            if t_idx >= 0:
++                self._reverse_mapping[t_idx] = d_idx
++
+         self.device = device
+         n_mapped = self._valid_mask.sum().item()
+         logger.info(
+diff --git a/src/core/translation/vocabulary.py b/src/core/translation/vocabulary.py
+index 1ec5e3f..d33446a 100644
+--- a/src/core/translation/vocabulary.py
++++ b/src/core/translation/vocabulary.py
+@@ -63,12 +63,16 @@ class CrossVocabTranslator:
+         learned_model=None,
+         learned_weight: float = 0.0,
+         lattice=None,
++        drafter_tokenizer=None,
++        target_tokenizer=None,
+     ) -> None:
+         self.rule1 = rule1
+         self.rule2 = rule2
+         self.learned_model = learned_model
+         self.learned_weight = learned_weight
+         self.lattice = lattice
++        self.drafter_tokenizer = drafter_tokenizer
++        self.target_tokenizer = target_tokenizer
+         logger.info(
+             "CrossVocabTranslator initialized: rule1=%s rule2=%s learned=%s weight=%.2f",
+             type(rule1).__name__,
+@@ -167,4 +171,66 @@ class CrossVocabTranslator:
+             r1.target_size,
+             device,
+         )
+-        return cls(r1, r2, learned_model=learned_model, learned_weight=learned_weight, lattice=lattice)
++        return cls(
++            r1, r2,
++            learned_model=learned_model,
++            learned_weight=learned_weight,
++            lattice=lattice,
++            drafter_tokenizer=drafter_tokenizer,
++            target_tokenizer=target_tokenizer,
++        )
++
++    def translate_target_to_drafter(
++        self,
++        target_token_ids: list[int],
++    ) -> list[int]:
++        """
++        Translate target-vocab token IDs back to drafter-vocab token IDs.
++
++        Uses the reverse Rule1 mapping (exact string match). For tokens
++        without an exact reverse match, falls back to decoding with the
++        target tokenizer and re-encoding with the drafter tokenizer.
++
++        Parameters
++        ----------
++        target_token_ids : list[int]
++            Token IDs in target vocabulary.
++
++        Returns
++        -------
++        list[int]
++            Token IDs in drafter vocabulary.
++        """
++        if not target_token_ids:
++            return []
++
++        device = self.rule1._reverse_mapping.device
++        tok_tensor = torch.tensor(target_token_ids, dtype=torch.long, device=device)
++        safe_indices = tok_tensor.clamp(0, self.rule1._reverse_mapping.shape[0] - 1)
++        mapped = self.rule1._reverse_mapping[safe_indices].clone()
++
++        # Fallback: for tokens without reverse mapping, use string round-trip
++        needs_fallback = mapped < 0
++        if needs_fallback.any() and self.target_tokenizer is not None and self.drafter_tokenizer is not None:
++            fallback_indices = torch.where(needs_fallback)[0]
++            for idx in fallback_indices:
++                t_id = target_token_ids[idx.item()]
++                try:
++                    text = self.target_tokenizer.decode([t_id])
++                    enc = self.drafter_tokenizer.encode(text, add_special_tokens=False)
++                    if enc:
++                        mapped[idx] = enc[0]
++                    else:
++                        # Last resort: use drafter EOS or 0
++                        eos_id = getattr(self.drafter_tokenizer, 'eos_token_id', None)
++                        mapped[idx] = eos_id if eos_id is not None else 0
++                except Exception:
++                    eos_id = getattr(self.drafter_tokenizer, 'eos_token_id', None)
++                    mapped[idx] = eos_id if eos_id is not None else 0
++        elif needs_fallback.any():
++            # No tokenizers available — use drafter EOS as fallback
++            eos_id = getattr(self.drafter_tokenizer, 'eos_token_id', None) if self.drafter_tokenizer else None
++            fallback_id = eos_id if eos_id is not None else 0
++            mapped[needs_fallback] = fallback_id
++
++        return mapped.tolist()
+diff --git a/src/experiments/runner.py b/src/experiments/runner.py
+index 21bcf68..bb28966 100644
+--- a/src/experiments/runner.py
++++ b/src/experiments/runner.py
+@@ -358,10 +358,14 @@ class ExperimentRunner:
+         -------
+         list[tuple[torch.Tensor, int]]
+             List of (input_ids_tensor, prompt_len) tuples.
++
++        NOTE: We tokenize with the drafter's tokenizer, not the target's.
++        The drafter generates draft tokens, so input_ids must be in drafter
++        vocab. Cross-vocab translation handles drafter→target mapping.
+         """
+         from transformers import AutoTokenizer
+ 
+-        tokenizer = AutoTokenizer.from_pretrained(cfg.target_model_path)
++        tokenizer = AutoTokenizer.from_pretrained(cfg.drafter_model_path)
+         return self._load_dataset_with_tokenizer(cfg.dataset, cfg.max_samples, tokenizer)
+ 
+     @staticmethod
+@@ -402,6 +406,11 @@ class ExperimentRunner:
+         texts = texts[:max_samples]
+         logger.info("Tokenizing %d text sample(s) with batched encoding", len(texts))
+ 
++        # Some tokenizers (e.g. pythia) lack a pad_token. Set it to eos_token
++        # so batched encoding with padding=True works.
++        if tokenizer.pad_token is None:
++            tokenizer.pad_token = tokenizer.eos_token
++
+         # Batch encoding: one call per chunk instead of per-sample loop.
+         # This avoids Python-C++ boundary overhead (~50-200us per sample)
+         # and enables fused kernel execution inside the tokenizer.

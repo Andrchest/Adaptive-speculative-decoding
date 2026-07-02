@@ -1,0 +1,243 @@
+            self._build_dense_matrix()
+
+    # ------------------------------------------------------------------
+
+    def _build_dense_matrix(self) -> None:
+        """Build a dense (target_vocab, drafter_vocab) matrix for fast matmul.
+
+        Only called for small vocabularies where dense storage is affordable
+        (≤ 5 M elements ≈ 200 MiB fp32).
+        """
+        rows, cols, vals = [], [], []
+        for t_idx, contrib in self._transfer.items():
+            for d_idx, weight in contrib:
+                rows.append(t_idx)
+                cols.append(d_idx)
+                vals.append(weight)
+
+        if not rows:
+            # No transfer entries — create an all-zero matrix of the right shape.
+            self._dense_T = torch.zeros(
+                self.target_size, self.drafter_size, dtype=torch.float32,
+            )
+            logger.debug("Rule2: dense matrix built (empty, %dx%d)",
+                         self.target_size, self.drafter_size)
+            return
+
+        dense = torch.zeros(
+            self.target_size, self.drafter_size, dtype=torch.float32,
+        )
+        dense[rows, cols] = torch.tensor(vals, dtype=torch.float32)
+        self._dense_T = dense
+        nnz = len(rows)
+        total = self.target_size * self.drafter_size
+        logger.info(
+            "Rule2: dense matrix built (%d / %d entries = %.2f%% non-zero, %dx%d)",
+            nnz, total, 100.0 * nnz / total if total else 0,
+            self.target_size, self.drafter_size,
+        )
+
+    # ------------------------------------------------------------------
+
+    def map_logits(
+        self,
+        drafter_logits: torch.Tensor,
+        rule1_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        drafter_logits : (batch, drafter_vocab) or (drafter_vocab,)
+        rule1_mask     : optional bool tensor (target_vocab,) marking tokens
+                         already handled by Rule 1 (to avoid double-counting).
+
+        Returns
+        -------
+        rule2_target_probs : (batch, target_vocab) or (target_vocab,)
+        """
+        squeeze = drafter_logits.dim() == 1
+        if squeeze:
+            drafter_logits = drafter_logits.unsqueeze(0)
+
+        drafter_probs = F.softmax(drafter_logits.float(), dim=-1)  # (B, Vd)
+        device = drafter_logits.device
+
+        # Choose dense or sparse matmul.
+        # Dense path: no sparse kernel launch overhead — 2-3× faster for
+        # small-to-medium vocabularies (e.g. OPT-125m: 50256² < 5M elements).
+        # Sparse fallback: only for very large vocab pairs where dense
+        # matrix would exceed ~200 MiB.
+        if self._dense_T is not None:
+            T = self._dense_T.to(device, non_blocking=True)
+            target_probs = drafter_probs @ T.t()  # (B, Vt)
+        else:
+            sparse_T = self._sparse_T.to(device, non_blocking=True)
+            target_probs = torch.sparse.mm(drafter_probs, sparse_T.t())  # (B, Vt)
+
+        if rule1_mask is not None:
+            # Zero out positions already handled by Rule 1.
+            target_probs[rule1_mask.unsqueeze(0).expand_as(target_probs)] = 0.0
+
+        if squeeze:
+            return target_probs.squeeze(0)
+        return target_probs
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_sparse_matrix(
+        transfer: dict[int, list[tuple[int, float]]],
+        target_size: int,
+        drafter_size: int,
+    ) -> torch.Tensor:
+        """Build a sparse COO matrix (target_vocab, drafter_vocab) from _transfer."""
+        rows, cols, vals = [], [], []
+        for t_idx, contrib in transfer.items():
+            for d_idx, weight in contrib:
+                rows.append(t_idx)
+                cols.append(d_idx)
+                vals.append(weight)
+
+        if len(rows) == 0:
+            indices = torch.empty((2, 0), dtype=torch.long)
+            values = torch.empty(0, dtype=torch.float32)
+        else:
+            indices = torch.tensor([rows, cols], dtype=torch.long)  # (2, nnz)
+            values = torch.tensor(vals, dtype=torch.float32)
+
+        return torch.sparse_coo_tensor(
+            indices, values, (target_size, drafter_size)
+        )
+
+    @staticmethod
+    def _build_string_list(tokenizer) -> list[str]:
+        vocab = tokenizer.get_vocab()  # str → int
+        strings = [""] * len(vocab)
+        for tok_str, idx in vocab.items():
+            # Strip SentencePiece / BPE artefacts for overlap comparison
+            clean = tok_str.replace("▁", " ").replace("Ġ", " ").strip()
+            strings[idx] = clean
+        return strings
+
+    def _build_transfer_matrix(self):
+
+        drafter_strings = self._drafter_strings
+        target_strings = self._target_strings
+
+        #
+        # 1. Build Aho-Corasick automaton
+        #
+        automaton = ahocorasick.Automaton()
+
+        for d_idx, d_str in enumerate(drafter_strings):
+            if d_str:
+                automaton.add_word(
+                    d_str,
+                    (d_idx, len(d_str)),
+                )
+
+        automaton.make_automaton()
+
+        #
+        # 2. Build reverse containment lookup
+        #
+        contained_by = defaultdict(list)
+
+        for d_idx, d_str in enumerate(drafter_strings):
+            if not d_str:
+                continue
+
+            contained_by[d_str].append((d_idx, len(d_str)))
+
+        #
+        # 3. Prefix index
+        #
+        prefix_index = defaultdict(list)
+
+        for d_idx, d_str in enumerate(drafter_strings):
+            if not d_str:
+                continue
+
+            max_prefix = min(len(d_str), 16)
+
+            for k in range(1, max_prefix + 1):
+                prefix_index[d_str[:k]].append((d_idx, k))
+
+        #
+        # 4. Prepare work
+        #
+        work_items = []
+
+        for t_idx, t_str in enumerate(target_strings):
+            if not t_str:
+                continue
+
+            #
+            # d_str in t_str
+            #
+            contains_matches = []
+
+            for _, (d_idx, d_len) in automaton.iter(t_str):
+                contains_matches.append((d_idx, d_len))
+
+            #
+            # t_str in d_str
+            #
+            contained_by_matches = contained_by.get(t_str, [])
+
+            #
+            # longest common prefix
+            #
+            prefix_matches = []
+
+            max_prefix = min(len(t_str), 16)
+
+            for k in range(max_prefix, 0, -1):
+                pref = t_str[:k]
+
+                if pref in prefix_index:
+                    prefix_matches.extend(prefix_index[pref])
+                    break
+
+            work_items.append(
+                (
+                    t_idx,
+                    t_str,
+                    contains_matches,
+                    contained_by_matches,
+                    prefix_matches,
+                )
+            )
+
+        #
+        # 5. Parallel reduction
+        #
+        with ProcessPoolExecutor() as pool:
+            for result in pool.map(
+                _process_target_worker,
+                work_items,
+                chunksize=256,
+            ):
+                if result is None:
+                    continue
+
+                t_idx, contribs = result
+                self._transfer[t_idx] = contribs
+
+    @staticmethod
+    def _overlap(a: str, b: str) -> int:
+        """Length of common substring (simple heuristic)."""
+        if a == b:
+            return len(a)
+        if a in b:
+            return len(a)
+        if b in a:
+            return len(b)
+        # Longest common prefix
+        n = min(len(a), len(b))
+        for i in range(n, 0, -1):
+            if a[:i] == b[:i]:
+                return i
+        return 0

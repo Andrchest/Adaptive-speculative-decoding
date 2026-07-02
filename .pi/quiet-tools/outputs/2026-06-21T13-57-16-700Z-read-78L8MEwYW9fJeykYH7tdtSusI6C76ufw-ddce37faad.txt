@@ -1,0 +1,252 @@
+
+                def __init__(self, base: DraftModel, universal: UniversalDrafter) -> None:
+                    self.base = base
+                    self.universal = universal
+                    self.tokenizer = base.tokenizer
+                    self.model = base.model
+
+                def draft(
+                    self,
+                    context: torch.Tensor,
+                    k: int,
+                    distill: bool = False,
+                    temperature: float = 1.0,
+                ) -> tuple[list[int], torch.Tensor]:
+                    """
+                    Forward to either the base drafter (when distillation
+                    needs gradients) or the universal drafter.
+
+                    The base path forwards the temperature so the
+                    drafter samples from the same ``q`` used by the
+                    decoder's acceptance test (C1 fix). The universal
+                    path is greedy (UniversalDrafter.draft uses argmax
+                    under @torch.no_grad); it therefore does NOT support
+                    stochastic decoding and is only correct under
+                    greedy target decoding. Distillation with the
+                    universal adapter is also unsupported (the universal
+                    drafter cannot produce grad-enabled logits), so the
+                    adapter falls back to the base drafter in that case.
+                    """
+                    if distill:
+                        return self.base.draft(context, k, distill=True, temperature=temperature)
+                    with torch.no_grad():
+                        return self.universal.draft(context, k, target_name=cfg.target_model_path)
+
+                def forward_logits(self, input_ids: torch.Tensor) -> torch.Tensor:
+                    return self.universal.base_model(input_ids).logits.squeeze(0)
+
+            # Find or replace the drafter in specs with the adapter
+            for spec in specs if specs else []:
+                if spec.name == cfg.drafter_model_path:
+                    spec.model = _UniversalDrafterAdapter(drafter, universal)
+
+            drafter = _UniversalDrafterAdapter(drafter, universal)
+            logger.info("Universal drafter ready")
+
+        # Adaptive drafting
+        adaptive_fn = None
+        if cfg.use_speedup_adaptive:
+            logger.info("Building adaptive draft controller")
+            from core.extensions.adaptive.speedup_predictor import (
+                AdaptiveDraftController,
+                SpeedupPredictor,
+            )
+
+            pred = SpeedupPredictor(
+                d_hidden=drafter.model.config.hidden_size,
+                k_max=cfg.k_max,
+            ).to(self.device)
+            controller = AdaptiveDraftController(pred, drafter, cfg.k_min, cfg.k_max)
+            adaptive_fn = controller
+            logger.info("Adaptive draft controller ready: k_min=%d k_max=%d", cfg.k_min, cfg.k_max)
+
+        # Decoder
+        logger.info(
+            "Building speculative decoder: draft_length=%d temperature=%s", cfg.draft_length, 1.0
+        )
+        decoder = SpeculativeDecoder(
+            drafter=drafter,
+            target=target,
+            translator=translator,
+            cache=cache,
+            draft_length=cfg.draft_length,
+        )
+        logger.info("Speculative decoder ready")
+
+        # --- Load dataset ---
+        logger.info("Loading dataset: %s max_samples=%d", cfg.dataset, cfg.max_samples)
+        prompts = self._load_dataset(cfg.dataset, cfg.max_samples, target.tokenizer)
+        logger.info("Loaded %d prompt(s)", len(prompts))
+
+        # --- Run ---
+        logger.info("Starting benchmark collection")
+        collector = BenchmarkCollector(name=cfg.name)
+        if _HAS_MLFLOW and cfg.mlflow_experiment:
+            logger.info("Initializing MLflow experiment=%s run=%s", cfg.mlflow_experiment, cfg.name)
+            mlflow.set_experiment(cfg.mlflow_experiment)
+            mlflow.start_run(run_name=cfg.name)
+            mlflow.log_params(asdict(cfg))
+
+        # --- Routing stats ---
+        n_routing_stats: dict = {"selected_drafter": 0, "drafter_counts": {}}
+
+        for i, (input_ids, prompt_len) in enumerate(prompts):
+            logger.info("Decoding prompt %d/%d prompt_len=%d", i + 1, len(prompts), prompt_len)
+            input_ids = input_ids.to(self.device)
+
+            # Select best drafter via router (if enabled)
+            if router is not None:
+                selected_drafter, selected_idx = router.select_drafter(input_ids)
+                decoder.drafter = selected_drafter  # monkey-patch
+                router_key = specs[selected_idx].name if specs else str(selected_idx)
+                n_routing_stats["drafter_counts"][router_key] = (
+                    n_routing_stats["drafter_counts"].get(router_key, 0) + 1
+                )
+                n_routing_stats["selected_drafter"] = selected_idx
+                logger.info(
+                    "Router selected drafter %s (%d/%d) for prompt %d",
+                    router_key,
+                    selected_idx,
+                    len(specs) if specs else 1,
+                    i,
+                )
+
+            with collector.record_sequence(prompt_len=prompt_len) as seq_rec:
+                out = decoder.generate(
+                    input_ids,
+                    max_new_tokens=cfg.max_new_tokens,
+                    adaptive_length_fn=adaptive_fn,
+                    distiller=distiller,
+                    rng=torch_rng,
+                )
+                # Reconstruct step records from decoder stats
+                for sr in decoder._step_results[-cfg.max_new_tokens :]:
+                    seq_rec.add_step(
+                        draft_len=sr.draft_length,
+                        accepted=sr.accepted_count,
+                        cache_hit=sr.cache_hit,
+                    )
+            # Reset step results for next sequence
+            decoder._step_results.clear()
+            logger.info("Finished prompt %d/%d output_len=%d", i + 1, len(prompts), out.shape[1])
+
+            if i % cfg.log_every == 0:
+                partial = collector.summary()
+                logger.info(
+                    "Progress [%d/%d] acc=%.3f tps=%.1f cache_hit=%.3f",
+                    i + 1,
+                    len(prompts),
+                    partial.get("acceptance_rate", 0),
+                    partial.get("tokens_per_sec", 0),
+                    partial.get("cache_hit_rate", 0),
+                )
+                print(
+                    f"  [{i}/{len(prompts)}] acc={partial.get('acceptance_rate', 0):.3f}  "
+                    f"tps={partial.get('tokens_per_sec', 0):.1f}"
+                )
+                if _HAS_MLFLOW and cfg.mlflow_experiment:
+                    metrics = {k: v for k, v in partial.items() if isinstance(v, (int, float))}
+                    tags = {k: v for k, v in partial.items() if not isinstance(v, (int, float))}
+                    mlflow.log_metrics(metrics, step=i)
+                    for k, v in tags.items():
+                        mlflow.set_tag(k, str(v))
+
+        summary = collector.summary()
+        # Add routing stats to summary
+        if router is not None:
+            summary["router"] = n_routing_stats
+            logger.info("Router stats: %s", n_routing_stats)
+        # Add distillation / contrastive stats
+        if distiller is not None:
+            distil_stats = distiller.training_stats()
+            summary.update(distil_stats)
+            logger.info("Distillation stats: %s", distil_stats)
+        logger.info("Benchmark summary for %s: %s", cfg.name, summary)
+        if _HAS_MLFLOW and cfg.mlflow_experiment:
+            logger.info("Logging final metrics to MLflow")
+            metrics = {k: v for k, v in summary.items() if isinstance(v, (int, float))}
+            tags = {k: v for k, v in summary.items() if not isinstance(v, (int, float))}
+            mlflow.log_metrics(metrics)
+            for k, v in tags.items():
+                mlflow.set_tag(k, str(v))
+            mlflow.end_run()
+
+        # Free GPU memory before returning
+        logger.info("Freeing GPU memory before return")
+        # Clean up UniversalDrafter hooks to prevent memory leaks
+        if "universal" in locals() and universal is not None:
+            universal.remove_hooks()
+        del drafter, target, translator, decoder, cache, distiller, router, collector
+        import gc
+
+        # Guard: torch.cuda.empty_cache() raises on CPU-only hosts.
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        logger.info("GPU memory freed")
+        return {"config": asdict(cfg), "metrics": summary}
+
+    # ------------------------------------------------------------------
+    # Dataset loader
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _load_dataset(name: str, max_samples: int, tokenizer) -> list:
+        """Returns list of (input_ids_tensor, prompt_len) tuples."""
+
+        logger.info("Loading dataset %s with max_samples=%d", name, max_samples)
+        from datasets import load_dataset
+
+        if name == "gsm8k":
+            logger.info("Loading openai/gsm8k main test split")
+            ds = load_dataset("openai/gsm8k", "main", split="test")
+            texts = [ex["question"] for ex in ds]
+        elif name == "mbpp":
+            logger.info("Loading mbpp test split")
+            ds = load_dataset("mbpp", split="test")
+            texts = [ex["text"] for ex in ds]
+        elif name == "humaneval":
+            logger.info("Loading openai_humaneval test split")
+            ds = load_dataset("openai_humaneval", split="test")
+            texts = [ex["prompt"] for ex in ds]
+        elif name == "alpaca":
+            logger.info("Loading tatsu-lab/alpaca train split")
+            ds = load_dataset("tatsu-lab/alpaca", split="train")
+            texts = [ex["instruction"] for ex in ds]
+        elif name == "xsum":
+            logger.info("Loading EdinburghNLP/xsum test split")
+            ds = load_dataset("EdinburghNLP/xsum", split="test")
+            texts = [ex["document"][:512] for ex in ds]
+        else:
+            raise ValueError(f"Unknown dataset: {name}")
+
+        texts = texts[:max_samples]
+        logger.info("Tokenizing %d text sample(s)", len(texts))
+        result = []
+        for t in texts:
+            ids = tokenizer.encode(t, return_tensors="pt")
+            result.append((ids, ids.shape[1]))
+        logger.info("Tokenization complete")
+        return result
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def _save_result(self, result: dict) -> None:
+        name = result["config"]["name"].replace(" ", "_")
+        path = os.path.join(self.output_dir, f"{name}.json")
+        logger.info("Saving experiment result to %s", path)
+        with open(path, "w") as f:
+            json.dump(result, f, indent=2)
+
+    def _write_csv(self, results: list[dict]) -> None:
+        if not results:
+            return
+        path = os.path.join(self.output_dir, "comparison_table.csv")
+        logger.info("Writing comparison table to %s", path)
+        metric_keys = list(results[0]["metrics"].keys())
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["experiment"] + metric_keys)
+
+[46 more lines in file. Use offset=751 to continue.]

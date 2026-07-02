@@ -77,3 +77,9 @@ wandb/
 
 # Handoff docs
 research/m.krylov/HANDOFF.md
+
+# Pi agent artifacts
+.pi/
+
+# Profiling results
+results_profile/

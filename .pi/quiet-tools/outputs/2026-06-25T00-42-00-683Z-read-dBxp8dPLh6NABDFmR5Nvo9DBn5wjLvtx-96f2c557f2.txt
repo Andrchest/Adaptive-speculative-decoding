@@ -1,0 +1,252 @@
+# Speculative Decoder Optimization Plan
+
+> **Goal:** 5-10× speedup on consumer GPU (3060 Ti), 10-20× on MIG A100.
+> **Baseline:** 30.5 TPS (3060 Ti), 5 TPS (A100 MIG 2g.20gb), smoke test, OPT-125m + OPT-350m.
+> **Created:** 2026-06-24
+
+---
+
+## Principles and Rules
+
+### Correctness First
+
+1. **Token-by-token identity.** Every optimization must produce identical output tokens to the reference implementation when given the same seed. No approximate equivalences.
+2. **Numerical verification required.** After each optimization, run a differential test comparing optimized vs. reference output (tokens, acceptance rates, wall times may differ — tokens must match).
+3. **Speculative sampling theorem preserved.** The relationship between `p` (target distribution) and `q` (drafter distribution) must remain mathematically valid. Any change to temperature handling, softmax, or acceptance probability must be proven correct.
+
+### Incremental Progress
+
+4. **One optimization per PR/commit.** Do not bundle multiple changes. Each must be independently testable and reversible.
+5. **Baseline measured before, verified after.** Record TPS and wall time before each change; the change is accepted only if (a) output is identical and (b) performance is equal or better.
+6. **Smoke test as gate.** `uv run python src/main.py --smoke` must pass after every change.
+
+### Performance Discipline
+
+7. **Minimize GPU↔CPU sync.** Every `.item()`, `.tolist()`, `.cpu()` in the hot path is a full pipeline flush. Batch them or eliminate them.
+8. **Minimize kernel launches.** Each Python→CUDA transition has ~10-50 μs overhead (×3-5 on MIG). Fuse operations where possible.
+9. **Pre-allocate buffers.** No `torch.cat` in the hot loop. Allocate once, write by index.
+10. **Use KV cache everywhere.** Autoregressive generation without KV cache is O(k × seq_len²); with cache it's O(k × seq_len).
+
+### Code Quality
+
+11. **Type hints mandatory** for all public APIs (existing project convention).
+12. **Docstrings updated** when behavior changes.
+13. **No silent fallbacks.** If an optimization path fails, raise an explicit error — do not fall back to the slow path silently.
+14. **Logging at DEBUG level** in hot paths. INFO only for per-sequence summaries.
+
+---
+
+## Current Hot Path Analysis
+
+One decode step (k=5 draft, context ~50 tokens, smoke test):
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  GPU→CPU sync    │  Kernel launches  │  Memory allocs/copy         │
+├─────────────────────────────────────────────────────────────────────┤
+│ context.tolist() │  drafter × k      │  context.clone()            │
+│ (1 sync)         │  (k launches)     │  (1 alloc + copy)           │
+│                   │                  │  torch.cat × k              │
+│                   │                  │  (k alloc + copy)           │
+│ _translate_      │  target.verify    │  draft_tensor (CPU→GPU)     │
+│  draft_tokens    │  (1 launch)       │  torch.cat (context+draft)  │
+│  (k sync)        │                  │  (1 alloc + copy)           │
+│ accept_reject    │  softmax × k      │                              │
+│  (3k sync)       │  (k launches)     │                              │
+│ residual_sample  │  softmax × 1      │                              │
+│  (1 sync)        │  (1 launch)       │                              │
+│ cache .cpu()     │                   │  generated torch.cat        │
+│  (1 sync)        │                  │  (1 alloc + copy)           │
+├─────────────────────────────────────────────────────────────────────┤
+│  TOTAL: ~4k+4 sync │  ~2k+2 launches │  ~k+4 allocs               │
+│  (k=5: ~24 sync)   │  (k=5: ~12)     │  (k=5: ~9)                 │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+For smoke test (1 sample, ~15 steps): **~360 sync, ~180 launches, ~135 allocs.**
+
+On MIG A100, each sync costs 3-5× more due to virtualization overhead.
+
+---
+
+## Optimization P0: KV Cache for Drafter
+
+**Priority:** Critical — highest ROI, lowest risk.
+**Expected speedup:** 3-8× on drafter, 2-4× overall.
+**Files:** `src/core/models/draft_model.py`
+
+### Problem
+
+The drafter generates k tokens autoregressively, but each step runs a **full forward pass** over the entire context:
+
+```python
+# CURRENT: _draft_impl
+running = context.clone()          # copy entire context
+for _ in range(k):
+    out = self.model(running)      # forward on ALL tokens every time
+    next_token = sample(...)
+    running = torch.cat([running, next_token...])  # alloc + copy growing tensor
+```
+
+For k=5 and context=50 tokens: the model processes 50+55+60+65+70 = 300 token-positions instead of 50+51×4 = 254 (with cache). At larger contexts the gap widens quadratically.
+
+### Solution
+
+Use the transformers `past_key_values` mechanism (KV cache) so each step only processes the new token:
+
+```
+Step 0: forward(context) → past_key_values
+Step 1: forward(new_token_1, past_key_values=past_kv) → updated past_kv
+Step 2: forward(new_token_2, past_key_values=past_kv) → updated past_kv
+...
+```
+
+### Implementation Steps
+
+- [ ] **P0.1** Modify `_draft_impl` to pass `use_cache=True` and thread `past_key_values` through the loop
+  - First iteration: `out = self.model(context, use_cache=True)` → extract `out.past_key_values`
+  - Subsequent iterations: `out = self.model(next_token.unsqueeze(0).unsqueeze(0), past_key_values=past_kv, use_cache=True)`
+  - No more `running = torch.cat(...)` — the cache replaces the growing context
+- [ ] **P0.2** Apply the same pattern to `_draft_distill` (the gradient-enabled path)
+  - Note: `use_cache=False` on the final step (already in code) — keep this to avoid gradient corruption
+- [ ] **P0.3** Remove `running = context.clone()` — no longer needed
+- [ ] **P0.4** Add `model.generate()`-style prefill: for the first forward, pass the full context; for subsequent forwards, pass only the new token (shape `(1, 1)`)
+- [ ] **P0.5** Verify: run numerical verifier comparing token output with and without the change
+
+### Verification
+
+```bash
+# Before change: record reference
+uv run python src/main.py --smoke 2>&1 | tee /tmp/before_p0.txt
+
+# After change: compare
+uv run python src/main.py --smoke 2>&1 | tee /tmp/after_p0.txt
+# Tokens must be identical; TPS should be higher
+```
+
+### Risks and Mitigations
+
+| Risk | Mitigation |
+|------|-----------|
+| `past_key_values` behavior differs across model families | Test with OPT (smoke test) first, then GPT-2, then others |
+| Device placement of cache states | Ensure `past_key_values` stay on the same device as the model |
+| `device_map` interaction with KV cache | The smoke test uses `device_map="cuda"` (simple); test before enabling complex device maps |
+
+---
+
+## Optimization P1: Vectorized Accept-Reject
+
+**Priority:** High — eliminates Python-loop GPU sync bottleneck.
+**Expected speedup:** 1.5-2× on verification, 1.3-1.8× overall.
+**Files:** `src/core/decoder/speculative.py`
+
+### Problem
+
+The acceptance test iterates token-by-token in Python, with 3 GPU→CPU syncs per token:
+
+```python
+# CURRENT: _accept_reject
+for i, tok in enumerate(draft_tokens):
+    p = F.softmax(target_logits[i] / temp, dim=-1)  # softmax per token
+    p_tok = p[tok].item()         # sync 1
+    q_tok = translated_probs[i, tok].item()  # sync 2
+    draw = torch.rand(1).item()   # sync 3
+    if draw < accept_prob: ...
+```
+
+At k=5: **15 GPU→CPU syncs** in one method. On MIG, each sync is a full pipeline flush.
+
+### Solution
+
+Vectorize the entire acceptance test into GPU operations, then sync once:
+
+```
+p = softmax(target_logits[:k] / temp, dim=-1)          # (k, V) — one softmax
+p_tok = p[gather by draft_tokens]                       # (k,) — one gather
+q_tok = translated_probs[gather by draft_tokens]        # (k,) — one gather
+accept_prob = clamp(p_tok / q_tok, max=1.0)             # (k,) — elementwise
+draws = torch.rand(k, device=device)                    # (k,) — one rand
+accepted_mask = draws < accept_prob                     # (k,) — elementwise
+rejected_at = first False in accepted_mask              # one .item() sync
+```
+
+### Implementation Steps
+
+- [ ] **P1.1** Rewrite `_accept_reject` to operate on full tensors
+  - Compute `p` for all k positions in one `F.softmax(target_logits[:k] / temp, dim=-1)`
+  - Gather `p_tok` and `q_tok` using `torch.arange(k)` indexing
+  - Compute `accept_prob = torch.clamp(p_tok / q_tok, max=1.0)`
+  - Generate `draws = torch.rand(k, device=device, generator=rng)`
+  - Compute `accepted_mask = draws < accept_prob`
+  - Find rejection point: `rejected_idx = (~accepted_mask).int().argmax().item()`
+  - Handle edge case: if all accepted, `(~accepted_mask).int()` is all zeros, `argmax` returns 0 → use `accepted_mask.all()` check first
+- [ ] **P1.2** Preserve the `rng` parameter for deterministic testing
+- [ ] **P1.3** Preserve NaN/Inf defensive handling (move to batch check: `target_logits.isnan().any(dim=-1)`)
+- [ ] **P1.4** Remove the Python `for` loop entirely
+- [ ] **P1.5** Verify: differential test — same tokens as reference for 100+ random seeds
+
+### Verification
+
+```python
+# Pseudocode for differential test
+for seed in range(100):
+    rng_ref = torch.Generator(); rng_ref.manual_seed(seed)
+    rng_opt = torch.Generator(); rng_opt.manual_seed(seed)
+
+    accepted_ref, rej_ref = _accept_reject_old(..., rng=rng_ref)
+    accepted_opt, rej_opt = _accept_reject_new(..., rng=rng_opt)
+
+    assert accepted_ref == accepted_opt, f"Mismatch at seed {seed}"
+    assert rej_ref == rej_opt, f"Rejection mismatch at seed {seed}"
+```
+
+### Risks and Mitigations
+
+| Risk | Mitigation |
+|------|-----------|
+| Float precision differences (fused vs. per-token softmax) | Use `.float()` explicitly; test with `torch.allclose` before exact equality |
+| `argmax` on all-zeros tensor returns 0 (ambiguous) | Explicit `accepted_mask.all()` check before `argmax` |
+| `rng` state consumption order differs | Consume exactly k random numbers in the same logical order |
+
+---
+
+## Optimization P2: Pre-allocated Output Buffer
+
+**Priority:** Medium — eliminates allocator pressure in the hot loop.
+**Expected speedup:** 1.2× overall.
+**Files:** `src/core/decoder/speculative.py`
+
+### Problem
+
+The generation loop allocates a new tensor and copies the entire sequence on every step:
+
+```python
+# CURRENT: _generate_loop
+generated = input_ids.clone()
+for step in range(max_new_tokens):
+    new_ids = torch.tensor(emitted, ...).unsqueeze(0)
+    generated = torch.cat([generated, new_ids], dim=1)  # alloc + copy growing tensor
+```
+
+At 15 steps: 15 allocations of increasing size (51→52→53→...→66 tokens).
+
+### Solution
+
+Allocate once at the beginning, write by index:
+
+```python
+# OPTIMIZED
+max_len = prompt_len + max_new_tokens
+generated = torch.empty((1, max_len), dtype=input_ids.dtype, device=input_ids.device)
+generated[:, :prompt_len] = input_ids
+pos = prompt_len
+
+for step in range(max_new_tokens):
+    # ... decode step ...
+    if emitted:
+        emitted_tensor = torch.tensor(emitted, dtype=torch.long, device=device)
+        generated[:, pos:pos + len(emitted)] = emitted_tensor
+        pos += len(emitted)
+
+
+[159 more lines in file. Use offset=251 to continue.]

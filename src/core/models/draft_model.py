@@ -22,6 +22,23 @@ from transformers.cache_utils import Cache
 logger = logging.getLogger(__name__)
 
 
+def _load_tokenizer(model_name_or_path: str) -> AutoTokenizer:
+    """Load tokenizer with automatic fallback to slow if fast fails.
+
+    Some models (e.g. JackFram/llama-68m) have a broken fast tokenizer
+    config (use_fast=true) but a SentencePiece protobuf tokenizer.model.
+    This function tries fast first, then falls back to slow on error.
+    """
+    try:
+        return AutoTokenizer.from_pretrained(model_name_or_path)
+    except Exception as e:
+        logger.warning(
+            "Fast tokenizer failed for %s: %s. Falling back to slow tokenizer.",
+            model_name_or_path, e,
+        )
+        return AutoTokenizer.from_pretrained(model_name_or_path, use_fast=False)
+
+
 class DraftModel:
     """
     Wraps a small causal LM as a drafter.
@@ -44,7 +61,7 @@ class DraftModel:
         **model_kwargs,
     ) -> None:
         logger.info("Loading drafter tokenizer from %s", model_name_or_path)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = _load_tokenizer(model_name_or_path)
         logger.info("Loading drafter model from %s on %s", model_name_or_path, device)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
@@ -109,7 +126,14 @@ class DraftModel:
             new_input = next_token.unsqueeze(0).unsqueeze(0)
             remaining = k - 1
         elif past_key_values is not None and past_len > 0:
-            new_input = context[:, past_len:]  # only the unseen tail
+            # FIX: past_len may exceed context.shape[1] when the context
+            # grows by fewer tokens than were drafted. Clamp to avoid
+            # empty/negative slicing.
+            actual_past = min(past_len, context.shape[1])
+            new_input = context[:, actual_past:]   # only the unseen tail
+            if new_input.shape[1] == 0:
+                # Nothing new to process — just use last token from context
+                new_input = context[:, -1:]
             out = self.model(new_input, past_key_values=past_key_values, use_cache=True)
             out_pkv = out.past_key_values
             logits = out.logits[:, -1, :].squeeze(0)
@@ -119,7 +143,11 @@ class DraftModel:
             new_input = next_token.unsqueeze(0).unsqueeze(0)
             remaining = k - 1
         else:
-            out = self.model(context, use_cache=True)
+            # FIX: Pass DynamicCache() explicitly — without it, some models
+            # return a plain tuple as past_key_values which crashes later.
+            from transformers.cache_utils import DynamicCache
+            init_pkv = DynamicCache()
+            out = self.model(context, past_key_values=init_pkv, use_cache=True)
             out_pkv = out.past_key_values
             logits = out.logits[:, -1, :].squeeze(0)
             next_token = self._sample_next_token(logits, temperature, greedy)
@@ -168,8 +196,13 @@ class DraftModel:
         sampled_tokens: list[torch.Tensor] = []
 
         # --- Steps 0..k-2: KV cache + no_grad ---
+        # FIX: Pass DynamicCache() explicitly — without it, some models
+        # (e.g. pythia) return a plain tuple as past_key_values, which
+        # lacks get_seq_length() and crashes on subsequent forward calls.
+        from transformers.cache_utils import DynamicCache
+        past_key_values = DynamicCache()
         with torch.no_grad():
-            out = self.model(context, use_cache=True)
+            out = self.model(context, past_key_values=past_key_values, use_cache=True)
         past_key_values = out.past_key_values
 
         for i in range(k - 1):
@@ -226,22 +259,22 @@ class DraftModel:
         """Detach all tensors in past_key_values to prevent graph corruption."""
         if pkv is None:
             return None
-        # transformers 5.x Cache — detach each layer's keys/values
-        if isinstance(pkv, Cache):
-            for layer in pkv.layers:
-                if layer.is_initialized:
-                    if layer.keys is not None:
-                        layer.keys = layer.keys.detach()
-                    if layer.values is not None:
-                        layer.values = layer.values.detach()
-            return pkv
-        # Old-style DynamicCache (transformers 4.x)
+        # Old-style DynamicCache (transformers 4.x) — key_cache / value_cache
         if hasattr(pkv, "key_cache"):
             for i in range(len(pkv.key_cache)):
                 if pkv.key_cache[i] is not None:
                     pkv.key_cache[i] = pkv.key_cache[i].detach()
                 if pkv.value_cache[i] is not None:
                     pkv.value_cache[i] = pkv.value_cache[i].detach()
+            return pkv
+        # transformers 5.x Cache — detach each layer's keys/values
+        if isinstance(pkv, Cache) and hasattr(pkv, "layers"):
+            for layer in pkv.layers:
+                if layer.is_initialized:
+                    if layer.keys is not None:
+                        layer.keys = layer.keys.detach()
+                    if layer.values is not None:
+                        layer.values = layer.values.detach()
             return pkv
         # Legacy tuple-of-tuples
         return tuple(tuple(kv.detach() for kv in layer) for layer in pkv)

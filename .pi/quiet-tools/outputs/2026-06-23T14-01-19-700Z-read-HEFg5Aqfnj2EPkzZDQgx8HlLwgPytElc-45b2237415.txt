@@ -1,0 +1,252 @@
+"""
+experiments/runner.py
+
+Experiment runner orchestrator.
+
+Loads models and datasets, manages GPU memory, persists results to JSON/CSV,
+and optionally logs to MLflow.  The runner does NOT contain experiment logic —
+that lives in ``BaseExperiment`` subclasses.
+
+Usage
+-----
+>>> from experiments import ExperimentRunner
+>>> from experiments.suites import ABLATION_SUITE
+>>> runner = ExperimentRunner(experiments=ABLATION_SUITE)
+>>> results = runner.run_all()
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+import logging
+import os
+from dataclasses import asdict, dataclass, field
+
+import torch
+
+logger = logging.getLogger(__name__)
+
+try:
+    import mlflow
+
+    _HAS_MLFLOW = True
+except ImportError:
+    _HAS_MLFLOW = False
+
+
+# ---------------------------------------------------------------------------
+# Configuration dataclass
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ExperimentConfig:
+    """Base configuration for experiments.
+
+    Used by ``BaseExperiment.get_config()`` to specify model paths,
+    dataset, and hyperparameters.  This dataclass is retained as a
+    convenient container; experiments may extend it or construct it
+    from scratch.
+    """
+
+    name: str
+
+    # Model paths
+    drafter_model_path: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    target_model_path: str = "Qwen/Qwen2.5-7B-Instruct"
+
+    # Model dtype — 4-bit trades VRAM for speed
+    target_use_4bit: bool = True
+
+    # Dataset
+    dataset: str = "gsm8k"  # gsm8k | mbpp | humaneval | alpaca | xsum
+    max_samples: int = 500
+    max_new_tokens: int = 128
+
+    # Draft length
+    draft_length: int = 5
+    k_min: int = 1
+    k_max: int = 8
+
+    # Translation
+    use_rule1: bool = True
+    use_rule2: bool = True
+    use_lattice: bool = False  # replace Rule2 with exact lattice
+    use_translator: bool = False  # add learned translator in hybrid mode
+    translator_weight: float = 0.3
+
+    # Cache
+    cache_max_size: int = 65536
+    cache_eviction: str = "hybrid"  # lru | lfu | acc | hybrid
+
+    # Distillation
+    use_online_distil: bool = False
+    lambda_ngram: float = 0.5
+    distil_lr: float = 1e-5
+    use_lora: bool = False
+    lora_rank: int = 8
+    lora_alpha: float = 16.0
+    lora_dropout: float = 0.05
+    lora_target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+    accum_steps: int = 8
+
+    # Replay
+    use_replay: bool = False
+    replay_strategy: str = "fifo"  # fifo | prioritized
+    replay_capacity: int = 4096
+    replay_every: int = 32
+    replay_batch: int = 8
+
+    # Contrastive
+    use_contrastive: bool = False
+    lambda_contrastive: float = 0.1
+
+    # Adaptive drafting
+    use_speedup_adaptive: bool = False
+
+    # Routing
+    use_dynamic_routing: bool = False
+    drafter_model_paths: list[str] = field(default_factory=list)
+
+    # Multi-target
+    use_universal_drafter: bool = False
+    target_model_paths: list[str] = field(default_factory=list)
+
+    # Logging
+    mlflow_experiment: str = "adaptive_speculative"
+    mlflow_tracking_uri: str = "sqlite:///mlflow.db"
+    log_every: int = 50
+    seed: int = 42
+
+
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
+
+
+class ExperimentRunner:
+    """Orchestrates a list of ``BaseExperiment`` instances.
+
+    Responsibilities
+    ----------------
+    - Load models and datasets (shared utilities)
+    - Manage GPU memory between experiments
+    - Persist results to JSON/CSV
+    - Optional MLflow logging
+
+    Experiment logic (building components, decode loop) lives in
+    ``BaseExperiment`` subclasses, not here.
+
+    Parameters
+    ----------
+    experiments :
+        List of ``BaseExperiment`` instances to run.
+    output_dir :
+        Directory for result JSON/CSV files.
+    device :
+        Torch device string (``"cuda"``, ``"cpu"``, etc.).
+    """
+
+    def __init__(
+        self,
+        experiments: list[object] | None = None,  # list[BaseExperiment]
+        output_dir: str = "results",
+        device: str = "cuda",
+    ) -> None:
+        self.experiments = experiments or []
+        self.output_dir = output_dir
+        self.device = device
+        os.makedirs(output_dir, exist_ok=True)
+        logger.info(
+            "ExperimentRunner initialized: output_dir=%s device=%s experiments=%d",
+            output_dir,
+            device,
+            len(self.experiments),
+        )
+
+    @staticmethod
+    def _clear_gpu_memory() -> None:
+        """Aggressively free GPU memory between experiments."""
+        import gc
+
+        import torch
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            logger.info(
+                "GPU memory: %.1f MB used / %.1f MB total",
+                torch.cuda.memory_allocated() / 1e6,
+                torch.cuda.memory_reserved() / 1e6,
+            )
+
+    # ------------------------------------------------------------------
+    # High-level run
+    # ------------------------------------------------------------------
+
+    def run_all(self) -> list[dict]:
+        """Run all experiments and collect results.
+
+        Returns
+        -------
+        list[dict]
+            Each dict has keys ``config`` and ``metrics`` for
+            backward compatibility with existing consumers.
+        """
+        results = []
+        total = len(self.experiments)
+        logger.info("Starting run_all for %d experiment(s)", total)
+
+        for index, exp in enumerate(self.experiments, start=1):
+            exp_name = exp.meta.name
+            logger.info("Starting experiment %d/%d: %s", index, total, exp_name)
+            print(f"\n{'=' * 60}")
+            print(f"  Running: {exp_name}")
+            print(f"{'=' * 60}")
+
+            if index > 1:
+                self._clear_gpu_memory()
+
+            try:
+                exp_result = self.run_one_experiment(exp)
+                # Convert to legacy dict format for unified CSV/JSON output
+                legacy_result = {
+                    "config": exp_result.config,
+                    "metrics": exp_result.metrics,
+                }
+                results.append(legacy_result)
+                self._save_result(legacy_result)
+                logger.info(
+                    "Finished experiment %d/%d: %s",
+                    index,
+                    total,
+                    exp_name,
+                )
+            except Exception as e:
+                logger.error(
+                    "Experiment %d/%d (%s) FAILED: %s",
+                    index,
+                    total,
+                    exp_name,
+                    e,
+                )
+                import traceback
+
+                traceback.print_exc()
+                failed_result = {
+                    "config": {"name": exp_name},
+                    "metrics": {
+                        "error": True,
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                    },
+                }
+                results.append(failed_result)
+                self._save_result(failed_result)
+
+            self._clear_gpu_memory()
+
+
+[193 more lines in file. Use offset=251 to continue.]

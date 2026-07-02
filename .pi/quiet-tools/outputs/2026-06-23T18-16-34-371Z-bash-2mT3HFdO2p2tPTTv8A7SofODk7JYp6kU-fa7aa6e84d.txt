@@ -1,0 +1,637 @@
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=135       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=37            speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 2/5: token=386           speculative.py:516
+                    accept_prob=0.1909                                          
+           DEBUG    Acceptance token 3/5: token=47433         speculative.py:516
+                    accept_prob=0.0782                                          
+           INFO     Rejected draft token 3: token=47433       speculative.py:530
+                    accept_prob=0.0782                                          
+           INFO     Acceptance result: accepted=2             speculative.py:367
+                    rejected_at=2                                               
+           DEBUG    Residual sample at position 2:            speculative.py:593
+                    token=26038                                                 
+           DEBUG    Sampled residual bonus token: 26038       speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 135 (accepted=2)                                     
+           DEBUG    Inserting 3 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(31, 5, 86) size=47/65536      ngram.py:154
+           DEBUG    Decode step 14 appending 2 token(s)       speculative.py:174
+                    (budget=2): [37, 386]                                       
+           DEBUG    EOS check for token 386 against 2: False  speculative.py:617
+           INFO     Finished speculative generation:          speculative.py:209
+                    generated_tokens=32 steps=14                                
+                    cache_hit_rate=0.096                                        
+           DEBUG    Sequence recorded: prompt_len=105           collector.py:122
+                    new_tokens=19 wall_time=0.935s acc=0.271                    
+           INFO     Starting speculative generation:          speculative.py:112
+                    prompt_len=105 max_new_tokens=32                            
+                    draft_length=5                                              
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 1 selected draft length k=5   speculative.py:156
+                    (new_tokens=0/32)                                           
+           DEBUG    Cache lookup for context length 105       speculative.py:298
+           DEBUG    Cache MISS for key=(291, 21430, 116)            ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=105       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=50118         speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 2/5: token=36446         speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 3/5: token=6             speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 4/5: token=21256         speculative.py:516
+                    accept_prob=0.0224                                          
+           INFO     Rejected draft token 4: token=21256       speculative.py:530
+                    accept_prob=0.0224                                          
+           INFO     Acceptance result: accepted=3             speculative.py:367
+                    rejected_at=3                                               
+           DEBUG    Residual sample at position 3: token=38   speculative.py:593
+           DEBUG    Sampled residual bonus token: 38          speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 105 (accepted=3)                                     
+           DEBUG    Inserting 4 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(291, 21430, 116)              ngram.py:154
+                    size=48/65536                                               
+           DEBUG    Decode step 1 appending 4 token(s)        speculative.py:174
+                    (budget=32): [50118, 36446, 6, 38]                          
+           DEBUG    EOS check for token 38 against 2: False   speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 2 selected draft length k=5   speculative.py:156
+                    (new_tokens=4/32)                                           
+           DEBUG    Cache lookup for context length 109       speculative.py:298
+           DEBUG    Cache MISS for key=(36446, 6, 38)               ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=109       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=802           speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 2/5: token=79            speculative.py:516
+                    accept_prob=0.4540                                          
+           INFO     Rejected draft token 2: token=79          speculative.py:530
+                    accept_prob=0.4540                                          
+           INFO     Acceptance result: accepted=1             speculative.py:367
+                    rejected_at=1                                               
+           DEBUG    Residual sample at position 1: token=358  speculative.py:593
+           DEBUG    Sampled residual bonus token: 358         speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 109 (accepted=1)                                     
+           DEBUG    Inserting 2 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(36446, 6, 38) size=49/65536   ngram.py:154
+           DEBUG    Decode step 2 appending 2 token(s)        speculative.py:174
+                    (budget=28): [802, 358]                                     
+           DEBUG    EOS check for token 358 against 2: False  speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 3 selected draft length k=5   speculative.py:156
+                    (new_tokens=6/32)                                           
+           DEBUG    Cache lookup for context length 111       speculative.py:298
+           DEBUG    Cache MISS for key=(38, 802, 358)               ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=111       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=5820          speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 2/5: token=21            speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 3/5: token=10            speculative.py:516
+                    accept_prob=0.6130                                          
+           DEBUG    Acceptance token 4/5: token=186           speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 5/5: token=116           speculative.py:516
+                    accept_prob=0.8725                                          
+           INFO     All 5 draft token(s) accepted             speculative.py:535
+           INFO     Acceptance result: accepted=5             speculative.py:367
+                    rejected_at=-1                                              
+           DEBUG    Bonus sample from target distribution at  speculative.py:605
+                    position 5: token=50118                                     
+           DEBUG    Sampled residual bonus token: 50118       speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 111 (accepted=5)                                     
+           DEBUG    Inserting 6 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(38, 802, 358) size=50/65536   ngram.py:154
+           DEBUG    Decode step 3 appending 6 token(s)        speculative.py:174
+                    (budget=26): [5820, 21, 10, 186, 116,                       
+                    50118]                                                      
+           DEBUG    EOS check for token 50118 against 2:      speculative.py:617
+                    False                                                       
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 4 selected draft length k=5   speculative.py:156
+                    (new_tokens=12/32)                                          
+           DEBUG    Cache lookup for context length 117       speculative.py:298
+           DEBUG    Cache MISS for key=(186, 116, 50118)            ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=117       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=3084          speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 2/5: token=6             speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 3/5: token=24            speculative.py:516
+                    accept_prob=0.4161                                          
+           INFO     Rejected draft token 3: token=24          speculative.py:530
+                    accept_prob=0.4161                                          
+           INFO     Acceptance result: accepted=2             speculative.py:367
+                    rejected_at=2                                               
+           DEBUG    Residual sample at position 2:            speculative.py:593
+                    token=21256                                                 
+           DEBUG    Sampled residual bonus token: 21256       speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 117 (accepted=2)                                     
+           DEBUG    Inserting 3 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(186, 116, 50118)              ngram.py:154
+                    size=51/65536                                               
+           DEBUG    Decode step 4 appending 3 token(s)        speculative.py:174
+                    (budget=20): [3084, 6, 21256]                               
+           DEBUG    EOS check for token 21256 against 2:      speculative.py:617
+                    False                                                       
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 5 selected draft length k=5   speculative.py:156
+                    (new_tokens=15/32)                                          
+           DEBUG    Cache lookup for context length 120       speculative.py:298
+           DEBUG    Cache MISS for key=(3084, 6, 21256)             ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=120       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=118           speculative.py:516
+                    accept_prob=0.9871                                          
+           DEBUG    Acceptance token 2/5: token=16            speculative.py:516
+                    accept_prob=0.5094                                          
+           DEBUG    Acceptance token 3/5: token=3501          speculative.py:516
+                    accept_prob=0.2416                                          
+           INFO     Rejected draft token 3: token=3501        speculative.py:530
+                    accept_prob=0.2416                                          
+           INFO     Acceptance result: accepted=2             speculative.py:367
+                    rejected_at=2                                               
+           DEBUG    Residual sample at position 2: token=10   speculative.py:593
+           DEBUG    Sampled residual bonus token: 10          speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 120 (accepted=2)                                     
+           DEBUG    Inserting 3 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(3084, 6, 21256) size=52/65536 ngram.py:154
+           DEBUG    Decode step 5 appending 3 token(s)        speculative.py:174
+                    (budget=17): [118, 16, 10]                                  
+           DEBUG    EOS check for token 10 against 2: False   speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 6 selected draft length k=5   speculative.py:156
+                    (new_tokens=18/32)                                          
+           DEBUG    Cache lookup for context length 123       speculative.py:298
+           DEBUG    Cache MISS for key=(118, 16, 10)                ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+[21:16:33] DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=123       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=2245          speculative.py:516
+                    accept_prob=0.2125                                          
+           INFO     Rejected draft token 1: token=2245        speculative.py:530
+                    accept_prob=0.2125                                          
+           INFO     Acceptance result: accepted=0             speculative.py:367
+                    rejected_at=0                                               
+           DEBUG    Residual sample at position 0: token=457  speculative.py:593
+           DEBUG    Sampled residual bonus token: 457         speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 123 (accepted=0)                                     
+           DEBUG    Inserting 1 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(118, 16, 10) size=53/65536    ngram.py:154
+           DEBUG    Decode step 6 appending 1 token(s)        speculative.py:174
+                    (budget=14): [457]                                          
+           DEBUG    EOS check for token 457 against 2: False  speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 7 selected draft length k=5   speculative.py:156
+                    (new_tokens=19/32)                                          
+           DEBUG    Cache lookup for context length 124       speculative.py:298
+           DEBUG    Cache MISS for key=(16, 10, 457)                ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=124       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=12            speculative.py:516
+                    accept_prob=0.8697                                          
+           DEBUG    Acceptance token 2/5: token=28680         speculative.py:516
+                    accept_prob=0.2850                                          
+           INFO     Rejected draft token 2: token=28680       speculative.py:530
+                    accept_prob=0.2850                                          
+           INFO     Acceptance result: accepted=1             speculative.py:367
+                    rejected_at=1                                               
+           DEBUG    Residual sample at position 1: token=4509 speculative.py:593
+           DEBUG    Sampled residual bonus token: 4509        speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 124 (accepted=1)                                     
+           DEBUG    Inserting 2 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(16, 10, 457) size=54/65536    ngram.py:154
+           DEBUG    Decode step 7 appending 2 token(s)        speculative.py:174
+                    (budget=13): [12, 4509]                                     
+           DEBUG    EOS check for token 4509 against 2: False speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 8 selected draft length k=5   speculative.py:156
+                    (new_tokens=21/32)                                          
+           DEBUG    Cache lookup for context length 126       speculative.py:298
+           DEBUG    Cache MISS for key=(457, 12, 4509)              ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=126       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=251           speculative.py:516
+                    accept_prob=0.7937                                          
+           DEBUG    Acceptance token 2/5: token=111           speculative.py:516
+                    accept_prob=0.3542                                          
+           INFO     Rejected draft token 2: token=111         speculative.py:530
+                    accept_prob=0.3542                                          
+           INFO     Acceptance result: accepted=1             speculative.py:367
+                    rejected_at=1                                               
+           DEBUG    Residual sample at position 1: token=1861 speculative.py:593
+           DEBUG    Sampled residual bonus token: 1861        speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 126 (accepted=1)                                     
+           DEBUG    Inserting 2 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(457, 12, 4509) size=55/65536  ngram.py:154
+           DEBUG    Decode step 8 appending 2 token(s)        speculative.py:174
+                    (budget=11): [251, 1861]                                    
+           DEBUG    EOS check for token 1861 against 2: False speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 9 selected draft length k=5   speculative.py:156
+                    (new_tokens=23/32)                                          
+           DEBUG    Cache lookup for context length 128       speculative.py:298
+           DEBUG    Cache MISS for key=(4509, 251, 1861)            ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=128       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=9280          speculative.py:516
+                    accept_prob=0.0591                                          
+           INFO     Rejected draft token 1: token=9280        speculative.py:530
+                    accept_prob=0.0591                                          
+           INFO     Acceptance result: accepted=0             speculative.py:367
+                    rejected_at=0                                               
+           DEBUG    Residual sample at position 0: token=1012 speculative.py:593
+           DEBUG    Sampled residual bonus token: 1012        speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 128 (accepted=0)                                     
+           DEBUG    Inserting 1 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(4509, 251, 1861)              ngram.py:154
+                    size=56/65536                                               
+           DEBUG    Decode step 9 appending 1 token(s)        speculative.py:174
+                    (budget=9): [1012]                                          
+           DEBUG    EOS check for token 1012 against 2: False speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 10 selected draft length k=5  speculative.py:156
+                    (new_tokens=24/32)                                          
+           DEBUG    Cache lookup for context length 129       speculative.py:298
+           DEBUG    Cache MISS for key=(251, 1861, 1012)            ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=129       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=311           speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 2/5: token=19            speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 3/5: token=5             speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 4/5: token=898           speculative.py:516
+                    accept_prob=0.3534                                          
+           INFO     Rejected draft token 4: token=898         speculative.py:530
+                    accept_prob=0.3534                                          
+           INFO     Acceptance result: accepted=3             speculative.py:367
+                    rejected_at=3                                               
+           DEBUG    Residual sample at position 3: token=1154 speculative.py:593
+           DEBUG    Sampled residual bonus token: 1154        speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 129 (accepted=3)                                     
+           DEBUG    Inserting 4 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(251, 1861, 1012)              ngram.py:154
+                    size=57/65536                                               
+           DEBUG    Decode step 10 appending 4 token(s)       speculative.py:174
+                    (budget=8): [311, 19, 5, 1154]                              
+           DEBUG    EOS check for token 1154 against 2: False speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 11 selected draft length k=5  speculative.py:156
+                    (new_tokens=28/32)                                          
+           DEBUG    Cache lookup for context length 133       speculative.py:298
+           DEBUG    Cache MISS for key=(19, 5, 1154)                ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=133       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=14991         speculative.py:516
+                    accept_prob=0.1535                                          
+           INFO     Rejected draft token 1: token=14991       speculative.py:530
+                    accept_prob=0.1535                                          
+           INFO     Acceptance result: accepted=0             speculative.py:367
+                    rejected_at=0                                               
+           DEBUG    Residual sample at position 0: token=790  speculative.py:593
+           DEBUG    Sampled residual bonus token: 790         speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 133 (accepted=0)                                     
+           DEBUG    Inserting 1 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(19, 5, 1154) size=58/65536    ngram.py:154
+           DEBUG    Decode step 11 appending 1 token(s)       speculative.py:174
+                    (budget=4): [790]                                           
+           DEBUG    EOS check for token 790 against 2: False  speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 12 selected draft length k=5  speculative.py:156
+                    (new_tokens=29/32)                                          
+           DEBUG    Cache lookup for context length 134       speculative.py:298
+           DEBUG    Cache MISS for key=(5, 1154, 790)               ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=134       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=6             speculative.py:516
+                    accept_prob=0.7567                                          
+           DEBUG    Acceptance token 2/5: token=15281         speculative.py:516
+                    accept_prob=0.0402                                          
+           INFO     Rejected draft token 2: token=15281       speculative.py:530
+                    accept_prob=0.0402                                          
+           INFO     Acceptance result: accepted=1             speculative.py:367
+                    rejected_at=1                                               
+           DEBUG    Residual sample at position 1: token=6408 speculative.py:593
+           DEBUG    Sampled residual bonus token: 6408        speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 134 (accepted=1)                                     
+           DEBUG    Inserting 2 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(5, 1154, 790) size=59/65536   ngram.py:154
+           DEBUG    Decode step 12 appending 2 token(s)       speculative.py:174
+                    (budget=3): [6, 6408]                                       
+           DEBUG    EOS check for token 6408 against 2: False speculative.py:617
+           DEBUG    Using fixed draft length k=5              speculative.py:251
+           DEBUG    Decode step 13 selected draft length k=5  speculative.py:156
+                    (new_tokens=31/32)                                          
+           DEBUG    Cache lookup for context length 136       speculative.py:298
+           DEBUG    Cache MISS for key=(790, 6, 6408)               ngram.py:114
+           INFO     Running drafter for k=5 temperature=1.0   speculative.py:307
+           INFO     Drafter generating 5 tokens with          draft_model.py:109
+                    temperature=1.00 distill=False                              
+           INFO     Drafter generated 5 tokens, logits shape: draft_model.py:137
+                    (5, 1, 50272)                                               
+           DEBUG    Translating drafter logits to target      speculative.py:323
+                    vocab (T=1.0)                                               
+           DEBUG    Translating 5 draft logits                  vocabulary.py:95
+           DEBUG    Rule 1: mapping logits                          rules.py:142
+           DEBUG    Rule 1: end mapping logits                      rules.py:167
+           DEBUG    Translation complete: 5 positions ->       vocabulary.py:123
+                    target_vocab=50272 r1_covered=50265                         
+           INFO     Running target verification for 5 draft   speculative.py:347
+                    token(s)                                                    
+           INFO     Target verification context_len=136       target_model.py:73
+                    draft_tokens=5                                              
+           DEBUG    Target verification logits shape: (6,     target_model.py:90
+                    50272)                                                      
+           DEBUG    Running acceptance test for 5 draft       speculative.py:361
+                    token(s)                                                    
+           DEBUG    Acceptance token 1/5: token=88            speculative.py:516
+                    accept_prob=1.0000                                          
+           DEBUG    Acceptance token 2/5: token=80            speculative.py:516
+                    accept_prob=0.8505                                          
+           DEBUG    Acceptance token 3/5: token=8195          speculative.py:516
+                    accept_prob=0.3526                                          
+           INFO     Rejected draft token 3: token=8195        speculative.py:530
+                    accept_prob=0.3526                                          
+           INFO     Acceptance result: accepted=2             speculative.py:367
+                    rejected_at=2                                               
+           DEBUG    Residual sample at position 2: token=5351 speculative.py:593
+           DEBUG    Sampled residual bonus token: 5351        speculative.py:377
+           DEBUG    Updating cache acceptance for context     speculative.py:385
+                    length 136 (accepted=2)                                     
+           DEBUG    Inserting 3 accepted token(s) into cache  speculative.py:392
+           DEBUG    Cache INSERT key=(790, 6, 6408) size=60/65536   ngram.py:154
+           DEBUG    Decode step 13 appending 1 token(s)       speculative.py:174
+                    (budget=1): [88]                                            
+           DEBUG    EOS check for token 88 against 2: False   speculative.py:617
+           INFO     Finished speculative generation:          speculative.py:209
+                    generated_tokens=32 steps=13                                
+                    cache_hit_rate=0.077                                        
+           DEBUG    Sequence recorded: prompt_len=105           collector.py:122
+                    new_tokens=21 wall_time=0.889s acc=0.323                    
+           INFO     Benchmark summary for 01_baseline: n_seq=5  collector.py:197
+                    acc=0.213 tps=15.2 cache_hit=0.000                          
+           INFO     Saving experiment result to                    runner.py:423
+                    results/01_baseline.json                                    
+           INFO     Finished experiment 1/1: 01_baseline           runner.py:221
+           INFO     GPU memory: 8.5 MB used / 157.3 MB total       runner.py:179
+           INFO     Writing comparison table to                    runner.py:432
+                    results/comparison_table.csv                                
+
+Comparison table saved to: results/comparison_table.csv
+           INFO     Comparison table saved                         runner.py:442
+           INFO     Finished run_all with 1 result(s)              runner.py:252
+           INFO     All experiments finished                         main.py:262
+
+=== Final Comparison ===
+Experiment                       Acc Rate        TPS    Speedup
+-----------------------------------------------------------------
+01_baseline                     0.213      15.2      0.00x
+
+[Showing lines 2330-2964 of 2964 (50.0KB limit). Full output: /tmp/pi-bash-78ba98c0f8319127.log]
