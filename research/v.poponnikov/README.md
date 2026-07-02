@@ -3,17 +3,15 @@
 ## Research Direction
 
 This research track studies stochastic methods for choosing the speculative
-draft length `k` dynamically during generation. The goal is to improve the
-speed and stability of speculative decoding by increasing `k` when the drafter
-is locally reliable and shrinking `k` when long drafts are likely to be
+draft length `k` dynamically during generation. The active method is now
+`LatentRegimeK`, an online hidden-regime controller that increases `k` when
+drafting looks reliable and shrinks `k` when long drafts are likely to be
 rejected by the target model.
 
-The work focuses on two methods:
-
-1. `EpistemicConsensusK`: choose `k` from agreement between several stochastic
-   draft trajectories.
-2. `LatentRegimeK`: choose `k` from an online hidden-regime model with
-   change-point resets.
+The earlier consensus-based method was removed from the active implementation
+after smoke and real-model tests showed that it was not viable: it achieved high
+acceptance mostly by collapsing to one-token drafts while paying the cost of
+multiple drafter trajectories per decision.
 
 ## Motivation
 
@@ -25,61 +23,10 @@ rejected.
 
 This track treats `k` selection as an online stochastic control problem. Each
 generation step observes local signals such as acceptance rate, rejection
-position, drafter uncertainty, and drafter-target disagreement, then samples the
-next `k` from an adaptive distribution.
+position, drafter uncertainty, and token class, then samples the next `k` from
+an adaptive distribution.
 
-## Hypotheses
-
-- Stochastic drafter self-consensus can estimate local uncertainty well enough
-  to choose safer draft lengths than a fixed `k`.
-- Online adaptation toward a target acceptance rate can stabilize the tradeoff
-  between tokens per second and rejected draft work.
-- Hidden generation regimes, such as easy text, normal text, reasoning/code,
-  and transition points, can explain changes in the optimal draft length.
-- A change-point reset can prevent long rejected drafts immediately after topic
-  or format shifts.
-
-## Method 1: Epistemic Consensus K
-
-`EpistemicConsensusK` runs `M` stochastic drafter trajectories up to `K_max`.
-The stochasticity can come from sampling temperature, small logit noise, or
-dropout if available. For each draft position, the controller estimates whether
-the trajectories agree.
-
-Signals:
-
-- `consensus_j`: fraction of trajectories that select the majority token at
-  position `j`.
-- `logprob_variance_j`: variance of the majority token log probability across
-  stochastic runs.
-- `margin_j`: gap between the top token and the second-best token.
-- `acceptance_rate_t`: verified acceptance rate from the previous step.
-
-Position score:
-
-```text
-score_j = lambda_c * consensus_j
-        + lambda_m * sigmoid(margin_j / tau_m)
-        - lambda_u * logprob_variance_j
-```
-
-Continuation probability:
-
-```text
-continue_prob_j = sigmoid((score_j - theta_t) / tau_k)
-```
-
-The controller samples from left to right and stops at the first failed
-continuation draw. After target verification, it updates the caution threshold:
-
-```text
-theta_{t+1} = clip(theta_t + eta * (rho - acceptance_rate_t), theta_min, theta_max)
-```
-
-If the observed acceptance rate falls below the target `rho`, future drafts
-become shorter. If acceptance is consistently high, future drafts can grow.
-
-## Method 2: Latent Regime / Change-Point K
+## Active Method: Latent Regime K
 
 `LatentRegimeK` models generation as a sequence of hidden regimes. Each regime
 has its own distribution over `k`, and the controller updates regime
@@ -97,8 +44,6 @@ Initial regimes:
 Features after each verification:
 
 - `acceptance_rate_t`
-- `accepted_tokens_t`
-- `selected_k_t`
 - drafter entropy
 - drafter-target disagreement
 - token class, such as text, code, newline, number, markdown, or math
@@ -114,15 +59,33 @@ lambda_t = (1 - change_point_t) * lambda_regime + change_point_t * lambda_min
 When the change-point probability is high, `lambda_t` moves toward `lambda_min`
 and the controller sharply reduces `k`.
 
+## Retired Method: Epistemic Consensus K
+
+`EpistemicConsensusK` was tested as a stochastic self-consensus controller. It
+sampled several drafter trajectories and used agreement between them as an
+uncertainty signal for selecting `k`.
+
+The method was removed from active experiments because it was too expensive and
+too conservative:
+
+- Smoke run: 1.93 tokens/sec, mean draft length 1.17, 26.91 s wall time.
+- Real Qwen run: 0.72 tokens/sec, mean draft length 1.03, 3691.99 s wall time.
+- Real Qwen run selected `k = 1` for 3708 of 3774 selections.
+
+This made the method useful as a negative result, but not as a comparison that
+should remain in the active notebook or experiment registry.
+
 ## Implementation Plan
 
-1. Implement `EpistemicConsensusK` as a research adaptive controller. Done.
+1. Implement `LatentRegimeK` as a research adaptive controller. Done.
 2. Add a research experiment under `research/v.poponnikov/experiments/`. Done.
-3. Compare against `01_baseline` and `08_+speedup_adapt`.
-4. Add unit tests for sampling, threshold adaptation, and bounds on `k`. Done.
-5. Add lightweight smoke experiments with tiny models.
-6. Record metrics and notes in `research/v.poponnikov/results/`.
-7. Implement `LatentRegimeK` as the second stochastic controller. Done.
+3. Compare against `01_baseline` and `08_+speedup_adapt`. Done.
+4. Add unit tests for sampling, posterior updates, metric export, and bounds on
+   `k`. Done.
+5. Add lightweight smoke experiments with tiny models. Done.
+6. Add notebook workflow for online IDEs without terminal access. Done.
+7. Tune the regime controller so higher acceptance does not make it too
+   conservative. Next.
 
 ## Metrics
 
@@ -134,15 +97,14 @@ Primary metrics:
 - `avg_draft_length`
 - `wall_time_total_s`
 
-Research-specific metrics:
+Regime-specific metrics:
 
 - mean selected `k`
 - distribution of selected `k`
-- rejection position histogram
-- consensus score statistics
-- threshold trajectory for `EpistemicConsensusK`
-- regime posterior entropy for `LatentRegimeK`
+- regime posterior entropy
 - change-point reset frequency
+- final regime lambdas
+- regime distribution
 
 ## Experiment Commands
 
@@ -155,7 +117,7 @@ python src/main.py --research --tiny -n 5 --max-new-tokens 32 --no-mlflow
 Single experiment:
 
 ```bash
-python src/main.py --experiment stochastic_consensus_k --tiny -n 5 --max-new-tokens 32 --no-mlflow
+python src/main.py --experiment latent_regime_k --tiny -n 5 --max-new-tokens 32 --no-mlflow
 ```
 
 Reference baselines:
@@ -165,7 +127,7 @@ python src/main.py --experiment 01_baseline --tiny -n 5 --max-new-tokens 32 --no
 python src/main.py --experiment 08_+speedup_adapt --tiny -n 5 --max-new-tokens 32 --no-mlflow
 ```
 
-Comparison with plots:
+## Comparison Workflow
 
 Notebook workflow for online IDEs without terminal access:
 
@@ -188,8 +150,8 @@ $env:PYTHONPATH = "src"
   --device cuda
 ```
 
-This runs `01_baseline`, `08_+speedup_adapt`, `stochastic_consensus_k`, and
-`latent_regime_k` in one comparison pass. Results are written to
+This runs `01_baseline`, `08_+speedup_adapt`, and `latent_regime_k` in one
+comparison pass. Results are written to
 `research/v.poponnikov/results/dynamic_k_comparison/`, including
 `dynamic_k_comparison.csv`. Plots are written to
 `research/v.poponnikov/plots/dynamic_k_comparison/`.
@@ -217,29 +179,16 @@ Smoke comparison on `gsm8k`, 5 samples, 32 max new tokens, with
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `01_baseline` | 6.93 | 21.29% | 1.09 | 5.00 | 10.24 s |
 | `08_+speedup_adapt` | 7.73 | 23.00% | 1.21 | 5.47 | 11.89 s |
-| `stochastic_consensus_k` | 1.93 | 57.99% | 0.63 | 1.17 | 26.91 s |
 | `latent_regime_k` | 10.36 | 54.97% | 1.78 | 3.51 | 10.81 s |
 
-Interpretation:
+Smoke interpretation:
 
 - `LatentRegimeK` is the strongest smoke result. It improves throughput over
   the fixed baseline and speedup-adaptive baseline while also raising
-  acceptance rate. It selected a moderate mean `k` of 3.51 and used the full
-  range from 1 to 8, which suggests the regime posterior is doing useful
-  online adaptation instead of collapsing to a fixed value.
-- `EpistemicConsensusK` is not competitive in the current configuration. Its
-  acceptance rate is high because it collapses to very short drafts, with mean
-  selected `k` 1.17 and 74 of 83 selections at `k = 1`. The method also pays
-  for 4 stochastic drafter trajectories before each actual draft, so throughput
-  falls sharply.
+  acceptance rate.
 - The smoke run is too small to prove the regime method is generally better.
-  It is enough to show that the implementation works and that the consensus
-  method needs retuning before it is a useful baseline.
-
-Next result needed:
-
-- Repeat the smoke run if the implementation changes, but do not use it as the
-  main research conclusion because the drafter-target size gap is small.
+  It mainly confirms that the implementation works and that the controller can
+  use a nontrivial range of `k` values.
 
 Real-model comparison on `gsm8k`, 50 samples, 128 max new tokens, with
 `Qwen/Qwen2.5-0.5B-Instruct` as drafter and
@@ -249,56 +198,46 @@ Real-model comparison on `gsm8k`, 50 samples, 128 max new tokens, with
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `01_baseline` | 6.21 | 38.88% | 1.86 | 5.00 | 680.84 s |
 | `08_+speedup_adapt` | 5.04 | 40.24% | 1.60 | 4.22 | 797.10 s |
-| `stochastic_consensus_k` | 0.72 | 68.74% | 0.70 | 1.03 | 3691.99 s |
 | `latent_regime_k` | 4.52 | 51.41% | 1.16 | 2.33 | 766.38 s |
 
 Real-run interpretation:
 
 - The fixed baseline is the strongest throughput result in the Qwen run. It
   reaches 6.21 tokens/sec, while `latent_regime_k` reaches 4.52 tokens/sec.
-  This means the current regime controller improves acceptance quality but is
-  too conservative to improve wall-clock speed.
 - `LatentRegimeK` is still promising as a control signal. It raises acceptance
   from 38.88% to 51.41%, but it reduces mean selected `k` from the fixed value
-  of 5.00 to 2.33. The result suggests the posterior is detecting harder
-  regions, but the lambda/reward update currently shrinks drafts too much.
-- `EpistemicConsensusK` is not viable in its current form. It achieves high
-  acceptance only by collapsing almost always to `k = 1`:
-  3708 of 3774 selections are `k = 1`. The extra 4 drafter trajectories make
-  it far slower than every other method.
-- `08_+speedup_adapt` also underperforms the fixed baseline in this run. The
-  broader lesson is that higher acceptance alone is not sufficient; the chosen
-  `k` must be large enough to amortize target verification and any controller
-  overhead.
+  of 5.00 to 2.33.
+- The result suggests that the posterior is detecting harder regions, but the
+  lambda and reward update currently shrink drafts too much.
+- Higher acceptance alone is not sufficient; the chosen `k` must be large
+  enough to amortize target verification and controller overhead.
 
-Next tuning direction:
+## Next Tuning Direction
 
-- Make `LatentRegimeK` less conservative by slowing lambda shrinkage, raising
-  the lower bound for easy/normal regimes, or changing the reward from raw
-  acceptance toward throughput-aware utility.
-- Rework `EpistemicConsensusK` before using it in conclusions. The current
-  log-prob variance penalty and continuation threshold make it collapse to
-  one-token drafts.
+- Make `LatentRegimeK` less conservative by slowing lambda shrinkage.
+- Raise the lower bound for easy and normal regimes.
+- Change the reward from raw acceptance toward throughput-aware utility.
+- Run larger comparisons with multiple seeds and confidence intervals.
 
 ## Open Questions
 
-- Which stochastic perturbation gives the best signal-to-cost ratio: sampling
-  temperature, logit noise, dropout, or a mixture?
-- How small can `M` be before consensus becomes too noisy?
-- Does consensus predict target acceptance when the drafter is confidently
-  wrong?
 - Which reward best updates `k`: acceptance rate, accepted tokens, tokens per
   second, or a weighted utility?
 - Can the regime model outperform a simpler threshold controller without
   becoming too sensitive to false change points?
+- How much posterior entropy is useful before the controller becomes unstable?
+- Should easy and normal regimes have a larger minimum lambda than hard and
+  transition regimes?
 
 ## Current Status
 
-- Research direction defined.
-- `EpistemicConsensusK` implemented in
-  `research/v.poponnikov/experiments/stochastic_dynamic_k.py`.
+- Research direction narrowed to `LatentRegimeK`.
+- `EpistemicConsensusK` retired and removed from active code because it was too
+  slow and collapsed to one-token drafts.
 - `LatentRegimeK` implemented in
   `research/v.poponnikov/experiments/stochastic_dynamic_k.py`.
-- Research experiments registered for auto-discovery:
-  `stochastic_consensus_k` and `latent_regime_k`.
-- Unit tests added in `tests/unit/test_v_poponnikov_dynamic_k.py`.
+- Only `latent_regime_k` is registered for auto-discovery from this research
+  module.
+- Notebook comparison now runs `01_baseline`, `08_+speedup_adapt`, and
+  `latent_regime_k`.
+- Unit tests updated in `tests/unit/test_v_poponnikov_dynamic_k.py`.

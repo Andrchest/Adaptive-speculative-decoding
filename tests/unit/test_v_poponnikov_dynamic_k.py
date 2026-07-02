@@ -1,4 +1,4 @@
-"""Tests for v.poponnikov stochastic dynamic-k research controllers."""
+"""Tests for v.poponnikov stochastic dynamic-k research controller."""
 
 from __future__ import annotations
 
@@ -84,44 +84,6 @@ class _ScriptedDrafter:
         return row, logits
 
 
-def test_epistemic_consensus_selects_bounded_k_and_tracks_consensus() -> None:
-    module = _load_research_module()
-    controller = module.EpistemicConsensusK(
-        _ScriptedDrafter(),
-        k_min=1,
-        k_max=4,
-        n_trajectories=3,
-        theta=0.05,
-        seed=1,
-    )
-
-    selected = controller(torch.tensor([[0, 1, 2]], dtype=torch.long))
-
-    assert 1 <= selected <= 4
-    assert controller.selections
-    assert controller.selections[-1].consensus[:2] == pytest.approx([1.0, 1.0])
-
-
-def test_epistemic_consensus_threshold_reacts_to_acceptance() -> None:
-    module = _load_research_module()
-    controller = module.EpistemicConsensusK(
-        _ScriptedDrafter(),
-        k_min=1,
-        k_max=4,
-        n_trajectories=3,
-        target_acceptance=0.8,
-        adaptation_rate=0.1,
-        theta=0.5,
-        seed=2,
-    )
-    initial_theta = controller.theta
-
-    controller.observe_step(StepResult(draft_length=4, accepted_count=1, rejected_at=1))
-
-    assert controller.theta > initial_theta
-    assert controller.summary()["consensus_k_mean_step_acceptance"] == pytest.approx(0.25)
-
-
 def test_latent_regime_updates_posterior_and_lambdas() -> None:
     module = _load_research_module()
     controller = module.LatentRegimeK(
@@ -154,11 +116,11 @@ def test_invalid_dynamic_k_parameters_raise() -> None:
     module = _load_research_module()
 
     with pytest.raises(ValueError, match="k_max"):
-        module.EpistemicConsensusK(_ScriptedDrafter(), k_min=4, k_max=1)
-    with pytest.raises(ValueError, match="n_trajectories"):
-        module.EpistemicConsensusK(_ScriptedDrafter(), n_trajectories=0)
+        module.LatentRegimeK(_ScriptedDrafter(), k_min=4, k_max=1)
     with pytest.raises(ValueError, match="lambdas"):
         module.LatentRegimeK(_ScriptedDrafter(), lambdas=(1.0, 2.0))
+    with pytest.raises(ValueError, match="transition_stay_prob"):
+        module.LatentRegimeK(_ScriptedDrafter(), transition_stay_prob=1.1)
 
 
 def test_decoder_reports_step_result_to_adaptive_observer() -> None:
@@ -182,10 +144,7 @@ def test_decoder_reports_step_result_to_adaptive_observer() -> None:
 
 def test_research_experiment_configs_are_valid() -> None:
     module = _load_research_module()
-    experiments = [
-        module.StochasticConsensusKExperiment(),
-        module.LatentRegimeKExperiment(),
-    ]
+    experiments = [module.LatentRegimeKExperiment()]
 
     for experiment in experiments:
         cfg = experiment.get_config()
@@ -202,11 +161,11 @@ def test_dynamic_k_comparison_csv_keeps_research_metrics(tmp_path) -> None:
             "metrics": {"tokens_per_sec": 10.0, "acceptance_rate": 0.5},
         },
         {
-            "config": {"name": "stochastic_consensus_k"},
+            "config": {"name": "latent_regime_k"},
             "metrics": {
                 "tokens_per_sec": 12.0,
-                "consensus_k_mean_selected_k": 3.5,
-                "consensus_k_k_distribution": {1: 2, 3: 4},
+                "regime_k_mean_selected_k": 3.5,
+                "regime_k_k_distribution": {1: 2, 3: 4},
             },
         },
     ]
@@ -216,5 +175,5 @@ def test_dynamic_k_comparison_csv_keeps_research_metrics(tmp_path) -> None:
 
     text = path.read_text(encoding="utf-8")
     assert "tokens_per_sec" in text
-    assert "consensus_k_mean_selected_k" in text
+    assert "regime_k_mean_selected_k" in text
     assert '"{""1"": 2, ""3"": 4}"' in text

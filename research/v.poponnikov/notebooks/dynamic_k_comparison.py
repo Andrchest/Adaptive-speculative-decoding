@@ -28,7 +28,6 @@ if TYPE_CHECKING:
 DEFAULT_EXPERIMENTS = (
     "01_baseline",
     "08_+speedup_adapt",
-    "stochastic_consensus_k",
     "latent_regime_k",
 )
 
@@ -349,9 +348,7 @@ def _plot_k_distribution(results: Sequence[dict[str, Any]], plots_dir: Path, plt
     for result in results:
         metrics = result.get("metrics", {})
         name = str(result.get("config", {}).get("name", metrics.get("name", "")))
-        distribution = metrics.get("consensus_k_k_distribution")
-        if not isinstance(distribution, dict):
-            distribution = metrics.get("regime_k_k_distribution")
+        distribution = metrics.get("regime_k_k_distribution")
         if isinstance(distribution, dict) and distribution:
             distributions.append((name, _normalize_distribution(distribution)))
 
@@ -389,9 +386,6 @@ def _plot_controller_diagnostics(
     results: Sequence[dict[str, Any]], plots_dir: Path, plt
 ) -> Path | None:
     diagnostic_keys = (
-        "consensus_k_theta_final",
-        "consensus_k_consensus_mean",
-        "consensus_k_continue_prob_mean",
         "regime_k_posterior_entropy_mean",
         "regime_k_change_point_mean",
         "regime_k_lambda_easy",
@@ -425,7 +419,6 @@ def _plot_controller_diagnostics(
 
 def _dynamic_mean_k(result: dict[str, Any]) -> float:
     for key in (
-        "consensus_k_mean_selected_k",
         "regime_k_mean_selected_k",
         "avg_draft_length",
     ):
