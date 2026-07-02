@@ -27,6 +27,60 @@ uv run python src/main.py --smoke
 uv run python src/main.py --suite ablation
 ```
 
+## 🧩 Available Models
+
+### Drafter Models (small, fast)
+
+| Model | Params | Speed | Notes |
+|-------|--------|-------|-------|
+| `EleutherAI/pythia-70m` | 70M | ⚡⚡⚡ | Very fast, good for smoke tests |
+| `JackFram/llama-68m` | 68M | ⚡⚡⚡ | Very fast, needs `sentencepiece` |
+| `facebook/opt-125m` | 125M | ⚡⚡ | Used in LoRA distillation experiments |
+| `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | 1.1B | ⚡ | Default drafter |
+| `Qwen/Qwen2.5-0.5B-Instruct` | 0.5B | ⚡⚡ | Used in ExperimentConfig defaults |
+| `Qwen/Qwen2.5-1.5B-Instruct` | 1.5B | ⚡ | Multi-drafter routing |
+| `Qwen/Qwen2.5-3B-Instruct` | 3B | — | Larger drafter option |
+
+### Target Models (large, accurate)
+
+| Model | Params | Notes |
+|-------|--------|-------|
+| `facebook/opt-350m` | 350M | Used in LoRA distillation experiments |
+| `Qwen/Qwen2.5-7B-Instruct` | 7B | Default target in ExperimentConfig |
+| `Qwen/Qwen2.5-14B-Instruct` | 14B | Larger target option |
+| `Qwen/Qwen2.5-32B-Instruct` | 32B | Largest target option |
+| `meta-llama/Llama-2-7b-chat-hf` | 7B | Default in `default.yaml` |
+
+### CLI Flags for Model Selection
+
+```bash
+# Override drafter model
+uv run python src/main.py --drafter-model mistralai/Mistral-7B-v0.1
+
+# Override target model
+uv run python src/main.py --target-model meta-llama/Llama-3-8B
+
+# Use tiny models (opt-125m / opt-350m) for fast testing
+uv run python src/main.py --tiny
+
+# Combine with other flags
+uv run python src/main.py --tiny -n 5 --log-level VERBOSE
+```
+
+### Quick Examples
+
+```bash
+# Fast smoke test with smallest models
+uv run python src/main.py --smoke
+
+# Run with specific drafter/target
+uv run python src/main.py --drafter-model Qwen/Qwen2.5-0.5B-Instruct \
+                          --target-model Qwen/Qwen2.5-7B-Instruct
+
+# Run ablation suite with 10 samples
+uv run python src/main.py --suite ablation -n 10
+```
+
 ## 📐 Project Structure
 
 ```

@@ -1,0 +1,252 @@
+        device: str = "cuda",
+    ) -> None:
+        self.experiments = experiments or []
+        self.output_dir = output_dir
+        self.device = device
+        os.makedirs(output_dir, exist_ok=True)
+        logger.info(
+            "ExperimentRunner initialized: output_dir=%s device=%s experiments=%d",
+            output_dir,
+            device,
+            len(self.experiments),
+        )
+
+    @staticmethod
+    def _clear_gpu_memory() -> None:
+        """Aggressively free GPU memory between experiments."""
+        import gc
+
+        import torch
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            logger.info(
+                "GPU memory: %.1f MB used / %.1f MB total",
+                torch.cuda.memory_allocated() / 1e6,
+                torch.cuda.memory_reserved() / 1e6,
+            )
+
+    # ------------------------------------------------------------------
+    # High-level run
+    # ------------------------------------------------------------------
+
+    def run_all(self) -> list[dict]:
+        """Run all experiments and collect results.
+
+        Returns
+        -------
+        list[dict]
+            Each dict has keys ``config`` and ``metrics`` for
+            backward compatibility with existing consumers.
+        """
+        results = []
+        total = len(self.experiments)
+        logger.info("Starting run_all for %d experiment(s)", total)
+
+        for index, exp in enumerate(self.experiments, start=1):
+            exp_name = exp.meta.name
+            logger.info("Starting experiment %d/%d: %s", index, total, exp_name)
+            print(f"\n{'=' * 60}")
+            print(f"  Running: {exp_name}")
+            print(f"{'=' * 60}")
+
+            if index > 1:
+                self._clear_gpu_memory()
+
+            try:
+                exp_result = self.run_one_experiment(exp)
+                # Convert to legacy dict format for unified CSV/JSON output
+                legacy_result = {
+                    "config": exp_result.config,
+                    "metrics": exp_result.metrics,
+                }
+                results.append(legacy_result)
+                self._save_result(legacy_result)
+                logger.info(
+                    "Finished experiment %d/%d: %s",
+                    index,
+                    total,
+                    exp_name,
+                )
+            except Exception as e:
+                logger.error(
+                    "Experiment %d/%d (%s) FAILED: %s",
+                    index,
+                    total,
+                    exp_name,
+                    e,
+                )
+                import traceback
+
+                traceback.print_exc()
+                failed_result = {
+                    "config": {"name": exp_name},
+                    "metrics": {
+                        "error": True,
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                    },
+                }
+                results.append(failed_result)
+                self._save_result(failed_result)
+
+            self._clear_gpu_memory()
+
+        self._write_csv(results)
+        logger.info("Finished run_all with %d result(s)", len(results))
+        return results
+
+    # ------------------------------------------------------------------
+    # Single experiment execution
+    # ------------------------------------------------------------------
+
+    def run_one_experiment(self, exp: object) -> object:  # BaseExperiment -> ExperimentResult
+        """Run a single ``BaseExperiment`` and return its result.
+
+        Parameters
+        ----------
+        exp : BaseExperiment
+            The experiment to run.
+
+        Returns
+        -------
+        ExperimentResult
+            Contains meta, config dict, metrics dict, and optional error.
+        """
+        return exp.run(self)
+
+    # ------------------------------------------------------------------
+    # Shared utilities
+    # ------------------------------------------------------------------
+
+    def _build_models(self, cfg: ExperimentConfig) -> tuple:
+        """Load drafter and target models from config.
+
+        Returns
+        -------
+        tuple[DraftModel, TargetModel]
+        """
+        from core.models.drafter import DraftModel, TargetModel
+
+        logger.info("Loading drafter model: %s", cfg.drafter_model_path)
+        drafter = DraftModel(cfg.drafter_model_path, device=self.device)
+        logger.info("Loading target model: %s", cfg.target_model_path)
+        target = TargetModel(cfg.target_model_path, device=self.device)
+        return drafter, target
+
+    @staticmethod
+    def _asdict_config(cfg: ExperimentConfig) -> dict:
+        """Serialize ExperimentConfig to dict (wrapper around dataclasses.asdict)."""
+        return asdict(cfg)
+
+    def _setup_mlflow(self, cfg: ExperimentConfig) -> None:
+        """Initialize MLflow run if configured."""
+        if _HAS_MLFLOW and getattr(cfg, "mlflow_experiment", None):
+            logger.info(
+                "Initializing MLflow experiment=%s run=%s",
+                cfg.mlflow_experiment,
+                cfg.name,
+            )
+            mlflow.set_experiment(cfg.mlflow_experiment)
+            mlflow.start_run(run_name=cfg.name)
+            mlflow.log_params(asdict(cfg))
+
+    def _log_mlflow_final(self, cfg: ExperimentConfig, summary: dict) -> None:
+        """Log final metrics to MLflow and end the run."""
+        if _HAS_MLFLOW and getattr(cfg, "mlflow_experiment", None):
+            logger.info("Logging final metrics to MLflow")
+            metrics = {k: v for k, v in summary.items() if isinstance(v, (int, float))}
+            tags = {k: v for k, v in summary.items() if not isinstance(v, (int, float))}
+            mlflow.log_metrics(metrics)
+            for k, v in tags.items():
+                mlflow.set_tag(k, str(v))
+            mlflow.end_run()
+
+    # ------------------------------------------------------------------
+    # Dataset loader
+    # ------------------------------------------------------------------
+
+    def _load_dataset(self, cfg: ExperimentConfig) -> list:
+        """Load and tokenize dataset from config.
+
+        Returns
+        -------
+        list[tuple[torch.Tensor, int]]
+            List of (input_ids_tensor, prompt_len) tuples.
+        """
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(cfg.target_model_path)
+        return self._load_dataset_with_tokenizer(cfg.dataset, cfg.max_samples, tokenizer)
+
+    @staticmethod
+    def _load_dataset_with_tokenizer(name: str, max_samples: int, tokenizer) -> list:
+        """Load dataset and tokenize with the given tokenizer.
+
+        Returns
+        -------
+        list[tuple[torch.Tensor, int]]
+            List of (input_ids_tensor, prompt_len) tuples.
+        """
+        logger.info("Loading dataset %s with max_samples=%d", name, max_samples)
+        from datasets import load_dataset
+
+        if name == "gsm8k":
+            logger.info("Loading openai/gsm8k main test split")
+            ds = load_dataset("openai/gsm8k", "main", split="test")
+            texts = [ex["question"] for ex in ds]
+        elif name == "mbpp":
+            logger.info("Loading mbpp test split")
+            ds = load_dataset("mbpp", split="test")
+            texts = [ex["text"] for ex in ds]
+        elif name == "humaneval":
+            logger.info("Loading openai_humaneval test split")
+            ds = load_dataset("openai_humaneval", split="test")
+            texts = [ex["prompt"] for ex in ds]
+        elif name == "alpaca":
+            logger.info("Loading tatsu-lab/alpaca train split")
+            ds = load_dataset("tatsu-lab/alpaca", split="train")
+            texts = [ex["instruction"] for ex in ds]
+        elif name == "xsum":
+            logger.info("Loading EdinburghNLP/xsum test split")
+            ds = load_dataset("EdinburghNLP/xsum", split="test")
+            texts = [ex["document"][:512] for ex in ds]
+        else:
+            raise ValueError(f"Unknown dataset: {name}")
+
+        texts = texts[:max_samples]
+        logger.info("Tokenizing %d text sample(s)", len(texts))
+        result = []
+        for t in texts:
+            ids = tokenizer.encode(t, return_tensors="pt")
+            result.append((ids, ids.shape[1]))
+        logger.info("Tokenization complete")
+        return result
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def _save_result(self, result: dict) -> None:
+        """Save a single experiment result to JSON."""
+        name = result["config"]["name"].replace(" ", "_")
+        path = os.path.join(self.output_dir, f"{name}.json")
+        logger.info("Saving experiment result to %s", path)
+        with open(path, "w") as f:
+            json.dump(result, f, indent=2)
+
+    def _write_csv(self, results: list[dict]) -> None:
+        """Write a comparison CSV from all results."""
+        if not results:
+            return
+        path = os.path.join(self.output_dir, "comparison_table.csv")
+        logger.info("Writing comparison table to %s", path)
+        metric_keys = list(results[0]["metrics"].keys())
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["experiment", *metric_keys])
+            writer.writeheader()
+            for r in results:
+
+[6 more lines in file. Use offset=400 to continue.]

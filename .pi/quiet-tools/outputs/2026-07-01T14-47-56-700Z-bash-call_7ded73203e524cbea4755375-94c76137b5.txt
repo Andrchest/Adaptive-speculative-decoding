@@ -1,0 +1,456 @@
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [48,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [49,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [50,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [51,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [52,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [53,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [54,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [55,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [56,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [57,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [58,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [59,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [60,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [61,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [62,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [186,0,0], thread: [63,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [64,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [65,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [66,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [67,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [68,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [69,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [70,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [71,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [72,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [73,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [74,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [75,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [76,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [77,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [78,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [79,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [80,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [81,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [82,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [83,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [84,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [85,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [86,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [87,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [88,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [89,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [90,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [91,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [92,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [93,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [94,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [95,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [0,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [1,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [2,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [3,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [4,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [5,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [6,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [7,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [8,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [9,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [10,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [11,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [12,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [13,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [14,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [15,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [16,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [17,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [18,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [19,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [20,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [21,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [22,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [23,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [24,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [25,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [26,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [27,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [28,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [29,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [30,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [31,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [32,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [33,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [34,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [35,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [36,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [37,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [38,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [39,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [40,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [41,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [42,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [43,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [44,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [45,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [46,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [47,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [48,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [49,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [50,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [51,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [52,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [53,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [54,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [55,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [56,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [57,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [58,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [59,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [60,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [61,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [62,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [63,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [96,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [97,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [98,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [99,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [100,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [101,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [102,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [103,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [104,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [105,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [106,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [107,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [108,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [109,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [110,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [111,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [112,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [113,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [114,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [115,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [116,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [117,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [118,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [119,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [120,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [121,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [122,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [123,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [124,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [125,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [126,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647352509/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [187,0,0], thread: [127,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+[17:47:54] WARNING  Replay: target forward failed, skipping trace: buffer.py:293
+                    CUDA error: device-side assert triggered                    
+                    CUDA kernel errors might be asynchronously                  
+                    reported at some other API call, so the                     
+                    stacktrace below might be incorrect.                        
+                    For debugging consider passing                              
+                    CUDA_LAUNCH_BLOCKING=1                                      
+                    Compile with `TORCH_USE_CUDA_DSA` to enable                 
+                    device-side assertions.                                     
+                                                                                
+                                                                                 ERROR    Experiment 6/11 (06_+replay_prio) FAILED: CUDA runner.py:242
+                    error: device-side assert triggered                         
+                    CUDA kernel errors might be asynchronously                  
+                    reported at some other API call, so the                     
+                    stacktrace below might be incorrect.                        
+                    For debugging consider passing                              
+                    CUDA_LAUNCH_BLOCKING=1                                      
+                    Compile with `TORCH_USE_CUDA_DSA` to enable                 
+                    device-side assertions.                                     
+                                                                                
+Traceback (most recent call last):
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 227, in run_all
+    exp_result = self.run_one_experiment(exp)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 286, in run_one_experiment
+    return exp.run(self)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/base.py", line 687, in run
+    decoder.generate(
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 142, in generate
+    return self._generate_loop(
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 185, in _generate_loop
+    result = self._decode_step(
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/decoder/speculative.py", line 443, in _decode_step
+    distiller.step(
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/extensions/replay/buffer.py", line 180, in step
+    return self.live_step(
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/extensions/replay/buffer.py", line 222, in live_step
+    self._replay()
+  File "/home/andreipc/Adaptive-speculative-decoding/src/core/extensions/replay/buffer.py", line 258, in _replay
+    prompt_ids = torch.tensor(
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+[17:47:55] WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+
+============================================================
+  Running: 07_+contrastive
+============================================================
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+           ERROR    Experiment 7/11 (07_+contrastive) FAILED: CUDA runner.py:242
+                    error: device-side assert triggered                         
+                    CUDA kernel errors might be asynchronously                  
+                    reported at some other API call, so the                     
+                    stacktrace below might be incorrect.                        
+                    For debugging consider passing                              
+                    CUDA_LAUNCH_BLOCKING=1                                      
+                    Compile with `TORCH_USE_CUDA_DSA` to enable                 
+                    device-side assertions.                                     
+                                                                                
+Traceback (most recent call last):
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 227, in run_all
+    exp_result = self.run_one_experiment(exp)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 286, in run_one_experiment
+    return exp.run(self)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/base.py", line 522, in run
+    torch.manual_seed(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_compile.py", line 32, in inner
+    return disable_fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 632, in _fn
+    return fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/random.py", line 46, in manual_seed
+    torch.cuda.manual_seed_all(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 129, in manual_seed_all
+    _lazy_call(cb, seed_all=True)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/__init__.py", line 249, in _lazy_call
+    callable()
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 127, in cb
+    default_generator.manual_seed(seed)
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+
+============================================================
+  Running: 08_+speedup_adapt
+============================================================
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+           ERROR    Experiment 8/11 (08_+speedup_adapt) FAILED:    runner.py:242
+                    CUDA error: device-side assert triggered                    
+                    CUDA kernel errors might be asynchronously                  
+                    reported at some other API call, so the                     
+                    stacktrace below might be incorrect.                        
+                    For debugging consider passing                              
+                    CUDA_LAUNCH_BLOCKING=1                                      
+                    Compile with `TORCH_USE_CUDA_DSA` to enable                 
+                    device-side assertions.                                     
+                                                                                
+Traceback (most recent call last):
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 227, in run_all
+    exp_result = self.run_one_experiment(exp)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 286, in run_one_experiment
+    return exp.run(self)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/base.py", line 522, in run
+    torch.manual_seed(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_compile.py", line 32, in inner
+    return disable_fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 632, in _fn
+    return fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/random.py", line 46, in manual_seed
+    torch.cuda.manual_seed_all(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 129, in manual_seed_all
+    _lazy_call(cb, seed_all=True)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/__init__.py", line 249, in _lazy_call
+    callable()
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 127, in cb
+    default_generator.manual_seed(seed)
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+
+============================================================
+  Running: 09_+routing
+============================================================
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+           ERROR    Experiment 9/11 (09_+routing) FAILED: CUDA     runner.py:242
+                    error: device-side assert triggered                         
+                    CUDA kernel errors might be asynchronously                  
+                    reported at some other API call, so the                     
+                    stacktrace below might be incorrect.                        
+                    For debugging consider passing                              
+                    CUDA_LAUNCH_BLOCKING=1                                      
+                    Compile with `TORCH_USE_CUDA_DSA` to enable                 
+                    device-side assertions.                                     
+                                                                                
+Traceback (most recent call last):
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 227, in run_all
+    exp_result = self.run_one_experiment(exp)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 286, in run_one_experiment
+    return exp.run(self)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/base.py", line 522, in run
+    torch.manual_seed(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_compile.py", line 32, in inner
+    return disable_fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 632, in _fn
+    return fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/random.py", line 46, in manual_seed
+    torch.cuda.manual_seed_all(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 129, in manual_seed_all
+    _lazy_call(cb, seed_all=True)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/__init__.py", line 249, in _lazy_call
+    callable()
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 127, in cb
+    default_generator.manual_seed(seed)
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+
+============================================================
+  Running: 10_+universal
+============================================================
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+           ERROR    Experiment 10/11 (10_+universal) FAILED: CUDA  runner.py:242
+                    error: device-side assert triggered                         
+                    CUDA kernel errors might be asynchronously                  
+                    reported at some other API call, so the                     
+                    stacktrace below might be incorrect.                        
+                    For debugging consider passing                              
+                    CUDA_LAUNCH_BLOCKING=1                                      
+                    Compile with `TORCH_USE_CUDA_DSA` to enable                 
+                    device-side assertions.                                     
+                                                                                
+Traceback (most recent call last):
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 227, in run_all
+    exp_result = self.run_one_experiment(exp)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 286, in run_one_experiment
+    return exp.run(self)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/base.py", line 522, in run
+    torch.manual_seed(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_compile.py", line 32, in inner
+    return disable_fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 632, in _fn
+    return fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/random.py", line 46, in manual_seed
+    torch.cuda.manual_seed_all(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 129, in manual_seed_all
+    _lazy_call(cb, seed_all=True)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/__init__.py", line 249, in _lazy_call
+    callable()
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 127, in cb
+    default_generator.manual_seed(seed)
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+
+============================================================
+  Running: 11_full_system
+============================================================
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+           ERROR    Experiment 11/11 (11_full_system) FAILED: CUDA runner.py:242
+                    error: device-side assert triggered                         
+                    CUDA kernel errors might be asynchronously                  
+                    reported at some other API call, so the                     
+                    stacktrace below might be incorrect.                        
+                    For debugging consider passing                              
+                    CUDA_LAUNCH_BLOCKING=1                                      
+                    Compile with `TORCH_USE_CUDA_DSA` to enable                 
+                    device-side assertions.                                     
+                                                                                
+Traceback (most recent call last):
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 227, in run_all
+    exp_result = self.run_one_experiment(exp)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/runner.py", line 286, in run_one_experiment
+    return exp.run(self)
+  File "/home/andreipc/Adaptive-speculative-decoding/src/experiments/base.py", line 522, in run
+    torch.manual_seed(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_compile.py", line 32, in inner
+    return disable_fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 632, in _fn
+    return fn(*args, **kwargs)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/random.py", line 46, in manual_seed
+    torch.cuda.manual_seed_all(seed)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 129, in manual_seed_all
+    _lazy_call(cb, seed_all=True)
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/__init__.py", line 249, in _lazy_call
+    callable()
+  File "/home/andreipc/miniconda3/envs/ml_env/lib/python3.10/site-packages/torch/cuda/random.py", line 127, in cb
+    default_generator.manual_seed(seed)
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+           WARNING  CUDA empty_cache failed — GPU may be in error  runner.py:185
+                    state                                                       
+           WARNING  CUDA synchronize failed — GPU may be in error  runner.py:189
+                    state                                                       
+
+Comparison table saved to: results/comparison_table.csv
+
+
+================================================================================
+==========
+  Final Comparison
+================================================================================
+==========
+┏━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━┳━━━━━━┳━━━━━┳━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━━┓
+┃  ┃                        ┃     ┃      ┃     ┃      ┃       ┃  Wall ┃    GPU ┃
+┃  ┃Experiment              ┃ Acc ┃Acc/… ┃Dra… ┃  TPS ┃Speed… ┃   (s) ┃   (GB) ┃
+┡━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━╇━━━━━━╇━━━━━╇━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━━┩
+│  │01_baseline Fastest     │39.… │ 1.89 │   5 │ 14.1 │ 0.34x │ 17.95 │   5.53 │
+│  │04_+online_distil       │37.… │ 1.86 │   5 │ 12.4 │ 0.30x │ 21.21 │   6.32 │
+│  │03_+translator          │29.… │ 1.46 │   5 │ 10.7 │ 0.26x │ 23.40 │   5.78 │
+│  │05_+replay_fifo         │37.… │ 1.85 │   5 │ 10.8 │ 0.26x │ 23.76 │   6.32 │
+│  │02_+lattice             │24.… │ 1.20 │   5 │  9.2 │ 0.22x │ 27.32 │   5.58 │
+│  │06_+replay_prio         │0.0% │ 0.00 │   0 │  0.0 │     — │  0.00 │   0.00 │
+│  │07_+contrastive         │0.0% │ 0.00 │   0 │  0.0 │     — │  0.00 │   0.00 │
+│  │08_+speedup_adapt       │0.0% │ 0.00 │   0 │  0.0 │     — │  0.00 │   0.00 │
+│  │09_+routing             │0.0% │ 0.00 │   0 │  0.0 │     — │  0.00 │   0.00 │
+│  │10_+universal           │0.0% │ 0.00 │   0 │  0.0 │     — │  0.00 │   0.00 │
+│  │11_full_system Slowest  │0.0% │ 0.00 │   0 │  0.0 │     — │  0.00 │   0.00 │
+└──┴────────────────────────┴─────┴──────┴─────┴──────┴───────┴───────┴────────┘
+  Results: results/01_baseline.json, results/04_+online_distil.json, 
+results/03_+translator.json, results/05_+replay_fifo.json, 
+results/02_+lattice.json
+  ... and 6 more
+  CSV:     results/comparison_table.csv
+================================================================================
+==========
+
+[Showing lines 711-1164 of 1164 (50.0KB limit). Full output: /tmp/pi-bash-458aaebdcb5fc6e7.log]

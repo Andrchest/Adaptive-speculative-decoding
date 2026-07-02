@@ -63,12 +63,16 @@ class CrossVocabTranslator:
         learned_model=None,
         learned_weight: float = 0.0,
         lattice=None,
+        drafter_tokenizer=None,
+        target_tokenizer=None,
     ) -> None:
         self.rule1 = rule1
         self.rule2 = rule2
         self.learned_model = learned_model
         self.learned_weight = learned_weight
         self.lattice = lattice
+        self.drafter_tokenizer = drafter_tokenizer
+        self.target_tokenizer = target_tokenizer
         logger.info(
             "CrossVocabTranslator initialized: rule1=%s rule2=%s learned=%s weight=%.2f",
             type(rule1).__name__,
@@ -167,4 +171,66 @@ class CrossVocabTranslator:
             r1.target_size,
             device,
         )
-        return cls(r1, r2, learned_model=learned_model, learned_weight=learned_weight, lattice=lattice)
+        return cls(
+            r1, r2,
+            learned_model=learned_model,
+            learned_weight=learned_weight,
+            lattice=lattice,
+            drafter_tokenizer=drafter_tokenizer,
+            target_tokenizer=target_tokenizer,
+        )
+
+    def translate_target_to_drafter(
+        self,
+        target_token_ids: list[int],
+    ) -> list[int]:
+        """
+        Translate target-vocab token IDs back to drafter-vocab token IDs.
+
+        Uses the reverse Rule1 mapping (exact string match). For tokens
+        without an exact reverse match, falls back to decoding with the
+        target tokenizer and re-encoding with the drafter tokenizer.
+
+        Parameters
+        ----------
+        target_token_ids : list[int]
+            Token IDs in target vocabulary.
+
+        Returns
+        -------
+        list[int]
+            Token IDs in drafter vocabulary.
+        """
+        if not target_token_ids:
+            return []
+
+        device = self.rule1._reverse_mapping.device
+        tok_tensor = torch.tensor(target_token_ids, dtype=torch.long, device=device)
+        safe_indices = tok_tensor.clamp(0, self.rule1._reverse_mapping.shape[0] - 1)
+        mapped = self.rule1._reverse_mapping[safe_indices].clone()
+
+        # Fallback: for tokens without reverse mapping, use string round-trip
+        needs_fallback = mapped < 0
+        if needs_fallback.any() and self.target_tokenizer is not None and self.drafter_tokenizer is not None:
+            fallback_indices = torch.where(needs_fallback)[0]
+            for idx in fallback_indices:
+                t_id = target_token_ids[idx.item()]
+                try:
+                    text = self.target_tokenizer.decode([t_id])
+                    enc = self.drafter_tokenizer.encode(text, add_special_tokens=False)
+                    if enc:
+                        mapped[idx] = enc[0]
+                    else:
+                        # Last resort: use drafter EOS or 0
+                        eos_id = getattr(self.drafter_tokenizer, 'eos_token_id', None)
+                        mapped[idx] = eos_id if eos_id is not None else 0
+                except Exception:
+                    eos_id = getattr(self.drafter_tokenizer, 'eos_token_id', None)
+                    mapped[idx] = eos_id if eos_id is not None else 0
+        elif needs_fallback.any():
+            # No tokenizers available — use drafter EOS as fallback
+            eos_id = getattr(self.drafter_tokenizer, 'eos_token_id', None) if self.drafter_tokenizer else None
+            fallback_id = eos_id if eos_id is not None else 0
+            mapped[needs_fallback] = fallback_id
+
+        return mapped.tolist()

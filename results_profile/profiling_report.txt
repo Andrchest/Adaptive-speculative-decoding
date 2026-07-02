@@ -1,0 +1,61 @@
+================================================================================
+MEMORY & PERFORMANCE PROFILING REPORT
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+1. GPU MEMORY TIMELINE (per experiment)
+────────────────────────────────────────────────────────────────────────────────
+
+  Experiment: 06_+replay_prio
+  Total decode wall time: 5.61s
+  Prompts decoded: 8
+  GPU allocated: 0.00GB → 2.08GB (Δ=+2.08GB)
+  GPU reserved:  0.00GB → 3.06GB (Δ=+3.06GB)
+  Peak allocated: 2.09GB
+  ⚠️  MEMORY LEAK DETECTED: 2.08GB leaked during experiment
+  ⚠️  GPU reserved grew: 3.06GB (uncollectable fragments)
+  TPS: avg=27.4 min=20.4 max=41.0
+
+────────────────────────────────────────────────────────────────────────────────
+2. DATA STRUCTURE GROWTH (per experiment)
+────────────────────────────────────────────────────────────────────────────────
+
+  Experiment: 06_+replay_prio
+  Metric                                 Initial      Final     Growth
+  ─────────────────────────────────── ────────── ────────── ──────────
+  BenchmarkCollector records                   1          8         +7
+  Distiller losses list                        0          0         +0
+  Distiller KL losses list                     0          0         +0
+  Distiller NLL losses list                    0          0         +0
+  Replay buffer entries                        0          0         +0
+  N-gram cache entries                         0          0         +0
+  Step results list                           12          0        -12
+
+────────────────────────────────────────────────────────────────────────────────
+3. PER-PROMPT TPS ANALYSIS
+────────────────────────────────────────────────────────────────────────────────
+
+  Experiment: 06_+replay_prio
+  Prompt  Wall(s)      TPS    Draft   Accept
+  ────── ──────── ──────── ──────── ────────
+       0    1.077     20.4     5.00       22
+       1    0.043      0.0     5.00        0
+       2    0.825     24.2     5.00       20
+       3    0.634     41.0     5.00       26
+       4    0.858     22.2     5.00       19
+       5    0.693     28.8     5.00       20
+       6    0.551     32.7     5.00       18
+       7    0.803     22.4     5.00       18
+
+────────────────────────────────────────────────────────────────────────────────
+4. AUTOMATED FINDINGS SUMMARY
+────────────────────────────────────────────────────────────────────────────────
+
+  Experiment: 06_+replay_prio
+  🔴 GPU allocated leaked: 1.42GB
+  🟡 GPU reserved leaked: 2.33GB
+  🟡 GPU memory grows mid-experiment: 1.42GB
+
+================================================================================
+END OF REPORT
+================================================================================

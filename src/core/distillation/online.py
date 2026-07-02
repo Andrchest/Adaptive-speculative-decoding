@@ -117,7 +117,6 @@ class OnlineDistiller:
         # This prevents a single distillation error from crashing the entire experiment.
         try:
             loss = self._compute_loss(draft_logits, target_logits, draft_tokens, accepted_mask)
-            logger.debug(f'Loss {loss}')
             if loss is None:
                 return None
 

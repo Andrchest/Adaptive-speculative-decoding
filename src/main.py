@@ -305,6 +305,16 @@ def main(  # noqa: C901
     if smoke:
         logger.info("Starting smoke test run")
         experiments = [_SmokeTestExperiment()]
+        # Apply CLI overrides to smoke test (so --drafter-model / --target-model work)
+        _apply_overrides(
+            experiments,
+            tiny_models=tiny_models,
+            drafter_model=drafter_model,
+            target_model=target_model,
+            max_samples=max_samples or 0,
+            max_new_tokens=max_new_tokens or 0,
+            no_mlflow=no_mlflow,
+        )
         runner = ExperimentRunner(experiments=experiments, output_dir=output_dir, device=device)
         logger.info("Running smoke test")
         results = runner.run_all()
@@ -382,33 +392,31 @@ def _print_summary(results: list[dict]) -> None:
         return
 
     console.print("\n")
-    console.print("[bold]" + "=" * 70 + "[/]")
+    console.print("[bold]" + "=" * 90 + "[/]")
     console.print("[bold]  Final Comparison[/]")
-    console.print("[bold]" + "=" * 70 + "[/]")
+    console.print("[bold]" + "=" * 90 + "[/]")
 
-    # Sort by wall_time_total_s (fastest first)
+    from rich.table import Table
+
     sorted_results = sorted(
         results,
         key=lambda r: r["metrics"].get("wall_time_total_s", float("inf"))
     )
 
-    # Find fastest and slowest for badges
+    table = Table(collapse_padding=True, header_style="bold cyan")
+    table.add_column("#", justify="right", width=4)
+    table.add_column("Experiment", width=26)
+    table.add_column("Acc", justify="right", width=7)
+    table.add_column("Acc/Avg", justify="right", width=9)
+    table.add_column("Draft", justify="right", width=7)
+    table.add_column("TPS", justify="right", width=9)
+    table.add_column("Speedup", justify="right", width=9)
+    table.add_column("Wall (s)", justify="right", width=10)
+    table.add_column("GPU (GB)", justify="right", width=10)
+
     fastest = sorted_results[0]
     slowest = sorted_results[-1]
-    fastest_tps = max(r["metrics"].get("tokens_per_sec", 0) for r in sorted_results)
-
-    # Header
-    console.print(
-        "  " + f'{"#":<4}'
-        + f'{"Experiment":<24} '
-        + f'{"Acc":>7} '
-        + f'{"TPS":>7} '
-        + f'{"Wall(s)":>9} '
-        + f'{"Acc/Avg":>10} '
-        + f'{"GPU(GB)":>10} '
-        + f'{"Status":<10}'
-    )
-    console.print("[dim]" + "─" * 90 + "[/]")
+    max_tps = max(r["metrics"].get("tokens_per_sec", 0) for r in sorted_results)
 
     for rank, r in enumerate(sorted_results, 1):
         m = r["metrics"]
@@ -417,39 +425,38 @@ def _print_summary(results: list[dict]) -> None:
         tps = m.get("tokens_per_sec", 0)
         wall = m.get("wall_time_total_s", 0)
         avg_acc = m.get("avg_accepted_tokens", 0)
+        avg_draft = m.get("avg_draft_length", 0)
         gpu = m.get("gpu_mem_peak_gb", 0)
+        speedup = m.get("wall_clock_speedup", None)
 
-        # Determine badge
+        sp_str = f"{speedup:.2f}x" if speedup is not None else "—"
         badge = ""
         if r is fastest:
-            badge = "⚡ Fastest"
+            badge = " [bold green]Fastest[/]"
         elif r is slowest:
-            badge = "🐌 Slowest"
+            badge = " [dim]Slowest[/]"
 
-        console.print(
-            f"  {rank:<4}"
-            f"[cyan]{name}[/]" if len(name) <= 24 else f"  {rank:<4}[cyan]{name[:24]}[/]",
-            f"{acc*100:>6.1f}%",
-            f"{tps:>7.1f}",
-            f"{wall:>9.3f}",
-            f"{avg_acc:>5.2f}/5.0",
-            f"{gpu:>10.2f}",
-            f"{badge:<10}",
+        table.add_row(
+            str(rank),
+            f"[cyan]{name}[/]{badge}",
+            f"{acc*100:.1f}%",
+            f"{avg_acc:.2f}",
+            str(int(round(avg_draft))),
+            f"{tps:.1f}",
+            f"[{'green' if speedup and speedup > 1.05 else 'red' if speedup and speedup < 0.95 else 'white'}]{sp_str}[/]",
+            f"{wall:.2f}",
+            f"{gpu:.2f}",
         )
 
-    console.print("[bold]" + "=" * 70 + "[/]")
+    console.print(table)
 
     # Results file paths
-    result_files = []
-    for r in sorted_results:
-        name = r["config"]["name"]
-        result_files.append(f"results/{name}.json")
-
+    result_files = [f"results/{r['config']['name']}.json" for r in sorted_results]
     console.print(f"  Results: {', '.join(result_files[:5])}")
     if len(result_files) > 5:
         console.print(f"  ... and {len(result_files) - 5} more")
     console.print(f"  CSV:     results/comparison_table.csv")
-    console.print("[bold]" + "=" * 70 + "[/]")
+    console.print("[bold]" + "=" * 90 + "[/]")
 
 
 if __name__ == "__main__":

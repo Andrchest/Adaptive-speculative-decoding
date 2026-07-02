@@ -358,10 +358,14 @@ class ExperimentRunner:
         -------
         list[tuple[torch.Tensor, int]]
             List of (input_ids_tensor, prompt_len) tuples.
+
+        NOTE: We tokenize with the drafter's tokenizer, not the target's.
+        The drafter generates draft tokens, so input_ids must be in drafter
+        vocab. Cross-vocab translation handles drafter→target mapping.
         """
         from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained(cfg.target_model_path)
+        tokenizer = AutoTokenizer.from_pretrained(cfg.drafter_model_path)
         return self._load_dataset_with_tokenizer(cfg.dataset, cfg.max_samples, tokenizer)
 
     @staticmethod
@@ -401,6 +405,11 @@ class ExperimentRunner:
 
         texts = texts[:max_samples]
         logger.info("Tokenizing %d text sample(s) with batched encoding", len(texts))
+
+        # Some tokenizers (e.g. pythia) lack a pad_token. Set it to eos_token
+        # so batched encoding with padding=True works.
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
         # Batch encoding: one call per chunk instead of per-sample loop.
         # This avoids Python-C++ boundary overhead (~50-200us per sample)

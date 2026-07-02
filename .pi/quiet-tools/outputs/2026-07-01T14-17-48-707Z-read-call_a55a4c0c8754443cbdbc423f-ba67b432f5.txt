@@ -1,0 +1,252 @@
+# core/decoder/speculative.py
+"""
+core/decoder/speculative.py
+
+Core speculative decoding engine.
+
+CRITICAL FIXES (performance):
+  1. Drafter KV cache maintained across decode steps (was discarded).
+     After each step: truncate to accepted prefix, forward bonus token,
+     save logits for next step's first draft token.
+  2. Removed useless cache.lookup() (result was discarded but still
+     computed hash + updated stats).
+  3. Accept/reject test moved entirely to GPU (was doing .cpu().tolist()
+     + Python loop, causing 2 GPU syncs per step).
+  4. Token translation uses single GPU indexing (was already batched
+     but had redundant device checks).
+  5. Target KV cache reset at start of each generate() call.
+  6. Adaptive controller shares drafter forward (no separate hidden
+     state extraction).
+  7. Logging reduced to WARNING level in hot path (DEBUG was evaluating
+     format strings even when filtered).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+import torch
+import torch.nn.functional as F
+
+from core.cache.ngram import NgramCache
+from core.models.target_model import _truncate_pkv
+from core.translation.vocabulary import CrossVocabTranslator, _align_last_dim
+
+
+def _multinomial_with_rng(
+    probs: torch.Tensor, num_samples: int, rng: torch.Generator | None
+) -> int:
+    if rng is not None and str(rng.device) != str(probs.device):
+        return torch.multinomial(probs.to(rng.device), num_samples, generator=rng).item()
+    return torch.multinomial(probs, num_samples, generator=rng).item()
+
+
+@dataclass
+class StepResult:
+    draft_length: int
+    accepted_count: int
+    rejected_at: int
+    wall_time_ms: float = 0.0
+    cache_hit: bool = False
+    draft_tokens: list[int] = field(default_factory=list)
+    accepted_tokens: list[int] = field(default_factory=list)
+
+    @property
+    def acceptance_rate(self) -> float:
+        if self.draft_length == 0:
+            return 0.0
+        return self.accepted_count / self.draft_length
+
+
+class SpeculativeDecoder:
+    """
+    Model-agnostic speculative decoding loop.
+
+    Parameters
+    ----------
+    drafter        : DraftModel — fast small model
+    target         : TargetModel — slow large model
+    translator     : CrossVocabTranslator — maps drafter probs → target vocab
+    cache          : NgramCache
+    draft_length   : default number of speculative tokens per step
+    temperature    : sampling temperature (0 = greedy)
+    """
+
+    def __init__(
+        self,
+        drafter,
+        target,
+        translator: CrossVocabTranslator,
+        cache: NgramCache | None = None,
+        draft_length: int = 5,
+        temperature: float = 1.0,
+    ) -> None:
+        self.drafter = drafter
+        self.target = target
+        self.translator = translator
+        self.cache = cache or NgramCache()
+        self.draft_length = draft_length
+        self.temperature = temperature
+
+        self._step_results: list[StepResult] = []
+
+        # Drafter KV cache state (maintained across decode steps)
+        self._drafter_kv = None
+        self._drafter_kv_len = 0
+        self._cached_drafter_logits = None  # logits from bonus-token forward
+
+        # Target KV cache state
+        self._target_kv = None
+
+        self._same_vocab = (
+            translator.rule1.drafter_size == translator.rule1.target_size and
+            translator.rule1._valid_mask.all()
+        )
+
+    # ------------------------------------------------------------------
+    # Public
+    # ------------------------------------------------------------------
+
+    def generate(
+        self,
+        input_ids: torch.Tensor,
+        max_new_tokens: int = 128,
+        adaptive_length_fn=None,
+        distiller=None,
+        rng: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        import contextlib
+
+        logger.info(
+            "Starting speculative generation: prompt_len=%d max_new_tokens=%d draft_length=%d",
+            input_ids.shape[1],
+            max_new_tokens,
+            self.draft_length,
+        )
+
+        # CRITICAL: Reset KV cache state for new generation
+        self._drafter_kv = None
+        self._drafter_kv_len = 0
+        self._cached_drafter_logits = None
+        self._target_kv = None
+        if hasattr(self.target, "reset_kv_state"):
+            self.target.reset_kv_state()
+
+        self.cache.step()
+
+        grad_ctx = contextlib.nullcontext() if distiller is not None else torch.no_grad()
+        with grad_ctx:
+            return self._generate_loop(
+                input_ids, max_new_tokens, adaptive_length_fn, distiller, rng
+            )
+
+    def _generate_loop(
+        self,
+        input_ids: torch.Tensor,
+        max_new_tokens: int,
+        adaptive_length_fn,
+        distiller,
+        rng=None,
+    ) -> torch.Tensor:
+        prompt_len = input_ids.shape[1]
+        output = torch.zeros(
+            (input_ids.shape[0], prompt_len + max_new_tokens),
+            dtype=input_ids.dtype,
+            device=input_ids.device,
+        )
+        output[:, :prompt_len] = input_ids
+        pos = prompt_len
+        max_consec_zero = 5
+        consec_zero = 0
+        ctx_list: list[int] = input_ids[0].tolist()
+
+        for step_idx in range(max_new_tokens):
+            new_tokens = pos - prompt_len
+            if new_tokens >= max_new_tokens:
+                break
+
+            generated = output[:, :pos]
+
+            k = self._choose_draft_length(generated, adaptive_length_fn)
+
+            result = self._decode_step(
+                generated, k, ctx_list,
+                drafter_ctx=generated,  # full context — KV cache handles efficiency
+                distiller=distiller,
+                rng=rng,
+            )
+            self._step_results.append(result)
+            self.cache.step()
+
+            budget = max_new_tokens - new_tokens
+            emitted = result.accepted_tokens[:budget]
+            if emitted:
+                for i, tok in enumerate(emitted):
+                    output[0, pos + i] = tok
+                pos += len(emitted)
+                ctx_list.extend(emitted)
+                consec_zero = 0
+            else:
+                consec_zero += 1
+                if consec_zero >= max_consec_zero:
+                    logger.warning("Stopping after %d consecutive zero-emission steps", max_consec_zero)
+                    break
+
+            if pos > prompt_len and self._is_eos(output[0, pos - 1]):
+                logger.info("EOS at step %d (new_tokens=%d)", step_idx + 1, pos - prompt_len)
+                break
+
+        logger.info(
+            "Finished: generated=%d steps=%d cache_hit_rate=%.3f",
+            pos - prompt_len, len(self._step_results), self.cache.hit_rate(),
+        )
+        return output[:, :pos]
+
+    def stats(self) -> dict:
+        if not self._step_results:
+            return {}
+        total_draft = sum(r.draft_length for r in self._step_results)
+        total_accepted = sum(r.accepted_count for r in self._step_results)
+        return {
+            "steps": len(self._step_results),
+            "total_draft": total_draft,
+            "total_accepted": total_accepted,
+            "mean_draft_len": total_draft / len(self._step_results),
+            "acceptance_rate": total_accepted / max(1, total_draft),
+            "cache_hit_rate": self.cache.hit_rate(),
+        }
+
+    def clear_step_results(self) -> None:
+        self._step_results.clear()
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _choose_draft_length(self, context: torch.Tensor, fn) -> int:
+        if fn is not None:
+            k = fn(context)
+            if not (1 <= k <= 10):
+                return self.draft_length
+            return k
+        return self.draft_length
+
+    def _decode_step(
+        self,
+        context: torch.Tensor,
+        k: int,
+        ctx_list: list[int] | None = None,
+        drafter_ctx: torch.Tensor | None = None,
+        distiller=None,
+        rng=None,
+    ) -> StepResult:
+        """
+        One step of speculative decoding.
+
+        CRITICAL FIXES APPLIED HERE:
+        1. Drafter KV cache is passed and updated across steps.
+
+[323 more lines in file. Use offset=251 to continue.]

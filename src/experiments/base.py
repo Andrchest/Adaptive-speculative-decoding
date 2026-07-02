@@ -34,7 +34,7 @@ import abc
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-
+import torch
 
 if TYPE_CHECKING:
     # Avoid circular imports at runtime; these are only used in type hints.
@@ -577,6 +577,9 @@ class BaseExperiment(abc.ABC):
             draft_length=draft_length,
         )
 
+        if adaptive_fn is not None:
+            decoder._adaptive_controller_ref = adaptive_fn
+
         # Load dataset
         prompts = runner._load_dataset(cfg)
 
@@ -596,6 +599,25 @@ class BaseExperiment(abc.ABC):
 
         # MLflow setup
         runner._setup_mlflow(cfg)
+
+        # Measure plain target baseline TPS for speedup computation.
+        # Uses HF model.generate() with KV cache to avoid OOM.
+        baseline_tps = 0.0
+        try:
+            pid, plen = prompts[0]
+            pid = pid.to(runner.device)
+            # n_bl = getattr(cfg, "max_new_tokens", 128)  # match real budget, not a truncated 32
+            n_bl = 128
+            bl_result = self._measure_autoregressive_baseline(target, pid, n_bl)
+            baseline_tps = bl_result["tokens_per_sec"]
+            collector.set_baseline_tps(baseline_tps)
+            logger.warning(
+                "Autoregressive baseline (verify()-based, k=1): %.1f tok/s over %d tokens",
+                baseline_tps, bl_result["tokens_generated"],
+            )
+        except Exception:
+            logger.warning("Baseline TPS measurement failed", exc_info=True)
+            target.reset_kv_state()
 
         # Decode context
         decode_ctx = DecodeContext(
@@ -672,7 +694,7 @@ class BaseExperiment(abc.ABC):
                 for sr in decoder._step_results[-max_new_tokens:]:
                     seq_rec.add_step(
                         draft_len=sr.draft_length,
-                        accepted=sr.accepted_count,
+                        accepted=len(sr.accepted_tokens),
                         cache_hit=sr.cache_hit,
                     )
             decoder._step_results.clear()
@@ -743,3 +765,76 @@ class BaseExperiment(abc.ABC):
             config=cfg_dict,
             metrics=summary,
         )
+
+    @staticmethod
+    @torch.no_grad()
+    def _measure_autoregressive_baseline(
+        target,                      # TargetModel instance — same one used in the real run
+        input_ids: torch.Tensor,
+        max_new_tokens: int,
+    ) -> dict:
+        """
+        Pure one-token-at-a-time autoregressive baseline using the SAME
+        TargetModel.verify() codepath the speculative decoder uses for
+        target verification. No HF generate(), no its internal fast paths.
+
+        This isolates exactly one variable: batching k>1 candidate tokens
+        per forward (speculative) vs k=1 per forward (autoregressive) —
+        everything else (KV cache shimming, dtype, quantization, dispatch
+        overhead) is identical between this baseline and the real run.
+        """
+        import time
+
+        device = input_ids.device
+        ctx = input_ids.clone()
+        past_kv = None
+        target.reset_kv_state()
+
+        warm_ctx = input_ids.clone()
+        warm_kv = None
+        target.reset_kv_state()
+
+        for _ in range(min(4, max_new_tokens)):
+            logits, warm_kv = target.verify(warm_ctx, draft_tokens=[], past_key_values=warm_kv)
+            tok = logits[-1].argmax(dim=-1).item()
+            warm_ctx = torch.cat([warm_ctx, torch.tensor([[tok]], dtype=warm_ctx.dtype, device=device)], dim=1)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        target.reset_kv_state()
+
+        generated_tokens = 0
+        t0 = time.perf_counter()
+
+        for _ in range(max_new_tokens):
+            # k=1: verify() with a single "draft" token candidate, but we
+            # don't actually have a draft — so pass draft_tokens=[] and
+            # read the logits for the NEXT position directly, then greedily
+            # pick it. This forces exactly one forward pass per token,
+            # going through the identical verify() internals (KV truncation,
+            # _to_cache, the GPU buffer reuse, etc.) as the real decoder.
+            logits, past_kv = target.verify(ctx, draft_tokens=[], past_key_values=past_kv)
+            next_token = logits[-1].argmax(dim=-1).item()
+
+            next_tensor = torch.tensor([[next_token]], dtype=ctx.dtype, device=device)
+            ctx = torch.cat([ctx, next_tensor], dim=1)
+            generated_tokens += 1
+
+            # keep KV cache trimmed to exactly ctx length, same as decoder does
+            kv_keep = ctx.shape[1]
+            if past_kv is not None:
+                from core.models.target_model import _truncate_pkv
+                try:
+                    past_kv = _truncate_pkv(past_kv, kv_keep)
+                except (TypeError, IndexError):
+                    past_kv = None
+                target.reset_kv_state()
+
+            if target.tokenizer.eos_token_id is not None and next_token == target.tokenizer.eos_token_id:
+                break
+
+        wall_time = time.perf_counter() - t0
+        return {
+            "tokens_generated": generated_tokens,
+            "wall_time_s": wall_time,
+            "tokens_per_sec": generated_tokens / max(wall_time, 1e-9),
+        }

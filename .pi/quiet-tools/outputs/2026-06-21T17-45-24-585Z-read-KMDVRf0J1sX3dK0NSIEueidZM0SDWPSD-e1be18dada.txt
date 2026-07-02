@@ -1,0 +1,252 @@
+# Plan: Experiment Refactoring — Option B (Strategy Pattern)
+
+**Status:** Draft  
+**Author:** AI assistant  
+**Date:** 2026-06-21  
+**Confidence:** Medium — requirements understood, but approach introduces new abstractions that need validation through proof slice  
+**Scope:** Refactor `src/experiments/` from flag-based god-method to Strategy pattern with inheritance  
+
+---
+
+## 1. Problem
+
+`src/experiments/runner.py` (~800 строк) содержит:
+- `ExperimentConfig` — dataclass с 30+ флагами (`use_lattice`, `use_translator`, `use_online_distil`, ...)
+- `ExperimentRunner._run_one()` — ~300-строчный метод, который по флагам условно строит пайплайн через monkey-patching
+- `ABLATION_SUITE` — хардкодный список из 11 конфигов
+
+**Последствия для параллельной работы:**
+- Два исследователя в разных ветках правят один и тот же `_run_one()` → merge конфликты
+- Новый компонент = правка 3-4 мест (Config + Runner + __init__ + main.py)
+- Невозможно добавить эксперимент с принципиально иной логикой (не просто «ещё один флаг»)
+- Тестирование отдельных компонентов в контексте эксперимента затруднено
+
+---
+
+## 2. Goal
+
+Каждый эксперимент — самостоятельный класс, наследующий `BaseExperiment`. Исследователь в своей ветке создаёт файл с классом и регистрирует его — без правки общего кода.
+
+```
+# researcher/ivan/my_experiment.py  (новая ветка, нет конфликтов)
+class IvansNovelExperiment(BaseExperiment):
+    def build_pipeline(self, ctx: BuildContext) -> Pipeline:
+        return Pipeline(stages=[...])
+```
+
+**Anti-goals:**
+- Это НЕ миграция на Pipeline-архитектуру (Option C) — шаги decode остаются в `SpeculativeDecoder`
+- Это НЕ переписывание core компонентов — `DraftModel`, `TargetModel`, `CrossVocabTranslator` и т.д. остаются как есть
+- Мы не убираем `ExperimentConfig` полностью — он становится базовым конфигом, который подклассы могут расширять
+
+---
+
+## 3. Architecture
+
+### 3.1 Target Structure
+
+```
+src/experiments/
+├── __init__.py                  # public API: BaseExperiment, ExperimentRunner, suites
+├── base.py                      # BaseExperiment (ABC), ExperimentResult, BuildContext
+├── pipeline.py                  # Pipeline, Component (stages inside one experiment)
+├── runner.py                    # ExperimentRunner (orchestrator only, ~150 строк)
+├── suites.py                    # ABLATION_SUITE, CACHE_SUITE, DATASET_SUITE
+├── built_in/                    # встроенные эксперименты из текущего _run_one()
+│   ├── __init__.py
+│   ├── baseline.py
+│   ├── with_lattice.py
+│   ├── with_translator.py
+│   ├── with_online_distil.py
+│   ├── with_replay.py
+│   ├── with_contrastive.py
+│   ├── with_speedup_adapt.py
+│   ├── with_routing.py
+│   ├── with_universal.py
+│   └── full_system.py
+└── templates/                   # заготовки для исследователей
+    ├── __init__.py
+    └── minimal_template.py      # copy-paste шаблон
+```
+
+### 3.2 Class Hierarchy
+
+```
+BaseExperiment (ABC)
+├── BaselineExperiment
+├── LatticeExperiment          (extends BaselineExperiment)
+├── TranslatorExperiment       (extends LatticeExperiment)
+├── OnlineDistillExperiment
+├── ReplayExperiment           (extends OnlineDistillExperiment)
+├── ContrastiveExperiment      (extends OnlineDistillExperiment)
+├── SpeedupAdaptiveExperiment
+├── RoutingExperiment
+├── UniversalDrafterExperiment
+└── FullSystemExperiment
+
+Исследовательский эксперимент:
+├── IvansNovelExperiment       (extends BaseExperiment или любой built-in)
+```
+
+### 3.3 Key Interfaces
+
+#### `BaseExperiment`
+
+```python
+@dataclass
+class ExperimentMeta:
+    """Metadata visible to runner and MLflow."""
+    name: str
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
+    # Which ablation dimensions this experiment touches
+    dimensions: list[str] = field(default_factory=list)
+    # Dependencies on other experiments (for ordering)
+    depends_on: list[str] = field(default_factory=list)
+
+
+class BaseExperiment(ABC):
+    """Base class for all experiments.
+
+    Subclasses override methods to customize:
+    - which models to load
+    - which components to build
+    - how to run the decode loop
+    - how to collect additional metrics
+    """
+
+    def __init__(self, meta: ExperimentMeta | None = None):
+        self.meta = meta or ExperimentMeta(name=self.__class__.__name__)
+        self._components: dict[str, Any] = {}
+
+    # --- Lifecycle (override these) ---
+
+    @abstractmethod
+    def get_config(self) -> ExperimentConfig:
+        """Return the base config (models, dataset, hyperparams)."""
+        ...
+
+    def build_translator(self, ctx: BuildContext) -> CrossVocabTranslator:
+        """Build and return the translator. Default: Rule1+Rule2."""
+        ...
+
+    def build_cache(self, ctx: BuildContext) -> NgramCache:
+        """Build and return the cache. Default: NgramCache(hybrid)."""
+        ...
+
+    def build_distiller(self, ctx: BuildContext) -> OnlineDistiller | None:
+        """Build and return distiller. Default: None."""
+        ...
+
+    def build_adaptive_controller(self, ctx: BuildContext):
+        """Build adaptive draft controller. Default: None."""
+        ...
+
+    def build_router(self, ctx: BuildContext):
+        """Build dynamic router. Default: None."""
+        ...
+
+    def build_universal_drafter(self, ctx: BuildContext):
+        """Build universal drafter adapter. Default: None."""
+        ...
+
+    def on_before_decode(self, ctx: DecodeContext) -> None:
+        """Hook before decode loop starts."""
+        pass
+
+    def on_decode_step(self, ctx: DecodeContext, step_result: StepResult) -> None:
+        """Hook after each decode step. For distillation, routing, etc."""
+        pass
+
+    def on_after_decode(self, ctx: DecodeContext) -> None:
+        """Hook after decode loop finishes."""
+        pass
+
+    def on_extra_metrics(self, summary: dict) -> dict:
+        """Add experiment-specific metrics to the summary. Default: pass-through."""
+        return summary
+
+    # --- Execution (usually don't override) ---
+
+    def run(self, runner: ExperimentRunner) -> ExperimentResult:
+        """Full experiment lifecycle. Orchestrates build → run → collect."""
+        ...
+```
+
+#### `BuildContext` / `DecodeContext`
+
+```python
+@dataclass
+class BuildContext:
+    """Shared context during component construction."""
+    device: str
+    drafter: DraftModel
+    target: TargetModel
+    config: ExperimentConfig
+    # Components built so far (for dependencies)
+    components: dict[str, Any]
+
+
+@dataclass
+class DecodeContext:
+    """Shared context during the decode loop."""
+    decoder: SpeculativeDecoder
+    collector: BenchmarkCollector
+    config: ExperimentConfig
+    # Mutable state that hooks can read/write
+    distiller: OnlineDistiller | None = None
+    router: DynamicRouter | None = None
+    adaptive_fn = None
+    extra_state: dict[str, Any] = field(default_factory=dict)
+```
+
+#### `ExperimentResult`
+
+```python
+@dataclass
+class ExperimentResult:
+    meta: ExperimentMeta
+    config: dict          # asdict(config)
+    metrics: dict         # collector.summary() + extra
+    error: str | None = None
+```
+
+### 3.4 Runner (simplified)
+
+```python
+class ExperimentRunner:
+    """Orchestrates a list of BaseExperiment instances."""
+
+    def __init__(self, experiments: list[BaseExperiment], ...):
+        self.experiments = experiments
+
+    def run_all(self) -> list[ExperimentResult]:
+        for exp in self.experiments:
+            self._clear_gpu()
+            result = exp.run(self)    # each experiment knows how to run itself
+            self._save_result(result)
+        self._write_csv(results)
+
+    def _build_models(self, cfg: ExperimentConfig) -> tuple[DraftModel, TargetModel]:
+        """Shared model loading logic."""
+        ...
+
+    def _load_dataset(self, ...) -> list:
+        """Shared dataset loading (from current _load_dataset)."""
+        ...
+```
+
+### 3.5 Registration (Discovery)
+
+```python
+# experiments/suites.py
+def discover_experiments() -> list[BaseExperiment]:
+    """Auto-discover experiments from built_in/ and research/ directories."""
+    experiments = []
+
+    # Built-in experiments
+    from experiments.built_in import __all__ as built_in_names
+    for name in built_in_names:
+        experiments.append(_import_experiment(f"experiments.built_in.{name}"))
+
+[493 more lines in file. Use offset=251 to continue.]

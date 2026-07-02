@@ -1,0 +1,252 @@
+"""
+experiments/runner.py
+
+Experiment runner with full ablation support.
+
+Defines all experiment configurations and runs them sequentially (or in
+parallel via multiprocessing).  Results are logged to MLflow
+and written to a local CSV.
+
+Ablation matrix:
+  - baseline          : Rule1 + Rule2 + NgramCache(LRU) + no distillation
+  - + lattice         : Replace Rule2 with TokenizerLattice
+  - + translator      : Add TranslatorModel in hybrid mode
+  - + online_distil   : Add OnlineDistiller (no replay)
+  - + replay_fifo     : Add ReplayBuffer(fifo)
+  - + replay_prio     : Replace with ReplayBuffer(prioritized)
+  - + contrastive     : Add ContrastiveLoss
+  - + speedup_adapt   : Add SpeedupPredictor adaptive drafting
+  - + routing         : Add DynamicRouter (multi-drafter)
+  - + universal       : UniversalDrafter (multi-target)
+  - full_system       : All components enabled
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+import logging
+import os
+from dataclasses import asdict, dataclass, field
+
+logger = logging.getLogger(__name__)
+
+try:
+    import mlflow
+
+    _HAS_MLFLOW = True
+except ImportError:
+    _HAS_MLFLOW = False
+
+
+# ---------------------------------------------------------------------------
+# Configuration dataclass
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ExperimentConfig:
+    name: str
+
+    # Model paths
+    drafter_model_path: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    target_model_path: str = "Qwen/Qwen2.5-7B-Instruct"
+
+    # Dataset
+    dataset: str = "gsm8k"  # gsm8k | mbpp | humaneval | alpaca | xsum
+    max_samples: int = 500
+    max_new_tokens: int = 128
+
+    # Draft length
+    draft_length: int = 5
+    k_min: int = 1
+    k_max: int = 8
+
+    # Translation
+    use_rule1: bool = True
+    use_rule2: bool = True
+    use_lattice: bool = False  # replace Rule2 with exact lattice
+    use_translator: bool = False  # add learned translator in hybrid mode
+    translator_weight: float = 0.3
+
+    # Cache
+    cache_max_size: int = 65536
+    cache_eviction: str = "hybrid"  # lru | lfu | acc | hybrid
+
+    # Distillation
+    use_online_distil: bool = False
+    lambda_ngram: float = 0.5
+    distil_lr: float = 1e-5
+    use_lora: bool = False
+    lora_rank: int = 8
+
+    # Replay
+    use_replay: bool = False
+    replay_strategy: str = "fifo"  # fifo | prioritized
+    replay_capacity: int = 4096
+    replay_every: int = 32
+    replay_batch: int = 8
+
+    # Contrastive
+    use_contrastive: bool = False
+    lambda_contrastive: float = 0.1
+
+    # Adaptive drafting
+    use_speedup_adaptive: bool = False
+
+    # Routing
+    use_dynamic_routing: bool = False
+    drafter_model_paths: list[str] = field(default_factory=list)
+
+    # Multi-target
+    use_universal_drafter: bool = False
+    target_model_paths: list[str] = field(default_factory=list)
+
+    # Logging
+    mlflow_experiment: str = "adaptive_speculative"
+    mlflow_tracking_uri: str = "sqlite:///mlflow.db"  # http://10.93.27.4:5000/ :(
+    log_every: int = 50
+    seed: int = 42
+
+
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
+
+
+class ExperimentRunner:
+    """
+    Runs a list of ExperimentConfig objects and collects results.
+    """
+
+    def __init__(
+        self,
+        configs: list[ExperimentConfig],
+        output_dir: str = "results",
+        device: str = "cuda",
+    ) -> None:
+        self.configs = configs
+        self.output_dir = output_dir
+        self.device = device
+        os.makedirs(output_dir, exist_ok=True)
+        logger.info(
+            "ExperimentRunner initialized: output_dir=%s device=%s configs=%d",
+            output_dir,
+            device,
+            len(configs),
+        )
+
+    @staticmethod
+    def _clear_gpu_memory() -> None:
+        """Aggressively free GPU memory between experiments."""
+        import gc
+
+        import torch
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            logger.info(
+                "GPU memory: %.1f MB used / %.1f MB total",
+                torch.cuda.memory_allocated() / 1e6,
+                torch.cuda.memory_reserved() / 1e6,
+            )
+
+    def run_all(self) -> list[dict]:
+        results = []
+        logger.info("Starting run_all for %d experiment(s)", len(self.configs))
+        for index, cfg in enumerate(self.configs, start=1):
+            logger.info("Starting experiment %d/%d: %s", index, len(self.configs), cfg.name)
+            print(f"\n{'=' * 60}")
+            print(f"  Running: {cfg.name}")
+            print(f"{'=' * 60}")
+
+            # Free GPU memory from previous experiment
+            if index > 1:
+                logger.info("Clearing GPU memory from previous experiment")
+                self._clear_gpu_memory()
+
+            try:
+                result = self._run_one(cfg)
+                results.append(result)
+                self._save_result(result)
+                logger.info("Finished experiment %d/%d: %s", index, len(self.configs), cfg.name)
+            except Exception as e:
+                logger.error("Experiment %d/%d (%s) FAILED: %s", index, len(self.configs), cfg.name, e)
+                import traceback
+                traceback.print_exc()
+                failed_result = {
+                    "config": asdict(cfg),
+                    "metrics": {"error": True, "error_type": type(e).__name__, "error_message": str(e)},
+                }
+                results.append(failed_result)
+                self._save_result(failed_result)
+                logger.info("Experiment %d/%d (%s) saved as FAILED", index, len(self.configs), cfg.name)
+
+            # Free GPU memory before next experiment
+            logger.info("Releasing GPU memory after experiment %d", index)
+            self._clear_gpu_memory()
+
+        self._write_csv(results)
+        logger.info("Finished run_all with %d result(s)" % len(results))
+        return results
+
+    def _run_one(self, cfg: ExperimentConfig) -> dict:
+        """
+        Build pipeline from config and run benchmark.
+        Import lazily to avoid loading GPU models for dry runs.
+        """
+        logger.info("Running experiment config: %s", cfg.name)
+        import torch
+
+        torch.manual_seed(cfg.seed)
+        import random as _random
+        import numpy as np
+
+        _random.seed(cfg.seed)
+        np.random.seed(cfg.seed)
+        # Create a deterministic RNG for sampling operations
+        torch_rng = torch.Generator()
+        torch_rng.manual_seed(cfg.seed)
+        logger.info("Set random seed: %s", cfg.seed)
+
+        # --- Build components ---
+        logger.info("Importing core components")
+        from benchmarks.metrics.collector import BenchmarkCollector
+        from core.cache.ngram import NgramCache
+        from core.decoder.speculative import SpeculativeDecoder
+        from core.models.drafter import DraftModel, TargetModel
+        from core.translation.vocabulary import CrossVocabTranslator
+
+        logger.info("Loading drafter model: %s", cfg.drafter_model_path)
+        drafter = DraftModel(cfg.drafter_model_path, device=self.device)
+        logger.info("Loading target model: %s", cfg.target_model_path)
+        target = TargetModel(cfg.target_model_path, device=self.device)
+
+        # Translation
+        # NOTE: model.config.vocab_size is the lm_head output dimension and
+        # often differs from len(tokenizer.get_vocab()) (e.g. OPT pads
+        # 50265 → 50272). Passing the model size keeps every probability
+        # tensor downstream aligned with raw logits shapes.
+
+        # Build lattice first if needed (translator needs it in constructor)
+        lattice = None
+        if cfg.use_lattice:
+            logger.info("Building tokenizer lattice")
+            from core.extensions.lattice.tokenizer_lattice import TokenizerLattice
+
+            lattice = TokenizerLattice(
+                drafter.tokenizer,
+                target.tokenizer,
+                drafter_vocab_size=drafter.model.config.vocab_size,
+                target_vocab_size=target.model.config.vocab_size,
+            )
+            logger.info("Tokenizer lattice ready")
+
+        logger.info("Building cross-vocabulary translator")
+        translator = CrossVocabTranslator.from_tokenizers(
+            drafter.tokenizer,
+            target.tokenizer,
+
+[538 more lines in file. Use offset=251 to continue.]
