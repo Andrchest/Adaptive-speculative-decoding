@@ -630,6 +630,8 @@ class BanditRoutingExperiment(BaseExperiment):
         self.replay_batch = replay_batch
         self.reward_window = reward_window
         self.per_step_update = per_step_update
+        self.reward_clip_min = 0.0
+        self.reward_clip_max = 100.0
 
         # Populated during build
         self._drafters: list[DrafterEntry] = []
@@ -662,8 +664,8 @@ class BanditRoutingExperiment(BaseExperiment):
     # Build methods
     # ------------------------------------------------------------------
 
-    def build_router(self, ctx: BuildContext) -> UCBBanditRouter | ThompsonSamplingRouter:
-        """Build the bandit router with multiple drafter arms."""
+    def _load_drafters(self, ctx: BuildContext) -> list[DrafterEntry]:
+        """Load drafter models from config and return a list of DrafterEntry."""
         from core.models.drafter import DraftModel
 
         cfg = ctx.config
@@ -674,7 +676,7 @@ class BanditRoutingExperiment(BaseExperiment):
         # Grab actual vocab size from the drafter model config
         self._vocab_size = getattr(getattr(ctx.drafter.model, "config", None), "vocab_size", 50257)
 
-        self._drafters = []
+        entries = []
         default_name = cfg.drafter_model_path
         for path in drafter_paths:
             # Reuse the drafter the runner already loaded (avoids duplicate GPU memory)
@@ -683,13 +685,19 @@ class BanditRoutingExperiment(BaseExperiment):
                 logger.info("Reusing runner drafter for %s", path)
             else:
                 model = DraftModel(path, device=ctx.device)
-            self._drafters.append(
+            entries.append(
                 DrafterEntry(
                     name=path,
                     model=model,
                     reward_window=self.reward_window,
                 )
             )
+        self._drafters = entries
+        return entries
+
+    def build_router(self, ctx: BuildContext) -> UCBBanditRouter | ThompsonSamplingRouter:
+        """Build the bandit router with multiple drafter arms."""
+        self._load_drafters(ctx)
 
         logger.info(
             "Building %s router with %d drafters: %s (vocab_size=%d, reward_window=%d)",
@@ -724,7 +732,7 @@ class BanditRoutingExperiment(BaseExperiment):
 
         self._buffer = PerArmBuffer(
             num_arms=len(self._drafters),
-            capacity_per_arm=self.buffer_capacity,
+            capacity_per_arm=max(self.buffer_capacity // len(self._drafters), 256),
             seed=getattr(ctx.config, "seed", 42),
         )
         self._distillers = []
@@ -972,7 +980,8 @@ class BanditRoutingExperiment(BaseExperiment):
 
         # Clear buffer entries (hold detached CPU tensors from logits)
         if self._buffer is not None:
-            self._buffer._entries.clear()
+            for q in self._buffer._queues.values():
+                q.clear()
         self._buffer = None
 
         # Clear drafter entries — break references to DraftModel instances
