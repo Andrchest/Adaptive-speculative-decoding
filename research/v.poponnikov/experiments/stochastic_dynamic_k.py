@@ -86,19 +86,19 @@ class LatentRegimeK:
         *,
         k_min: int = 1,
         k_max: int = 10,
-        lambdas: tuple[float, float, float, float] = (10.0, 8.0, 4.0, 2.0),
-        lambda_min: float = 3.0,
-        regime_lambda_floor: tuple[float, float, float, float] = (4.0, 3.0, 2.0, 1.0),
-        initial_posterior: tuple[float, float, float, float] = (0.6, 0.3, 0.08, 0.02),
+        lambdas: tuple[float, float, float, float] = (8.0, 6.0, 3.5, 2.0),
+        lambda_min: float = 2.5,
+        regime_lambda_floor: tuple[float, float, float, float] = (3.0, 2.0, 1.0, 1.0),
+        initial_posterior: tuple[float, float, float, float] = (0.45, 0.4, 0.12, 0.03),
         transition_stay_prob: float = 0.9,
         reward_penalty: float = 0.5,
         lambda_lr: float = 0.05,
-        shrink_lr_scale: float = 0.25,
-        target_acceptance: float = 0.4,
-        full_accept_bonus: float = 0.3,
-        default_entropy: float = 0.35,
-        unknown_token_class: float = 0.0,
-        change_point_scale: float = 0.5,
+        shrink_lr_scale: float = 0.5,
+        target_acceptance: float = 0.5,
+        full_accept_bonus: float = 0.2,
+        default_entropy: float = 0.45,
+        unknown_token_class: float = 0.1,
+        change_point_scale: float = 0.8,
         use_drafter_entropy: bool = False,
         use_token_class: bool = False,
         seed: int = 42,
@@ -234,6 +234,7 @@ class LatentRegimeK:
                 f"{prefix}_lambda_hard": float(self.lambdas[2].item()),
                 f"{prefix}_lambda_transition": float(self.lambdas[3].item()),
                 f"{prefix}_regime_distribution": dict(sorted(counts.items())),
+                f"{prefix}_selector": "bounded_poisson",
                 f"{prefix}_target_acceptance": self.target_acceptance,
                 f"{prefix}_default_entropy": self.default_entropy,
                 f"{prefix}_change_point_scale": self.change_point_scale,
@@ -266,9 +267,13 @@ class LatentRegimeK:
         return torch.exp(log_likelihood).clamp(min=1e-8)
 
     def _sample_truncated_poisson(self, lambda_t: float) -> int:
-        lam = torch.tensor(max(lambda_t, 1e-3), dtype=torch.float32)
-        sample = int(torch.poisson(lam, generator=self.rng).item())
-        return max(self.k_min, min(sample, self.k_max))
+        lam = max(lambda_t, 1e-3)
+        support = torch.arange(self.k_min, self.k_max + 1, dtype=torch.float32)
+        log_probs = support * math.log(lam) - torch.lgamma(support + 1.0)
+        probs = torch.exp(log_probs - log_probs.max())
+        probs = probs / probs.sum().clamp(min=1e-8)
+        index = int(torch.multinomial(probs, 1, generator=self.rng).item())
+        return int(support[index].item())
 
     def _update_lambda_from_acceptance(self, old_lambda: float, result: StepResult) -> float:
         acceptance = result.accepted_count / max(result.draft_length, 1)
@@ -366,6 +371,104 @@ class LatentRegimeK:
         return transition
 
 
+class CategoricalLatentRegimeK(LatentRegimeK):
+    """Choose draft length from regime-conditioned categorical distributions."""
+
+    def __init__(
+        self,
+        drafter,
+        *,
+        categorical_widths: tuple[float, float, float, float] = (2.3, 2.0, 1.45, 0.9),
+        categorical_temperature: float = 0.9,
+        max_k_penalty: float = 0.35,
+        **kwargs,
+    ) -> None:
+        super().__init__(drafter, **kwargs)
+        if len(categorical_widths) != len(self.regime_names):
+            raise ValueError("categorical_widths must contain one value per regime")
+        if any(value <= 0 for value in categorical_widths):
+            raise ValueError("all categorical widths must be positive")
+        if categorical_temperature <= 0:
+            raise ValueError("categorical_temperature must be positive")
+        if max_k_penalty < 0:
+            raise ValueError("max_k_penalty must be non-negative")
+
+        self.categorical_widths = torch.tensor(categorical_widths, dtype=torch.float32)
+        self.categorical_temperature = categorical_temperature
+        self.max_k_penalty = max_k_penalty
+
+    def __call__(self, context: torch.Tensor) -> int:
+        self._pending_entropy = self._draft_entropy(context)
+        self._pending_token_class = self._token_class(context)
+
+        change_point_prob = (1.0 - float(self.posterior.max().item())) * self.change_point_scale
+        regime_idx = int(self.posterior.argmax().item())
+        support, probs = self._categorical_distribution(change_point_prob)
+        index = int(torch.multinomial(probs, 1, generator=self.rng).item())
+        selected_k = int(support[index].item())
+        expected_k = float((support.float() * probs).sum().item())
+
+        self._last_regime_idx = regime_idx
+        self._last_k = selected_k
+        self.change_point_history.append(change_point_prob)
+        self.selections.append(
+            RegimeSelection(
+                selected_k=selected_k,
+                regime=self.regime_names[regime_idx],
+                change_point_prob=change_point_prob,
+                lambda_t=expected_k,
+                posterior=[float(v) for v in self.posterior.tolist()],
+            )
+        )
+        return selected_k
+
+    def summary(self, prefix: str = "regime_k") -> dict[str, object]:
+        metrics = super().summary(prefix)
+        metrics.update(
+            {
+                f"{prefix}_selector": "categorical",
+                f"{prefix}_categorical_temperature": self.categorical_temperature,
+                f"{prefix}_max_k_penalty": self.max_k_penalty,
+            }
+        )
+        return metrics
+
+    def _categorical_distribution(
+        self,
+        change_point_prob: float,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        support = torch.arange(self.k_min, self.k_max + 1, dtype=torch.float32)
+        regime_probs = torch.stack(
+            [
+                self._regime_categorical_distribution(index, support)
+                for index in range(len(self.regime_names))
+            ]
+        )
+        posterior = self.posterior.to(dtype=regime_probs.dtype)
+        mixed_probs = posterior @ regime_probs
+        transition_probs = regime_probs[self.regime_names.index("transition")]
+        change_point_prob = _clamp(change_point_prob, 0.0, 1.0)
+        probs = (1.0 - change_point_prob) * mixed_probs
+        probs += change_point_prob * transition_probs
+        probs = probs.clamp(min=1e-8)
+        probs = probs / probs.sum().clamp(min=1e-8)
+        return support, probs
+
+    def _regime_categorical_distribution(
+        self,
+        regime_idx: int,
+        support: torch.Tensor,
+    ) -> torch.Tensor:
+        center = float(self.lambdas[regime_idx].item())
+        center = _clamp(center, float(self.k_min), float(self.k_max))
+        width = float(self.categorical_widths[regime_idx].item())
+        logits = -0.5 * ((support - center) / width) ** 2
+        logits = logits / self.categorical_temperature
+        if self.max_k_penalty > 0:
+            logits = logits - self.max_k_penalty * (support == self.k_max).float()
+        return torch.softmax(logits, dim=0)
+
+
 @dataclass
 class _StepProxy:
     """Small StepResult-compatible object for record_result fallbacks."""
@@ -426,4 +529,45 @@ class LatentRegimeKExperiment(BaseExperiment):
         return summary
 
 
-__all__ = ["LatentRegimeKExperiment"]
+class LatentRegimeCategoricalKExperiment(LatentRegimeKExperiment):
+    """Research experiment for the categorical LatentRegimeK variant."""
+
+    def __init__(self) -> None:
+        BaseExperiment.__init__(
+            self,
+            ExperimentMeta(
+                name="latent_regime_categorical_k",
+                description="Stochastic dynamic k via latent regimes and categorical sampling",
+                tags=[
+                    "research",
+                    "v.poponnikov",
+                    "adaptive",
+                    "stochastic",
+                    "regime",
+                    "categorical",
+                ],
+                dimensions=["draft_length_strategy"],
+                depends_on=["01_baseline", "08_+speedup_adapt", "latent_regime_k"],
+            ),
+        )
+        self._controller: CategoricalLatentRegimeK | None = None
+
+    def build_adaptive_controller(self, ctx: BuildContext) -> CategoricalLatentRegimeK:
+        cfg = ctx.config
+        controller = CategoricalLatentRegimeK(
+            ctx.drafter,
+            k_min=getattr(cfg, "k_min", 1),
+            k_max=getattr(cfg, "k_max", 8),
+            seed=getattr(cfg, "seed", 42) + 3001,
+        )
+        self._controller = controller
+        return controller
+
+    def on_extra_metrics(self, summary: dict) -> dict:
+        if self._controller is not None:
+            summary.update(self._controller.summary("regime_k"))
+            summary["dynamic_k_method"] = "latent_regime_categorical"
+        return summary
+
+
+__all__ = ["LatentRegimeKExperiment", "LatentRegimeCategoricalKExperiment"]

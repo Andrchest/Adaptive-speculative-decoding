@@ -29,6 +29,7 @@ DEFAULT_EXPERIMENTS = (
     "01_baseline",
     "08_+speedup_adapt",
     "latent_regime_k",
+    "latent_regime_categorical_k",
 )
 
 _EXPERIMENT_PROTOTYPES: dict[str, object] | None = None
@@ -583,32 +584,33 @@ def _bar_two_metrics(
 
 
 def _plot_regime_distribution_on_axis(axis, results: Sequence[dict[str, Any]]) -> None:
-    regime_result = next(
-        (
-            result
-            for result in results
-            if isinstance(result.get("metrics", {}).get("regime_k_k_distribution"), dict)
-        ),
-        None,
-    )
-    if regime_result is None:
+    distributions = _regime_k_distributions(results)
+    if not distributions:
         axis.axis("off")
         axis.text(0.5, 0.5, "No regime-k distribution", ha="center", va="center")
         return
 
-    distribution = _normalize_distribution(
-        regime_result.get("metrics", {}).get("regime_k_k_distribution", {})
-    )
-    if not distribution:
-        axis.axis("off")
-        axis.text(0.5, 0.5, "No regime-k distribution", ha="center", va="center")
-        return
+    keys = sorted({k for _, distribution in distributions for k in distribution})
+    x_positions = list(range(len(keys)))
+    width = min(0.8 / max(len(distributions), 1), 0.35)
+    colors = ["#9333ea", "#f59e0b", "#0f766e", "#dc2626"]
 
-    keys = sorted(distribution)
-    axis.bar([str(key) for key in keys], [distribution[key] for key in keys], color="#9333ea")
-    axis.set_title("latent_regime_k selected-k distribution")
+    for index, (name, distribution) in enumerate(distributions):
+        offset = (index - (len(distributions) - 1) / 2) * width
+        values = [distribution.get(k, 0.0) for k in keys]
+        axis.bar(
+            [position + offset for position in x_positions],
+            values,
+            width=width,
+            label=name,
+            color=colors[index % len(colors)],
+        )
+
+    axis.set_xticks(x_positions, [str(key) for key in keys])
+    axis.set_title("Dynamic-k selected-k distribution")
     axis.set_xlabel("selected k")
     axis.set_ylabel("steps")
+    axis.legend(fontsize=7)
 
 
 def _plot_primary_metrics(results: Sequence[dict[str, Any]], plots_dir: Path, plt) -> Path:
@@ -677,14 +679,7 @@ def _plot_dynamic_k_summary(results: Sequence[dict[str, Any]], plots_dir: Path, 
 
 
 def _plot_k_distribution(results: Sequence[dict[str, Any]], plots_dir: Path, plt) -> Path | None:
-    distributions: list[tuple[str, dict[int, float]]] = []
-    for result in results:
-        metrics = result.get("metrics", {})
-        name = str(result.get("config", {}).get("name", metrics.get("name", "")))
-        distribution = metrics.get("regime_k_k_distribution")
-        if isinstance(distribution, dict) and distribution:
-            distributions.append((name, _normalize_distribution(distribution)))
-
+    distributions = _regime_k_distributions(results)
     if not distributions:
         return None
 
@@ -713,6 +708,21 @@ def _plot_k_distribution(results: Sequence[dict[str, Any]], plots_dir: Path, plt
     fig.savefig(path, dpi=160)
     plt.close(fig)
     return path
+
+
+def _regime_k_distributions(
+    results: Sequence[dict[str, Any]],
+) -> list[tuple[str, dict[int, float]]]:
+    distributions: list[tuple[str, dict[int, float]]] = []
+    for result in results:
+        metrics = result.get("metrics", {})
+        name = str(result.get("config", {}).get("name", metrics.get("name", "")))
+        distribution = metrics.get("regime_k_k_distribution")
+        if isinstance(distribution, dict) and distribution:
+            normalized = _normalize_distribution(distribution)
+            if normalized:
+                distributions.append((name, normalized))
+    return distributions
 
 
 def _plot_controller_diagnostics(

@@ -3,10 +3,12 @@
 ## Research Direction
 
 This research track studies stochastic methods for choosing the speculative
-draft length `k` dynamically during generation. The active method is now
+draft length `k` dynamically during generation. The active methods are now
 `LatentRegimeK`, an online hidden-regime controller that increases `k` when
 drafting looks reliable and shrinks `k` when long drafts are likely to be
-rejected by the target model.
+rejected by the target model, and `CategoricalLatentRegimeK`, a sibling
+variant that samples directly from regime-conditioned categorical
+distributions over valid `k` values.
 
 The earlier consensus-based method was removed from the active implementation
 after smoke and real-model tests showed that it was not viable: it achieved high
@@ -29,7 +31,7 @@ an adaptive distribution.
 ## Active Method: Latent Regime K
 
 `LatentRegimeK` models generation as a sequence of hidden regimes. Each regime
-has its own distribution over `k`, and the controller updates regime
+has its own stochastic policy over `k`, and the controller updates regime
 probabilities after each target verification.
 
 Initial regimes:
@@ -59,6 +61,15 @@ lambda_t = (1 - change_point_t) * lambda_regime + change_point_t * lambda_min
 When the change-point probability is high, `lambda_t` moves toward `lambda_min`
 and the controller sharply reduces `k`.
 
+The registered `latent_regime_categorical_k` variant keeps the same posterior,
+change-point, and lambda update logic, but replaces the bounded Poisson sampler
+with a categorical distribution over `K_min..K_max`. Each regime uses its
+current lambda as the center of a softmax distribution over discrete `k`
+values, with a small penalty on `K_max` to keep the larger cap available
+without letting the controller pile up at the maximum. This variant is intended
+to test whether direct categorical sampling gives better acceptance and
+throughput than the adjusted bounded-Poisson regime controller.
+
 ## Retired Method: Epistemic Consensus K
 
 `EpistemicConsensusK` was tested as a stochastic self-consensus controller. It
@@ -87,8 +98,10 @@ should remain in the active notebook or experiment registry.
 7. Add required 70M/125M drafter model-matrix benchmark workflow. Done.
 8. Tune the regime controller so unavailable uncertainty signals do not force
    hard/transition regimes and successful drafts grow `k` more readily. Done.
-9. Run the updated model matrix and compare the less-conservative controller
-   against the previous results. Next.
+9. Add a categorical regime variant and test it alongside the adjusted current
+    regime controller. Done.
+10. Run the updated model matrix and compare both regime controllers against
+    the previous results. Next.
 
 ## Metrics
 
@@ -121,6 +134,7 @@ Single experiment:
 
 ```bash
 python src/main.py --experiment latent_regime_k --tiny -n 5 --max-new-tokens 32 --no-mlflow
+python src/main.py --experiment latent_regime_categorical_k --tiny -n 5 --max-new-tokens 32 --no-mlflow
 ```
 
 Reference baselines:
@@ -168,8 +182,9 @@ $env:PYTHONPATH = "src"
   --target-sizes 1.5b 3b 7b
 ```
 
-This runs `01_baseline`, `08_+speedup_adapt`, and `latent_regime_k` in one
-comparison pass for every selected drafter-target pair.
+This runs `01_baseline`, `08_+speedup_adapt`, `latent_regime_k`, and
+`latent_regime_categorical_k` in one comparison pass for every selected
+drafter-target pair.
 
 Per-pair outputs:
 
@@ -237,8 +252,9 @@ Real-run interpretation:
 ## Next Tuning Direction
 
 - Re-run the 70M/125M model matrix after the less-conservative update.
-- Compare whether the higher easy/normal floors and `k_max = 10` improve
-  throughput without losing too much acceptance.
+- Compare whether the bounded Poisson sampler, categorical sampler, and
+  `k_max = 10` improve throughput without overusing `k = 10` or losing too
+  much acceptance.
 - Continue changing the reward from raw acceptance toward throughput-aware
   utility if `k` is still too small.
 - Run larger comparisons with multiple seeds and confidence intervals.
@@ -255,15 +271,15 @@ Real-run interpretation:
 
 ## Current Status
 
-- Research direction narrowed to `LatentRegimeK`.
+- Research direction narrowed to latent-regime dynamic `k` controllers.
 - `EpistemicConsensusK` retired and removed from active code because it was too
   slow and collapsed to one-token drafts.
 - `LatentRegimeK` implemented in
   `research/v.poponnikov/experiments/stochastic_dynamic_k.py`.
-- Only `latent_regime_k` is registered for auto-discovery from this research
-  module.
+- `latent_regime_k` and `latent_regime_categorical_k` are registered for
+  auto-discovery from this research module.
 - Notebook comparison now runs `01_baseline`, `08_+speedup_adapt`, and
-  `latent_regime_k` across the required 70M/125M drafter matrix.
+  both latent-regime variants across the required 70M/125M drafter matrix.
 - Each drafter-target pair writes a per-pair `metrics.csv` and one combined
   `comparison.png`.
 - `LatentRegimeK` was tuned to be less conservative and cheaper to run:
@@ -272,4 +288,11 @@ Real-run interpretation:
   easy/normal regimes have higher lambda floors, successful full drafts grow
   lambda faster than failed drafts shrink it, and the research cap is now
   `k_max = 10`.
+- After the first `k_max = 10` run overused `k = 10`, sampling was changed from
+  clamp-after-Poisson to a bounded Poisson distribution over valid `k` values.
+  This keeps the larger cap available without sending every overflow sample to
+  the maximum.
+- `latent_regime_categorical_k` was added to test a direct categorical
+  selected-`k` distribution using the same posterior and update signals as the
+  adjusted current regime controller.
 - Unit tests updated in `tests/unit/test_v_poponnikov_dynamic_k.py`.

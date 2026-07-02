@@ -123,8 +123,8 @@ def test_latent_regime_avoids_drafter_forward_for_out_of_vocab_context() -> None
 
     assert 1 <= selected <= 4
     assert drafter.model.calls == 0
-    assert controller._pending_entropy == pytest.approx(0.35)
-    assert controller._pending_token_class == pytest.approx(0.0)
+    assert controller._pending_entropy == pytest.approx(0.45)
+    assert controller._pending_token_class == pytest.approx(0.1)
 
 
 def test_latent_regime_entropy_probe_checks_vocab_when_enabled() -> None:
@@ -134,8 +134,39 @@ def test_latent_regime_entropy_probe_checks_vocab_when_enabled() -> None:
 
     entropy = controller._draft_entropy(torch.tensor([[0, 99]], dtype=torch.long))
 
-    assert entropy == pytest.approx(0.35)
+    assert entropy == pytest.approx(0.45)
     assert drafter.model.calls == 0
+
+
+def test_latent_regime_sampler_does_not_clamp_overflow_to_k_max() -> None:
+    module = _load_research_module()
+    controller = module.LatentRegimeK(_ScriptedDrafter(), k_min=1, k_max=10, seed=123)
+
+    samples = [controller._sample_truncated_poisson(10.0) for _ in range(500)]
+    max_share = samples.count(10) / len(samples)
+
+    assert min(samples) >= 1
+    assert max(samples) <= 10
+    assert max_share < 0.4
+
+
+def test_categorical_latent_regime_samples_from_discrete_support() -> None:
+    module = _load_research_module()
+    controller = module.CategoricalLatentRegimeK(
+        _ScriptedDrafter(),
+        k_min=1,
+        k_max=10,
+        seed=321,
+    )
+
+    samples = [controller(torch.tensor([[0, 1, 2]], dtype=torch.long)) for _ in range(200)]
+    summary = controller.summary()
+
+    assert min(samples) >= 1
+    assert max(samples) <= 10
+    assert len(set(samples)) > 2
+    assert summary["regime_k_selector"] == "categorical"
+    assert summary["regime_k_categorical_temperature"] == pytest.approx(0.9)
 
 
 def test_latent_regime_lambda_update_is_less_conservative() -> None:
@@ -176,6 +207,8 @@ def test_invalid_dynamic_k_parameters_raise() -> None:
         module.LatentRegimeK(_ScriptedDrafter(), initial_posterior=(1.0, 0.0))
     with pytest.raises(ValueError, match="transition_stay_prob"):
         module.LatentRegimeK(_ScriptedDrafter(), transition_stay_prob=1.1)
+    with pytest.raises(ValueError, match="categorical_temperature"):
+        module.CategoricalLatentRegimeK(_ScriptedDrafter(), categorical_temperature=0.0)
 
 
 def test_decoder_reports_step_result_to_adaptive_observer() -> None:
@@ -199,7 +232,10 @@ def test_decoder_reports_step_result_to_adaptive_observer() -> None:
 
 def test_research_experiment_configs_are_valid() -> None:
     module = _load_research_module()
-    experiments = [module.LatentRegimeKExperiment()]
+    experiments = [
+        module.LatentRegimeKExperiment(),
+        module.LatentRegimeCategoricalKExperiment(),
+    ]
 
     for experiment in experiments:
         cfg = experiment.get_config()
@@ -212,6 +248,7 @@ def test_research_experiment_configs_are_valid() -> None:
 def test_dynamic_k_comparison_csv_keeps_research_metrics(tmp_path) -> None:
     module = _load_comparison_module()
     assert "stochastic_consensus_k" not in module.DEFAULT_EXPERIMENTS
+    assert "latent_regime_categorical_k" in module.DEFAULT_EXPERIMENTS
     results = [
         {
             "config": {"name": "01_baseline"},
@@ -225,6 +262,14 @@ def test_dynamic_k_comparison_csv_keeps_research_metrics(tmp_path) -> None:
                 "regime_k_k_distribution": {1: 2, 3: 4},
             },
         },
+        {
+            "config": {"name": "latent_regime_categorical_k"},
+            "metrics": {
+                "tokens_per_sec": 11.0,
+                "regime_k_selector": "categorical",
+                "regime_k_k_distribution": {4: 1, 6: 3},
+            },
+        },
     ]
     path = tmp_path / "dynamic_k_comparison.csv"
 
@@ -233,6 +278,7 @@ def test_dynamic_k_comparison_csv_keeps_research_metrics(tmp_path) -> None:
     text = path.read_text(encoding="utf-8")
     assert "tokens_per_sec" in text
     assert "regime_k_mean_selected_k" in text
+    assert "latent_regime_categorical_k" in text
     assert '"{""1"": 2, ""3"": 4}"' in text
 
 
