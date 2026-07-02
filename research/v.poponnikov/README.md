@@ -84,7 +84,8 @@ should remain in the active notebook or experiment registry.
    `k`. Done.
 5. Add lightweight smoke experiments with tiny models. Done.
 6. Add notebook workflow for online IDEs without terminal access. Done.
-7. Tune the regime controller so higher acceptance does not make it too
+7. Add required 70M/125M drafter model-matrix benchmark workflow. Done.
+8. Tune the regime controller so higher acceptance does not make it too
    conservative. Next.
 
 ## Metrics
@@ -135,39 +136,58 @@ Notebook workflow for online IDEs without terminal access:
 2. Run the cells from top to bottom.
 3. On a fresh Python 3.10 online image, run the dependency install cell once,
    then restart the notebook kernel and set `INSTALL_DEPENDENCIES = False`.
-4. Keep the tiny smoke run enabled first.
-5. After the smoke run succeeds, set `RUN_REAL = True` in the real Qwen
-   comparison cell and run it.
+4. Keep the tiny sanity run enabled first.
+5. Run the model matrix cell for the required 70M and 125M drafter
+   comparisons.
+
+The required matrix is:
+
+| Drafter | Targets |
+| --- | --- |
+| `EleutherAI/pythia-70m` | `Qwen/Qwen2.5-1.5B-Instruct`, `Qwen/Qwen2.5-3B-Instruct`, `Qwen/Qwen2.5-7B-Instruct` |
+| `facebook/opt-125m` | `Qwen/Qwen2.5-1.5B-Instruct`, `Qwen/Qwen2.5-3B-Instruct`, `Qwen/Qwen2.5-7B-Instruct` |
+
+Optional targets `Qwen/Qwen2.5-14B-Instruct` and
+`Qwen/Qwen2.5-32B-Instruct` can be enabled in the notebook with
+`INCLUDE_LARGE_TARGETS = True` if there is enough GPU memory and time.
 
 Command-line workflow:
 
 ```powershell
 $env:PYTHONPATH = "src"
 .\.venv\Scripts\python.exe research\v.poponnikov\notebooks\dynamic_k_comparison.py `
-  --tiny `
-  --samples 5 `
-  --max-new-tokens 32 `
-  --device cuda
+  --matrix `
+  --output-dir research\v.poponnikov\results\model_matrix `
+  --plots-dir research\v.poponnikov\plots `
+  --samples 50 `
+  --max-new-tokens 128 `
+  --device cuda `
+  --draft-sizes 70m 125m `
+  --target-sizes 1.5b 3b 7b
 ```
 
 This runs `01_baseline`, `08_+speedup_adapt`, and `latent_regime_k` in one
-comparison pass. Results are written to
-`research/v.poponnikov/results/dynamic_k_comparison/`, including
-`dynamic_k_comparison.csv`. Plots are written to
-`research/v.poponnikov/plots/dynamic_k_comparison/`.
+comparison pass for every selected drafter-target pair.
 
-The notebook workflow keeps smoke and real runs in separate folders:
+Per-pair outputs:
 
-- `research/v.poponnikov/results/smoke/`
-- `research/v.poponnikov/results/real/`
-- `research/v.poponnikov/plots/smoke/`
-- `research/v.poponnikov/plots/real/`
+- `research/v.poponnikov/results/model_matrix/70m-1_5b/metrics.csv`
+- `research/v.poponnikov/plots/70m-1_5b-plots/comparison.png`
 
-To regenerate plots from existing JSON results without rerunning models:
+The same pattern is used for `70m-3b`, `70m-7b`, `125m-1_5b`,
+`125m-3b`, and `125m-7b`. The aggregate matrix CSV is written to
+`research/v.poponnikov/results/model_matrix/model_matrix_metrics.csv`.
+
+To regenerate CSVs and plots from existing JSON results without rerunning
+models:
 
 ```powershell
 $env:PYTHONPATH = "src"
-.\.venv\Scripts\python.exe research\v.poponnikov\notebooks\dynamic_k_comparison.py --plot-only
+.\.venv\Scripts\python.exe research\v.poponnikov\notebooks\dynamic_k_comparison.py `
+  --matrix `
+  --plot-only `
+  --output-dir research\v.poponnikov\results\model_matrix `
+  --plots-dir research\v.poponnikov\plots
 ```
 
 ## Preliminary Results
@@ -239,5 +259,7 @@ Real-run interpretation:
 - Only `latent_regime_k` is registered for auto-discovery from this research
   module.
 - Notebook comparison now runs `01_baseline`, `08_+speedup_adapt`, and
-  `latent_regime_k`.
+  `latent_regime_k` across the required 70M/125M drafter matrix.
+- Each drafter-target pair writes a per-pair `metrics.csv` and one combined
+  `comparison.png`.
 - Unit tests updated in `tests/unit/test_v_poponnikov_dynamic_k.py`.

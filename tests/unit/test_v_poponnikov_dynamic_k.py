@@ -155,6 +155,7 @@ def test_research_experiment_configs_are_valid() -> None:
 
 def test_dynamic_k_comparison_csv_keeps_research_metrics(tmp_path) -> None:
     module = _load_comparison_module()
+    assert "stochastic_consensus_k" not in module.DEFAULT_EXPERIMENTS
     results = [
         {
             "config": {"name": "01_baseline"},
@@ -177,3 +178,40 @@ def test_dynamic_k_comparison_csv_keeps_research_metrics(tmp_path) -> None:
     assert "tokens_per_sec" in text
     assert "regime_k_mean_selected_k" in text
     assert '"{""1"": 2, ""3"": 4}"' in text
+
+
+def test_model_matrix_helpers_build_pair_outputs(tmp_path) -> None:
+    module = _load_comparison_module()
+    args = type(
+        "Args",
+        (),
+        {
+            "draft_sizes": ["70m"],
+            "target_sizes": ["1.5b"],
+            "include_large_targets": False,
+        },
+    )()
+
+    pairs = module.build_model_pairs(args)
+
+    assert len(pairs) == 1
+    pair = pairs[0]
+    assert pair.slug == "70m-1_5b"
+    assert pair.drafter.path == "EleutherAI/pythia-70m"
+    assert pair.target.path == "Qwen/Qwen2.5-1.5B-Instruct"
+
+    results = [
+        {
+            "config": {"name": "latent_regime_k"},
+            "metrics": {"tokens_per_sec": 12.0, "regime_k_mean_selected_k": 3.5},
+        }
+    ]
+    path = tmp_path / "model_matrix_metrics.csv"
+
+    module.write_matrix_csv([(pair, results)], path)
+
+    text = path.read_text(encoding="utf-8")
+    assert "70m-1_5b" in text
+    assert "EleutherAI/pythia-70m" in text
+    assert "Qwen/Qwen2.5-1.5B-Instruct" in text
+    assert "regime_k_mean_selected_k" in text

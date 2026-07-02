@@ -11,6 +11,7 @@ import argparse
 import csv
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -19,8 +20,6 @@ os.environ.setdefault("USE_FLAX", "0")
 os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 os.environ.setdefault("TRANSFORMERS_NO_FLAX", "1")
 os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
-
-from experiments import ExperimentRunner, discover_experiments
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -38,6 +37,47 @@ PRIMARY_METRICS = (
     "avg_draft_length",
     "wall_time_total_s",
 )
+
+DEFAULT_MATRIX_DRAFTS = ("70m", "125m")
+DEFAULT_MATRIX_TARGETS = ("1.5b", "3b", "7b")
+OPTIONAL_LARGE_TARGETS = ("14b", "32b")
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    """Named model option used by the matrix benchmark."""
+
+    key: str
+    label: str
+    path: str
+
+
+@dataclass(frozen=True)
+class ModelPair:
+    """Drafter-target pair for one comparison run."""
+
+    slug: str
+    drafter: ModelSpec
+    target: ModelSpec
+
+    @property
+    def title(self) -> str:
+        """Human-readable plot title."""
+        return f"{self.drafter.label} drafter -> {self.target.label} target"
+
+
+DRAFT_MODELS = {
+    "70m": ModelSpec("70m", "70M", "EleutherAI/pythia-70m"),
+    "125m": ModelSpec("125m", "125M", "facebook/opt-125m"),
+}
+
+TARGET_MODELS = {
+    "1.5b": ModelSpec("1.5b", "1.5B", "Qwen/Qwen2.5-1.5B-Instruct"),
+    "3b": ModelSpec("3b", "3B", "Qwen/Qwen2.5-3B-Instruct"),
+    "7b": ModelSpec("7b", "7B", "Qwen/Qwen2.5-7B-Instruct"),
+    "14b": ModelSpec("14b", "14B", "Qwen/Qwen2.5-14B-Instruct"),
+    "32b": ModelSpec("32b", "32B", "Qwen/Qwen2.5-32B-Instruct"),
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,6 +115,35 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--drafter-model", default="", help="Override drafter model.")
     parser.add_argument("--target-model", default="", help="Override target model.")
     parser.add_argument(
+        "--matrix",
+        action="store_true",
+        help="Run the configured drafter-target model matrix.",
+    )
+    parser.add_argument(
+        "--draft-sizes",
+        nargs="+",
+        choices=tuple(DRAFT_MODELS),
+        default=list(DEFAULT_MATRIX_DRAFTS),
+        help="Draft model sizes to use in --matrix mode.",
+    )
+    parser.add_argument(
+        "--target-sizes",
+        nargs="+",
+        choices=tuple(TARGET_MODELS),
+        default=list(DEFAULT_MATRIX_TARGETS),
+        help="Target model sizes to use in --matrix mode.",
+    )
+    parser.add_argument(
+        "--include-large-targets",
+        action="store_true",
+        help="Also include optional 14B and 32B targets in --matrix mode.",
+    )
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Continue matrix runs after a failed experiment and still save available outputs.",
+    )
+    parser.add_argument(
         "--enable-mlflow",
         action="store_true",
         help="Keep MLflow enabled. By default this script disables MLflow.",
@@ -85,6 +154,29 @@ def parse_args() -> argparse.Namespace:
         help="Read existing result JSON files and regenerate CSV/plots.",
     )
     return parser.parse_args()
+
+
+def build_model_pairs(args: argparse.Namespace) -> list[ModelPair]:
+    """Build the requested drafter-target pairs for matrix mode."""
+    target_sizes = list(args.target_sizes)
+    if args.include_large_targets:
+        for target in OPTIONAL_LARGE_TARGETS:
+            if target not in target_sizes:
+                target_sizes.append(target)
+
+    pairs: list[ModelPair] = []
+    for draft_size in args.draft_sizes:
+        for target_size in target_sizes:
+            drafter = DRAFT_MODELS[draft_size]
+            target = TARGET_MODELS[target_size]
+            pairs.append(
+                ModelPair(
+                    slug=f"{_slugify(drafter.key)}-{_slugify(target.key)}",
+                    drafter=drafter,
+                    target=target,
+                )
+            )
+    return pairs
 
 
 def select_experiments(names: Sequence[str]) -> list[object]:
@@ -99,6 +191,8 @@ def select_experiments(names: Sequence[str]) -> list[object]:
     Raises:
         ValueError: If any requested experiment is not discoverable.
     """
+    from experiments import discover_experiments
+
     available = {experiment.meta.name: experiment for experiment in discover_experiments()}
     missing = [name for name in names if name not in available]
     if missing:
@@ -140,6 +234,8 @@ def apply_common_overrides(
 
 def run_comparison(args: argparse.Namespace) -> list[dict[str, Any]]:
     """Run the requested experiments through the shared project runner."""
+    from experiments import ExperimentRunner
+
     experiments = select_experiments(args.experiments)
     apply_common_overrides(
         experiments,
@@ -157,6 +253,62 @@ def run_comparison(args: argparse.Namespace) -> list[dict[str, Any]]:
         device=args.device,
     )
     return runner.run_all()
+
+
+def run_model_matrix(args: argparse.Namespace) -> list[tuple[ModelPair, list[dict[str, Any]]]]:
+    """Run or load every requested model-pair comparison."""
+    pair_results: list[tuple[ModelPair, list[dict[str, Any]]]] = []
+    pairs = build_model_pairs(args)
+    if not pairs:
+        raise ValueError("No model pairs selected")
+
+    for pair in pairs:
+        pair_output_dir = args.output_dir / pair.slug
+        pair_plots_dir = args.plots_dir / f"{pair.slug}-plots"
+        pair_args = _args_for_model_pair(args, pair, pair_output_dir, pair_plots_dir)
+        print(f"\n### Model pair: {pair.title}")
+        print(f"Drafter: {pair.drafter.path}")
+        print(f"Target:  {pair.target.path}")
+
+        if args.plot_only:
+            results = load_results(pair_output_dir, args.experiments)
+        else:
+            results = run_comparison(pair_args)
+
+        metrics_csv = pair_output_dir / "metrics.csv"
+        write_union_csv(results, metrics_csv)
+        write_union_csv(results, pair_output_dir / "dynamic_k_comparison.csv")
+
+        failures = failed_experiments(results)
+        if failures and not args.continue_on_error:
+            raise RuntimeError(
+                f"Experiment failure(s) for {pair.slug}: " + " | ".join(failures)
+            )
+
+        plot_path = plot_model_pair_summary(results, pair_plots_dir, pair)
+        print(f"Pair CSV saved to: {metrics_csv}")
+        print(f"Pair plot saved to: {plot_path}")
+        pair_results.append((pair, results))
+
+    matrix_csv = args.output_dir / "model_matrix_metrics.csv"
+    write_matrix_csv(pair_results, matrix_csv)
+    print(f"\nMatrix CSV saved to: {matrix_csv}")
+    return pair_results
+
+
+def _args_for_model_pair(
+    args: argparse.Namespace,
+    pair: ModelPair,
+    output_dir: Path,
+    plots_dir: Path,
+) -> argparse.Namespace:
+    pair_args = argparse.Namespace(**vars(args))
+    pair_args.output_dir = output_dir
+    pair_args.plots_dir = plots_dir
+    pair_args.tiny = False
+    pair_args.drafter_model = pair.drafter.path
+    pair_args.target_model = pair.target.path
+    return pair_args
 
 
 def failed_experiments(results: Sequence[dict[str, Any]]) -> list[str]:
@@ -217,6 +369,48 @@ def write_union_csv(results: Sequence[dict[str, Any]], path: Path) -> None:
             writer.writerow(row)
 
 
+def write_matrix_csv(
+    pair_results: Sequence[tuple[ModelPair, Sequence[dict[str, Any]]]],
+    path: Path,
+) -> None:
+    """Write one aggregate CSV across all model-pair comparisons."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    metric_keys: list[str] = []
+    seen: set[str] = set()
+    for _, results in pair_results:
+        for key in metric_keys_union(results):
+            if key not in seen:
+                seen.add(key)
+                metric_keys.append(key)
+
+    fieldnames = [
+        "pair",
+        "drafter_size",
+        "target_size",
+        "drafter_model",
+        "target_model",
+        "experiment",
+        *metric_keys,
+    ]
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        for pair, results in pair_results:
+            for result in results:
+                metrics = result.get("metrics", {})
+                row: dict[str, Any] = {
+                    "pair": pair.slug,
+                    "drafter_size": pair.drafter.label,
+                    "target_size": pair.target.label,
+                    "drafter_model": pair.drafter.path,
+                    "target_model": pair.target.path,
+                    "experiment": result.get("config", {}).get("name", metrics.get("name", "")),
+                }
+                for key in metric_keys:
+                    row[key] = _csv_value(metrics.get(key, ""))
+                writer.writerow(row)
+
+
 def plot_results(results: Sequence[dict[str, Any]], plots_dir: Path) -> list[Path]:
     """Generate all available comparison plots.
 
@@ -242,10 +436,51 @@ def plot_results(results: Sequence[dict[str, Any]], plots_dir: Path) -> list[Pat
     return created
 
 
+def plot_model_pair_summary(
+    results: Sequence[dict[str, Any]],
+    plots_dir: Path,
+    pair: ModelPair,
+) -> Path:
+    """Generate one combined comparison PNG for a model pair."""
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    plt = _load_matplotlib()
+    names = _experiment_names(results)
+    colors = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#f59e0b"]
+
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    axes_flat = list(axes.reshape(-1))
+    fig.suptitle(f"{pair.title}: technique comparison", fontsize=15)
+
+    _bar_metric(axes_flat[0], names, results, "tokens_per_sec", "tokens/sec", colors)
+    _bar_metric(axes_flat[1], names, results, "wall_clock_speedup", "speedup vs target", colors)
+    _bar_metric(
+        axes_flat[2], names, results, "acceptance_rate", "acceptance, %", colors, scale=100.0
+    )
+    _bar_metric(axes_flat[3], names, results, "wall_time_total_s", "wall time, s", colors)
+    _bar_two_metrics(
+        axes_flat[4],
+        names,
+        [_dynamic_mean_k(result) for result in results],
+        [_metric_float(result, "avg_accepted_tokens") or 0.0 for result in results],
+        "selected k / accepted tokens",
+    )
+    _plot_regime_distribution_on_axis(axes_flat[5], results)
+
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    path = plots_dir / "comparison.png"
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+    return path
+
+
 def _csv_value(value: Any) -> Any:
     if isinstance(value, dict | list):
         return json.dumps(value, sort_keys=True)
     return value
+
+
+def _slugify(value: str) -> str:
+    return value.lower().replace(".", "_").replace("/", "_").replace(" ", "_")
 
 
 def _experiment_names(results: Sequence[dict[str, Any]]) -> list[str]:
@@ -276,6 +511,83 @@ def _load_matplotlib():
             "uv sync --group viz"
         ) from exc
     return plt
+
+
+def _bar_metric(
+    axis,
+    names: Sequence[str],
+    results: Sequence[dict[str, Any]],
+    metric: str,
+    ylabel: str,
+    colors: Sequence[str],
+    *,
+    scale: float = 1.0,
+) -> None:
+    values = [(_metric_float(result, metric) or 0.0) * scale for result in results]
+    axis.bar(names, values, color=colors[: len(names)])
+    axis.set_title(metric)
+    axis.set_ylabel(ylabel)
+    axis.tick_params(axis="x", rotation=25)
+    for label in axis.get_xticklabels():
+        label.set_horizontalalignment("right")
+
+
+def _bar_two_metrics(
+    axis,
+    names: Sequence[str],
+    left_values: Sequence[float],
+    right_values: Sequence[float],
+    title: str,
+) -> None:
+    x_positions = list(range(len(names)))
+    width = 0.38
+    axis.bar(
+        [position - width / 2 for position in x_positions],
+        left_values,
+        width=width,
+        label="selected k / draft length",
+        color="#2563eb",
+    )
+    axis.bar(
+        [position + width / 2 for position in x_positions],
+        right_values,
+        width=width,
+        label="avg accepted tokens",
+        color="#16a34a",
+    )
+    axis.set_xticks(x_positions, names, rotation=25, ha="right")
+    axis.set_ylabel("tokens")
+    axis.set_title(title)
+    axis.legend(fontsize=8)
+
+
+def _plot_regime_distribution_on_axis(axis, results: Sequence[dict[str, Any]]) -> None:
+    regime_result = next(
+        (
+            result
+            for result in results
+            if isinstance(result.get("metrics", {}).get("regime_k_k_distribution"), dict)
+        ),
+        None,
+    )
+    if regime_result is None:
+        axis.axis("off")
+        axis.text(0.5, 0.5, "No regime-k distribution", ha="center", va="center")
+        return
+
+    distribution = _normalize_distribution(
+        regime_result.get("metrics", {}).get("regime_k_k_distribution", {})
+    )
+    if not distribution:
+        axis.axis("off")
+        axis.text(0.5, 0.5, "No regime-k distribution", ha="center", va="center")
+        return
+
+    keys = sorted(distribution)
+    axis.bar([str(key) for key in keys], [distribution[key] for key in keys], color="#9333ea")
+    axis.set_title("latent_regime_k selected-k distribution")
+    axis.set_xlabel("selected k")
+    axis.set_ylabel("steps")
 
 
 def _plot_primary_metrics(results: Sequence[dict[str, Any]], plots_dir: Path, plt) -> Path:
@@ -441,6 +753,10 @@ def _normalize_distribution(distribution: dict[Any, Any]) -> dict[int, float]:
 def main() -> None:
     """Run or load experiments, then write merged results and plots."""
     args = parse_args()
+    if args.matrix:
+        run_model_matrix(args)
+        return
+
     if args.plot_only:
         results = load_results(args.output_dir, args.experiments)
     else:
