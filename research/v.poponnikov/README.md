@@ -85,8 +85,10 @@ should remain in the active notebook or experiment registry.
 5. Add lightweight smoke experiments with tiny models. Done.
 6. Add notebook workflow for online IDEs without terminal access. Done.
 7. Add required 70M/125M drafter model-matrix benchmark workflow. Done.
-8. Tune the regime controller so higher acceptance does not make it too
-   conservative. Next.
+8. Tune the regime controller so unavailable uncertainty signals do not force
+   hard/transition regimes and successful drafts grow `k` more readily. Done.
+9. Run the updated model matrix and compare the less-conservative controller
+   against the previous results. Next.
 
 ## Metrics
 
@@ -234,9 +236,11 @@ Real-run interpretation:
 
 ## Next Tuning Direction
 
-- Make `LatentRegimeK` less conservative by slowing lambda shrinkage.
-- Raise the lower bound for easy and normal regimes.
-- Change the reward from raw acceptance toward throughput-aware utility.
+- Re-run the 70M/125M model matrix after the less-conservative update.
+- Compare whether the higher easy/normal floors improve throughput without
+  losing too much acceptance.
+- Continue changing the reward from raw acceptance toward throughput-aware
+  utility if `k` is still too small.
 - Run larger comparisons with multiple seeds and confidence intervals.
 
 ## Open Questions
@@ -262,4 +266,8 @@ Real-run interpretation:
   `latent_regime_k` across the required 70M/125M drafter matrix.
 - Each drafter-target pair writes a per-pair `metrics.csv` and one combined
   `comparison.png`.
+- `LatentRegimeK` was tuned to be less conservative: unavailable entropy and
+  token-class signals now use neutral defaults, easy/normal regimes have higher
+  lambda floors, and successful full drafts grow lambda faster than failed
+  drafts shrink it.
 - Unit tests updated in `tests/unit/test_v_poponnikov_dynamic_k.py`.

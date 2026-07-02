@@ -86,29 +86,57 @@ class LatentRegimeK:
         *,
         k_min: int = 1,
         k_max: int = 8,
-        lambdas: tuple[float, float, float, float] = (8.0, 5.0, 2.0, 1.0),
-        lambda_min: float = 1.0,
+        lambdas: tuple[float, float, float, float] = (8.0, 6.0, 3.0, 2.0),
+        lambda_min: float = 2.0,
+        regime_lambda_floor: tuple[float, float, float, float] = (3.0, 2.0, 1.0, 1.0),
         transition_stay_prob: float = 0.9,
         reward_penalty: float = 0.5,
         lambda_lr: float = 0.05,
+        shrink_lr_scale: float = 0.5,
+        target_acceptance: float = 0.55,
+        full_accept_bonus: float = 0.25,
+        default_entropy: float = 0.5,
+        unknown_token_class: float = 0.2,
+        use_drafter_entropy: bool = False,
         seed: int = 42,
     ) -> None:
         _validate_k_bounds(k_min, k_max)
         if len(lambdas) != len(self.regime_names):
             raise ValueError("lambdas must contain one value per regime")
+        if len(regime_lambda_floor) != len(self.regime_names):
+            raise ValueError("regime_lambda_floor must contain one value per regime")
         if any(value <= 0 for value in lambdas):
             raise ValueError("all regime lambdas must be positive")
+        if lambda_min <= 0:
+            raise ValueError("lambda_min must be positive")
+        if any(value <= 0 for value in regime_lambda_floor):
+            raise ValueError("all regime lambda floors must be positive")
         if not 0.0 <= transition_stay_prob <= 1.0:
             raise ValueError("transition_stay_prob must be in [0, 1]")
+        if not 0.0 <= target_acceptance <= 1.0:
+            raise ValueError("target_acceptance must be in [0, 1]")
+        if shrink_lr_scale <= 0:
+            raise ValueError("shrink_lr_scale must be positive")
+        if not 0.0 <= default_entropy <= 1.0:
+            raise ValueError("default_entropy must be in [0, 1]")
+        if not 0.0 <= unknown_token_class <= 1.0:
+            raise ValueError("unknown_token_class must be in [0, 1]")
 
         self.drafter = drafter
         self.k_min = k_min
         self.k_max = k_max
         self.lambdas = torch.tensor(lambdas, dtype=torch.float32)
         self.lambda_min = lambda_min
+        self.regime_lambda_floor = torch.tensor(regime_lambda_floor, dtype=torch.float32)
         self.transition = self._build_transition(transition_stay_prob)
         self.reward_penalty = reward_penalty
         self.lambda_lr = lambda_lr
+        self.shrink_lr_scale = shrink_lr_scale
+        self.target_acceptance = target_acceptance
+        self.full_accept_bonus = full_accept_bonus
+        self.default_entropy = default_entropy
+        self.unknown_token_class = unknown_token_class
+        self.use_drafter_entropy = use_drafter_entropy
         self.rng = torch.Generator(device="cpu").manual_seed(seed)
 
         self.posterior = torch.full((len(self.regime_names),), 1.0 / len(self.regime_names))
@@ -167,12 +195,10 @@ class LatentRegimeK:
         self.posterior = posterior / posterior.sum().clamp(min=1e-8)
         self.posterior_entropy_history.append(self._posterior_entropy())
 
-        accepted = float(result.accepted_count)
-        rejected = float(max(result.draft_length - result.accepted_count, 0))
-        reward = (accepted - self.reward_penalty * rejected) / max(result.draft_length, 1)
         old_lambda = float(self.lambdas[self._last_regime_idx].item())
-        new_lambda = old_lambda + self.lambda_lr * reward * (self._last_k - old_lambda)
-        self.lambdas[self._last_regime_idx] = _clamp(new_lambda, self.k_min, self.k_max)
+        new_lambda = self._update_lambda_from_acceptance(old_lambda, result)
+        floor = max(self.k_min, float(self.regime_lambda_floor[self._last_regime_idx].item()))
+        self.lambdas[self._last_regime_idx] = _clamp(new_lambda, floor, self.k_max)
 
     def record_result(self, accepted_count: int) -> None:
         """Compatibility hook for controllers that only receive accepted count."""
@@ -191,6 +217,8 @@ class LatentRegimeK:
                 f"{prefix}_lambda_hard": float(self.lambdas[2].item()),
                 f"{prefix}_lambda_transition": float(self.lambdas[3].item()),
                 f"{prefix}_regime_distribution": dict(sorted(counts.items())),
+                f"{prefix}_target_acceptance": self.target_acceptance,
+                f"{prefix}_default_entropy": self.default_entropy,
             }
         )
         return metrics
@@ -227,7 +255,23 @@ class LatentRegimeK:
                 return sample
         return max(self.k_min, min(round(lambda_t), self.k_max))
 
+    def _update_lambda_from_acceptance(self, old_lambda: float, result: StepResult) -> float:
+        acceptance = result.accepted_count / max(result.draft_length, 1)
+        signal = acceptance - self.target_acceptance
+        if result.rejected_at < 0 or result.accepted_count >= result.draft_length:
+            signal += self.full_accept_bonus
+
+        if signal >= 0.0:
+            lr = self.lambda_lr
+        else:
+            lr = self.lambda_lr * self.shrink_lr_scale
+        return old_lambda + lr * signal * self.k_max
+
     def _draft_entropy(self, context: torch.Tensor) -> float:
+        if not self.use_drafter_entropy:
+            return self.default_entropy
+        if not self._context_in_drafter_vocab(context):
+            return self.default_entropy
         with torch.no_grad():
             out = self.drafter.model(context)
             logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :].float()
@@ -237,6 +281,8 @@ class LatentRegimeK:
 
     def _token_class(self, context: torch.Tensor) -> float:
         token_id = int(context.reshape(-1)[-1].item())
+        if not self._token_in_drafter_vocab(token_id):
+            return self.unknown_token_class
 
         tokenizer = getattr(self.drafter, "tokenizer", None)
         if tokenizer is not None and hasattr(tokenizer, "decode"):
@@ -266,6 +312,29 @@ class LatentRegimeK:
         if any(ch.isdigit() for ch in stripped):
             return 0.45
         return 0.0
+
+    def _context_in_drafter_vocab(self, context: torch.Tensor) -> bool:
+        vocab_size = self._drafter_vocab_size()
+        if vocab_size is None or context.numel() == 0:
+            return True
+        min_token = int(context.min().detach().cpu().item())
+        max_token = int(context.max().detach().cpu().item())
+        return min_token >= 0 and max_token < vocab_size
+
+    def _token_in_drafter_vocab(self, token_id: int) -> bool:
+        vocab_size = self._drafter_vocab_size()
+        return vocab_size is None or 0 <= token_id < vocab_size
+
+    def _drafter_vocab_size(self) -> int | None:
+        model = getattr(self.drafter, "model", None)
+        config = getattr(model, "config", None)
+        vocab_size = getattr(config, "vocab_size", None)
+        if isinstance(vocab_size, int):
+            return vocab_size
+        vocab_size = getattr(model, "vocab_size", None)
+        if isinstance(vocab_size, int):
+            return vocab_size
+        return None
 
     def _posterior_entropy(self) -> float:
         entropy = -(self.posterior * self.posterior.clamp(min=1e-8).log()).sum()

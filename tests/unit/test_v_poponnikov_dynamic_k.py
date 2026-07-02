@@ -46,9 +46,11 @@ class _FakeModel:
     def __init__(self, vocab_size: int = 8) -> None:
         self.config = type("Config", (), {"vocab_size": vocab_size, "hidden_size": 4})()
         self.vocab_size = vocab_size
+        self.calls = 0
 
     def __call__(self, context: torch.Tensor, **kwargs) -> _FakeOutput:
         del kwargs
+        self.calls += 1
         logits = torch.zeros(1, context.shape[1], self.vocab_size)
         last_id = int(context.reshape(-1)[-1].item())
         logits[0, -1, (last_id + 1) % self.vocab_size] = 2.0
@@ -112,6 +114,55 @@ def test_latent_regime_uses_tokenizer_for_token_class() -> None:
     assert token_class == pytest.approx(1.0)
 
 
+def test_latent_regime_avoids_drafter_forward_for_out_of_vocab_context() -> None:
+    module = _load_research_module()
+    drafter = _ScriptedDrafter()
+    controller = module.LatentRegimeK(drafter, k_min=1, k_max=4)
+
+    selected = controller(torch.tensor([[0, 99]], dtype=torch.long))
+
+    assert 1 <= selected <= 4
+    assert drafter.model.calls == 0
+    assert controller._pending_entropy == pytest.approx(0.5)
+    assert controller._pending_token_class == pytest.approx(0.2)
+
+
+def test_latent_regime_entropy_probe_checks_vocab_when_enabled() -> None:
+    module = _load_research_module()
+    drafter = _ScriptedDrafter()
+    controller = module.LatentRegimeK(drafter, k_min=1, k_max=4, use_drafter_entropy=True)
+
+    entropy = controller._draft_entropy(torch.tensor([[0, 99]], dtype=torch.long))
+
+    assert entropy == pytest.approx(0.5)
+    assert drafter.model.calls == 0
+
+
+def test_latent_regime_lambda_update_is_less_conservative() -> None:
+    module = _load_research_module()
+    controller = module.LatentRegimeK(
+        _ScriptedDrafter(),
+        k_min=1,
+        k_max=8,
+        lambdas=(5.0, 4.0, 3.0, 2.0),
+        lambda_lr=0.1,
+        shrink_lr_scale=0.25,
+        target_acceptance=0.55,
+    )
+    controller._last_regime_idx = 1
+
+    controller.observe_step(StepResult(draft_length=4, accepted_count=4, rejected_at=-1))
+
+    grown_lambda = float(controller.lambdas[1].item())
+    assert grown_lambda > 4.0
+
+    controller.observe_step(StepResult(draft_length=8, accepted_count=0, rejected_at=0))
+
+    shrunk_lambda = float(controller.lambdas[1].item())
+    assert shrunk_lambda < grown_lambda
+    assert shrunk_lambda > 2.0
+
+
 def test_invalid_dynamic_k_parameters_raise() -> None:
     module = _load_research_module()
 
@@ -119,6 +170,8 @@ def test_invalid_dynamic_k_parameters_raise() -> None:
         module.LatentRegimeK(_ScriptedDrafter(), k_min=4, k_max=1)
     with pytest.raises(ValueError, match="lambdas"):
         module.LatentRegimeK(_ScriptedDrafter(), lambdas=(1.0, 2.0))
+    with pytest.raises(ValueError, match="regime_lambda_floor"):
+        module.LatentRegimeK(_ScriptedDrafter(), regime_lambda_floor=(1.0, 2.0))
     with pytest.raises(ValueError, match="transition_stay_prob"):
         module.LatentRegimeK(_ScriptedDrafter(), transition_stay_prob=1.1)
 
