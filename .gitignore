@@ -80,3 +80,5 @@ wandb/
 
 # Profiling results
 results_profile/
+
+.pi/

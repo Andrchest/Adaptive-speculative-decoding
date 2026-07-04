@@ -1,198 +1,0 @@
-
-============================================================
-  Running: 01_baseline
-============================================================
-01_baseline:   0%|                              | 0/2 [00:00<?, ?it/s]01_baseline:   0%|         | 0/2 [00:00<?, ?it/s, acc=0.520, tps=39.9]01_baseline:  50%|▌| 1/2 [00:00<00:00,  1.53it/s, acc=0.520, tps=39.9]01_baseline:  50%|▌| 1/2 [00:01<00:00,  1.53it/s, acc=0.571, tps=50.8]01_baseline: 100%|█| 2/2 [00:01<00:00,  1.96it/s, acc=0.571, tps=50.8]                                                                      
-============================================================
-  Running: 02_+lattice
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-02_+lattice:   0%|                              | 0/2 [00:00<?, ?it/s]02_+lattice:   0%|         | 0/2 [00:00<?, ?it/s, acc=0.520, tps=43.0]02_+lattice:  50%|▌| 1/2 [00:00<00:00,  1.65it/s, acc=0.520, tps=43.0]02_+lattice:  50%|▌| 1/2 [00:01<00:00,  1.65it/s, acc=0.571, tps=47.6]02_+lattice: 100%|█| 2/2 [00:01<00:00,  1.78it/s, acc=0.571, tps=47.6]                                                                      
-============================================================
-  Running: 03_+translator
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-03_+translator:   0%|                           | 0/2 [00:00<?, ?it/s]03_+translator:   0%|      | 0/2 [00:00<?, ?it/s, acc=0.600, tps=45.7]03_+translator:  50%|▌| 1/2 [00:00<00:00,  1.69it/s, acc=0.600, tps=4503_+translator:  50%|▌| 1/2 [00:01<00:00,  1.69it/s, acc=0.530, tps=4103_+translator: 100%|█| 2/2 [00:01<00:00,  1.66it/s, acc=0.530, tps=41                                                                      
-============================================================
-  Running: 04_+online_distil
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-04_+online_distil:   0%|                        | 0/2 [00:00<?, ?it/s]04_+online_distil:   0%|   | 0/2 [00:00<?, ?it/s, acc=0.600, tps=46.4]04_+online_distil:  50%|▌| 1/2 [00:00<00:00,  1.93it/s, acc=0.600, tps04_+online_distil:  50%|▌| 1/2 [00:01<00:00,  1.93it/s, acc=0.475, tps04_+online_distil: 100%|█| 2/2 [00:01<00:00,  1.54it/s, acc=0.475, tps                                                                      
-============================================================
-  Running: 05_+replay_fifo
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-05_+replay_fifo:   0%|                          | 0/2 [00:00<?, ?it/s]05_+replay_fifo:   0%|     | 0/2 [00:00<?, ?it/s, acc=0.600, tps=50.3]05_+replay_fifo:  50%|▌| 1/2 [00:00<00:00,  2.09it/s, acc=0.600, tps=505_+replay_fifo:  50%|▌| 1/2 [00:01<00:00,  2.09it/s, acc=0.475, tps=305_+replay_fifo: 100%|█| 2/2 [00:01<00:00,  1.59it/s, acc=0.475, tps=3                                                                      
-============================================================
-  Running: 06_+replay_prio
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-06_+replay_prio:   0%|                          | 0/2 [00:00<?, ?it/s]06_+replay_prio:   0%|     | 0/2 [00:00<?, ?it/s, acc=0.600, tps=50.2]06_+replay_prio:  50%|▌| 1/2 [00:00<00:00,  2.09it/s, acc=0.600, tps=506_+replay_prio:  50%|▌| 1/2 [00:01<00:00,  2.09it/s, acc=0.475, tps=306_+replay_prio: 100%|█| 2/2 [00:01<00:00,  1.62it/s, acc=0.475, tps=3                                                                      
-============================================================
-  Running: 07_+contrastive
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-07_+contrastive:   0%|                          | 0/2 [00:00<?, ?it/s]07_+contrastive:   0%|     | 0/2 [00:00<?, ?it/s, acc=0.600, tps=50.1]07_+contrastive:  50%|▌| 1/2 [00:00<00:00,  2.09it/s, acc=0.600, tps=507_+contrastive:  50%|▌| 1/2 [00:01<00:00,  2.09it/s, acc=0.475, tps=307_+contrastive: 100%|█| 2/2 [00:01<00:00,  1.60it/s, acc=0.475, tps=3                                                                      
-============================================================
-  Running: 08_+speedup_adapt
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-08_+speedup_adapt:   0%|                        | 0/2 [00:00<?, ?it/s]08_+speedup_adapt:   0%|   | 0/2 [00:00<?, ?it/s, acc=0.333, tps=34.1]08_+speedup_adapt:  50%|▌| 1/2 [00:00<00:00,  1.62it/s, acc=0.333, tps08_+speedup_adapt:  50%|▌| 1/2 [00:01<00:00,  1.62it/s, acc=0.259, tps08_+speedup_adapt: 100%|█| 2/2 [00:01<00:00,  1.24it/s, acc=0.259, tps                                                                      
-============================================================
-  Running: 09_+routing
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-09_+routing:   0%|                              | 0/2 [00:00<?, ?it/s][00:43:02] WARNING  Router selected drafter 2/3 but model is None; router.py:129
-                    falling back to spec 0                                      
-09_+routing:   0%|         | 0/2 [00:00<?, ?it/s, acc=0.520, tps=55.0]09_+routing:  50%|▌| 1/2 [00:00<00:00,  2.08it/s, acc=0.520, tps=55.0]09_+routing:  50%|▌| 1/2 [00:00<00:00,  2.08it/s, acc=0.571, tps=61.1]09_+routing: 100%|█| 2/2 [00:00<00:00,  2.26it/s, acc=0.571, tps=61.1]                                                                      
-============================================================
-  Running: 10_+universal
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-10_+universal:   0%|                            | 0/2 [00:00<?, ?it/s]10_+universal:   0%|      | 0/2 [00:00<?, ?it/s, acc=1.000, tps=100.3]10_+universal:  50%|▌| 1/2 [00:00<00:00,  3.34it/s, acc=1.000, tps=10010_+universal:  50%|▌| 1/2 [00:00<00:00,  3.34it/s, acc=0.929, tps=95.10_+universal: 100%|█| 2/2 [00:00<00:00,  3.14it/s, acc=0.929, tps=95.                                                                      
-============================================================
-  Running: 11_full_system
-============================================================
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-To disable this warning, you can either:
-11_full_system:   0%|                           | 0/2 [00:00<?, ?it/s][00:43:16] WARNING  Router selected drafter 1/3 but model is None; router.py:129
-                    falling back to spec 0                                      
-11_full_system:   0%|      | 0/2 [00:00<?, ?it/s, acc=0.267, tps=18.8]11_full_system:  50%|▌| 1/2 [00:00<00:00,  1.17it/s, acc=0.267, tps=18[00:43:17] WARNING  Router selected drafter 2/3 but model is None; router.py:129
-                    falling back to spec 0                                      
-11_full_system:  50%|▌| 1/2 [00:01<00:00,  1.17it/s, acc=0.279, tps=2011_full_system: 100%|█| 2/2 [00:01<00:00,  1.17it/s, acc=0.279, tps=20                                                                      
-Comparison table saved to: results/comparison_table.csv
-
-
-======================================================================
-  Final Comparison
-======================================================================
-  #   Experiment                   Acc     TPS   Wall(s)    Acc/Avg    GPU(GB) 
-Status    
-────────────────────────────────────────────────────────────────────────────────
-──────────
-  1   10_+universal   92.9%    95.0     0.631  4.62/5.0       1.15 ⚡ Fastest 
-  2   09_+routing   57.1%    61.1     0.884  2.84/5.0       0.68           
-  3   01_baseline   57.1%    50.8     1.064  2.84/5.0       0.68           
-  4   02_+lattice   57.1%    47.6     1.135  2.84/5.0       0.69           
-  5   06_+replay_prio   47.5%    37.7     1.193  2.25/5.0       2.09           
-  6   03_+translator   53.0%    41.7     1.200  2.63/5.0       0.80           
-  7   07_+contrastive   47.5%    37.3     1.207  2.25/5.0       2.09           
-  8   05_+replay_fifo   47.5%    37.1     1.211  2.25/5.0       2.09           
-  9   04_+online_distil   47.5%    35.8     1.256  2.25/5.0       2.09          
-  10  08_+speedup_adapt   25.9%    25.7     1.554  1.43/5.0       0.68          
-  11  11_full_system   27.9%    20.6     1.696  1.21/5.0       2.66 🐌 Slowest 
-======================================================================
-  Results: results/10_+universal.json, results/09_+routing.json, 
-results/01_baseline.json, results/02_+lattice.json, results/06_+replay_prio.json
-  ... and 6 more
-  CSV:     results/comparison_table.csv
-======================================================================

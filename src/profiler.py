@@ -7,12 +7,15 @@ Breaks down wall-clock time by:
   2. Per-step phases: cache_lookup, drafter_forward, translation, target_verify, accept_reject, residual
   3. GPU memory at each major stage
   4. Speculative decoding vs plain target model throughput
+  5. GPU kernel-level profiling via torch.profiler (--torch-profile)
 
 Uses small models (opt-125m / opt-350m) for fast runs.
 
 Usage:
     python src/profiler.py --samples 10 --compare
     python src/profiler.py --suite ablation --samples 5
+    python src/profiler.py --torch-profile --samples 3
+    python src/profiler.py --torch-profile --torch-warmup 2 --torch-active 5
 """
 
 from __future__ import annotations
@@ -294,6 +297,7 @@ def run_profiled_experiment(
     # ── Stage 1: Model loading ──
     t0 = time.perf_counter()
     drafter, target = runner._build_models(cfg)
+
     t1 = time.perf_counter()
     profile.stages.append(StageTimings(stage="model_loading", duration_s=t1 - t0))
     if torch.cuda.is_available():
@@ -345,6 +349,7 @@ def run_profiled_experiment(
     t1 = time.perf_counter()
     profile.stages.append(StageTimings(stage="dataset_loading", duration_s=t1 - t0))
     profile.n_prompts = len(prompts)
+    del runner  # free runner — only needed for _build_models
 
     # ── Stage 4: Decode loop ──
     draft_length = getattr(cfg, "draft_length", 5)
@@ -362,39 +367,59 @@ def run_profiled_experiment(
 
     max_new_tokens = getattr(cfg, "max_new_tokens", 32)
     max_consec_zero = 5
-    consec_zero = 0
 
-    generated = prompts[0][0].clone().to(device) if prompts else None
-    if generated is None:
-        return profile
-    prompt_len = generated.shape[1]
+    for prompt_idx, (input_ids, prompt_real_len) in enumerate(prompts):
+        generated = input_ids.clone().to(device)
+        prompt_len = generated.shape[1]
+        consec_zero = 0
 
-    for step_idx in range(max_new_tokens):
-        new_tokens = generated.shape[1] - prompt_len
-        if new_tokens >= max_new_tokens:
-            break
+        # Maintain drafter vocab context separately (same as _generate_loop)
+        drafter_context_ids: list[int] = generated[0].tolist()
 
-        k = decoder._choose_draft_length(generated, adaptive_fn)
-
-        # Instrumented decode step
-        result = decoder._decode_step(generated, k, distiller=distiller, rng=torch_rng)
-        decoder._step_results.append(result)
-        decoder.cache.step()
-
-        # Truncate to budget
-        budget = max_new_tokens - new_tokens
-        emitted = result.accepted_tokens[:budget]
-        if emitted:
-            new_ids = torch.tensor(emitted, dtype=torch.long, device=generated.device).unsqueeze(0)
-            generated = torch.cat([generated, new_ids], dim=1)
-            consec_zero = 0
-        else:
-            consec_zero += 1
-            if consec_zero >= max_consec_zero:
+        for step_idx in range(max_new_tokens):
+            new_tokens = generated.shape[1] - prompt_len
+            if new_tokens >= max_new_tokens:
                 break
 
-        if generated.shape[1] and decoder._is_eos(generated[0, -1]):
-            break
+            k = decoder._choose_draft_length(generated, adaptive_fn)
+
+            # Build drafter context tensor from drafter vocab token IDs
+            drafter_ctx = torch.tensor(
+                [drafter_context_ids], dtype=generated.dtype, device=generated.device
+            )
+
+            # Instrumented decode step
+            result = decoder._decode_step(
+                generated, k, drafter_context_ids[:],
+                drafter_ctx=drafter_ctx, distiller=distiller, rng=torch_rng,
+            )
+            decoder._step_results.append(result)
+            decoder.cache.step()
+
+            # Truncate to budget
+            budget = max_new_tokens - new_tokens
+            emitted = result.accepted_tokens[:budget]
+            if emitted:
+                new_ids = torch.tensor(emitted, dtype=torch.long, device=generated.device).unsqueeze(0)
+                generated = torch.cat([generated, new_ids], dim=1)
+
+                # Translate accepted tokens back to drafter vocab
+                if not decoder._same_vocab:
+                    drafter_emitted = decoder.translator.translate_target_to_drafter(emitted)
+                else:
+                    drafter_emitted = emitted
+                drafter_context_ids.extend(drafter_emitted)
+
+                consec_zero = 0
+            else:
+                consec_zero += 1
+                if consec_zero >= max_consec_zero:
+                    break
+
+            if generated.shape[1] and decoder._is_eos(generated[0, -1]):
+                break
+
+        decoder.cache.step()
 
     t1 = time.perf_counter()
     profile.stages.append(StageTimings(stage="decode_loop", duration_s=t1 - t0))
@@ -419,6 +444,12 @@ def run_profiled_experiment(
         drafter.cleanup()
     elif hasattr(drafter, "remove_hooks"):
         drafter.remove_hooks()
+    del drafter, target, translator, cache, decoder
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
 
     return profile
 
@@ -481,6 +512,102 @@ def profile_plain_target(
     torch.cuda.empty_cache()
 
     return profile
+
+
+def run_torch_profiled_experiment(
+    exp,
+    device: str,
+    max_samples: int,
+    max_new_tokens: int,
+    warmup_steps: int = 2,
+    active_steps: int = 5,
+    output_dir: str = "",
+):
+    """Run one experiment with torch.profiler GPU kernel-level analysis."""
+    from core.decoder.speculative import SpeculativeDecoder
+    from core.profiling.torch_profiler import run_torch_profile
+    from experiments.base import BuildContext
+    from experiments.runner import ExperimentRunner
+
+    runner = ExperimentRunner(
+        experiments=[],
+        output_dir="/tmp/profile_outputs",
+        device=device,
+    )
+
+    cfg = exp.get_config()
+    for key, value in exp._overrides.items():
+        setattr(cfg, key, value)
+
+    cfg.name = f"torch_profile_{cfg.name}"
+    cfg.max_samples = max_samples
+    cfg.max_new_tokens = max_new_tokens
+
+    # Build models
+    drafter, target = runner._build_models(cfg)
+
+    # Build components
+    build_ctx = BuildContext(
+        device=device,
+        drafter=drafter,
+        target=target,
+        config=cfg,
+        components={},
+    )
+    translator = exp.build_translator(build_ctx)
+    build_ctx.components["translator"] = translator
+    cache = exp.build_cache(build_ctx)
+    build_ctx.components["cache"] = cache
+    distiller = exp.build_distiller(build_ctx)
+
+    # Build decoder
+    draft_length = getattr(cfg, "draft_length", 5)
+    decoder = SpeculativeDecoder(
+        drafter=drafter,
+        target=target,
+        translator=translator,
+        cache=cache,
+        draft_length=draft_length,
+    )
+
+    # Load one prompt for profiling
+    prompts = runner._load_dataset(cfg)
+    if not prompts:
+        console.print("[red]No prompts available for torch profiling.[/red]")
+        return None
+    del runner  # free runner — only needed for _build_models
+
+    input_ids = prompts[0][0].clone().to(device)
+
+    # Run torch.profiler
+    torch_rng = torch.Generator()
+    torch_rng.manual_seed(getattr(cfg, "seed", 42))
+
+    analysis = run_torch_profile(
+        decoder,
+        input_ids,
+        max_new_tokens=max_new_tokens,
+        draft_length=draft_length,
+        warmup_steps=warmup_steps,
+        active_steps=active_steps,
+        output_dir=output_dir,
+        distiller=distiller,
+        rng=torch_rng,
+    )
+
+    # Cleanup
+    if hasattr(drafter, "cleanup"):
+        drafter.cleanup()
+    elif hasattr(drafter, "remove_hooks"):
+        drafter.remove_hooks()
+    del drafter, target, translator, cache, decoder
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
+    return analysis
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -650,16 +777,25 @@ def main(
     compare_4bit_fp16: Annotated[bool, typer.Option("--compare-4bit-fp16", help="Compare 4-bit vs FP16 target model")] = False,
     cprofile_flag: Annotated[bool, typer.Option("--cprofile", "-p", help="Run Python-level cProfile")] = False,
     cprofile_top: Annotated[int, typer.Option("--cprofile-top", help="Top-N cProfile entries")] = 20,
+    torch_profile_flag: Annotated[bool, typer.Option("--torch-profile", "-t", help="Run GPU kernel-level profiling with torch.profiler")] = False,
+    torch_warmup: Annotated[int, typer.Option("--torch-warmup", help="Warmup steps before torch profiling starts")] = 2,
+    torch_active: Annotated[int, typer.Option("--torch-active", help="Number of steps to profile with torch.profiler")] = 5,
+    torch_trace_dir: Annotated[str, typer.Option("--torch-trace-dir", help="Directory for TensorBoard trace output")] = "",
+    drafter_model: Annotated[str, typer.Option("--drafter-model", help="Drafter model path (overrides default)")] = "",
+    target_model: Annotated[str, typer.Option("--target-model", help="Target model path (overrides default)")] = "",
     output: Annotated[str, typer.Option("--output", "-o", help="JSON output file")] = "",
 ):
     """Profile Adaptive Speculative Decoding experiments."""
     from experiments import ABLATION_SUITE, discover_experiments
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    drafter_name = drafter_model.split("/")[-1] if drafter_model else "opt-125m"
+    target_name = target_model.split("/")[-1] if target_model else "opt-350m"
     console.print(Panel(
         f"[green]Device:[/green] {device}  "
         f"[green]GPU:[/green] {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'}\n"
-        f"[green]Models:[/green] opt-125m (drafter) / opt-350m (target)\n"
+        f"[green]Models:[/green] {drafter_name} (drafter) / {target_name} (target)\n"
         f"[green]Samples:[/green] {samples}  [green]Max tokens:[/green] {max_new_tokens}"
     ))
 
@@ -676,10 +812,16 @@ def main(
 
     console.print(f"[dim]Profiling {len(exps)} experiment(s): {', '.join(e.meta.name for e in exps)}[/dim]\n")
 
-    # Apply tiny model overrides
+    # Apply model overrides
     for exp in exps:
-        exp.set_config_override("drafter_model_path", "facebook/opt-125m")
-        exp.set_config_override("target_model_path", "facebook/opt-350m")
+        if drafter_model:
+            exp.set_config_override("drafter_model_path", drafter_model)
+        else:
+            exp.set_config_override("drafter_model_path", "facebook/opt-125m")
+        if target_model:
+            exp.set_config_override("target_model_path", target_model)
+        else:
+            exp.set_config_override("target_model_path", "facebook/opt-350m")
         exp.set_config_override("max_new_tokens", max_new_tokens)
 
     profiles: list[ExperimentProfile] = []
@@ -701,8 +843,13 @@ def main(
             console.print(f"  [dim]{tb}[/dim]")
             ep = ExperimentProfile(name=exp.meta.name, error=str(e))
             profiles.append(ep)
-
-        restore_decode_step()
+        finally:
+            restore_decode_step()
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
 
     # ── 4-bit vs FP16 comparison ──
     fp16_profiles: dict[str, ExperimentProfile] = {}
@@ -735,7 +882,7 @@ def main(
         console.print("[bold yellow]Profiling plain target model...[/bold yellow]")
         try:
             pp = profile_plain_target(
-                "facebook/opt-350m",
+                target_model or "facebook/opt-350m",
                 device,
                 samples,
                 max_new_tokens,
@@ -828,6 +975,42 @@ def main(
             console.print(f"[red]cProfile error:[/red] {e}")
         restore_decode_step()
 
+    # ── torch.profiler if requested ──
+    if torch_profile_flag:
+        console.print("\n" + "=" * 80)
+        console.print("[bold white]TORCH.PROFILER (GPU kernel-level analysis)[/bold white]")
+        from core.profiling.torch_profiler import print_torch_profile_summary
+
+        torch_analyses = []
+        for idx, exp in enumerate(exps, 1):
+            console.print(f"\n[bold yellow]▓ [{idx}/{len(exps)}] torch.profiler: {exp.meta.name}[/bold yellow]")
+            try:
+                analysis = run_torch_profiled_experiment(
+                    exp, device, samples, max_new_tokens,
+                    warmup_steps=torch_warmup,
+                    active_steps=torch_active,
+                    output_dir=torch_trace_dir,
+                )
+                if analysis is not None:
+                    torch_analyses.append((exp.meta.name, analysis))
+                    console.print(f"  [green]✓[/green] {len(analysis.kernels_by_gpu_time)} kernels profiled, "
+                                f"{len(analysis.bottlenecks)} bottlenecks detected")
+            except Exception as e:
+                import traceback
+                console.print(f"  [red]✗[/red] {e}")
+                console.print(f"  [dim]{traceback.format_exc()}[/dim]")
+            finally:
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.reset_peak_memory_stats()
+
+        for name, analysis in torch_analyses:
+            console.print(f"\n{'=' * 80}")
+            console.print(f"[bold cyan]torch.profiler results: {name}[/bold cyan]")
+            print_torch_profile_summary(analysis, console)
+
     # ── JSON output ──
     if output:
         data = []
@@ -849,6 +1032,29 @@ def main(
                 ],
                 "error": p.error,
             })
+        # Add torch.profiler data if available
+        if torch_profile_flag and 'torch_analyses' in dir():
+            for name, analysis in torch_analyses:
+                data.append({
+                    "name": f"torch_profile_{name}",
+                    "total_gpu_time_us": analysis.total_gpu_time_us,
+                    "total_cpu_time_us": analysis.total_cpu_time_us,
+                    "python_gpu_ratio": analysis.python_gpu_ratio,
+                    "gpu_matmul_pct": analysis.gpu_matmul_pct,
+                    "host_sync_kernels_in_top10": analysis.host_sync_kernels_in_top10,
+                    "has_rule2_bottleneck": analysis.has_rule2_bottleneck,
+                    "has_host_sync_overhead": analysis.has_host_sync_overhead,
+                    "has_rule1_scatter_overhead": analysis.has_rule1_scatter_overhead,
+                    "has_python_dispatch_overhead": analysis.has_python_dispatch_overhead,
+                    "top_kernels_by_gpu": [
+                        {"name": k.name, "gpu_pct": k.gpu_pct, "count": k.count}
+                        for k in analysis.kernels_by_gpu_time[:20]
+                    ],
+                    "bottlenecks": [
+                        {"category": b.category, "severity": b.severity, "message": b.message}
+                        for b in analysis.bottlenecks
+                    ],
+                })
         with open(output, "w") as f:
             json.dump(data, f, indent=2, default=str)
         console.print(f"\n[green]JSON saved to {output}[/green]")
