@@ -17,6 +17,7 @@ CRITICAL FIXES:
 from __future__ import annotations
 
 import logging
+import time
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -110,38 +111,6 @@ def _normalize_kv_dims(k: torch.Tensor, v: torch.Tensor) -> tuple[torch.Tensor, 
     return k, v
 
 
-def _normalize_cache(cache: object) -> object:
-    """Ensure all key/value tensors in a Cache are 4D in-place.
-    Never squeezes the heads dimension (dim=1).
-    """
-    if not isinstance(cache, Cache):
-        return cache
-    # transformers 5.x Cache — has .layers attribute
-    if hasattr(cache, 'layers'):
-        for layer in cache.layers:
-            if layer.is_initialized:
-                if layer.keys is not None and layer.keys.ndim == 5:
-                    # Extra dim between heads and seq_len: [B, H, 1, T, D]
-                    if layer.keys.shape[2] == 1:
-                        layer.keys = layer.keys.squeeze(2)
-                        layer.values = layer.values.squeeze(2)
-                    # Extra leading dim: [1, B, H, T, D]
-                    elif layer.keys.shape[0] == 1:
-                        layer.keys = layer.keys.squeeze(0)
-                        layer.values = layer.values.squeeze(0)
-    # transformers 4.x DynamicCache — has .key_cache and .value_cache
-    elif hasattr(cache, 'key_cache'):
-        for i in range(len(cache.key_cache)):
-            if cache.key_cache[i] is not None and cache.key_cache[i].ndim == 5:
-                if cache.key_cache[i].shape[2] == 1:
-                    cache.key_cache[i] = cache.key_cache[i].squeeze(2)
-                    cache.value_cache[i] = cache.value_cache[i].squeeze(2)
-                elif cache.key_cache[i].shape[0] == 1:
-                    cache.key_cache[i] = cache.key_cache[i].squeeze(0)
-                    cache.value_cache[i] = cache.value_cache[i].squeeze(0)
-    return cache
-
-
 def _to_cache(pkv: object) -> object:
     """Convert legacy tuple to DynamicCache; pass through if already a Cache."""
     if pkv is None:
@@ -160,8 +129,8 @@ def _to_cache(pkv: object) -> object:
                         k, v = _normalize_kv_dims(k, v)
                         cache.update(k, v, i)
             # Check for layers (transformers 5.x) or key_cache (transformers 4.x)
-            has_content = hasattr(cache, 'layers') and cache.layers or \
-                          hasattr(cache, 'key_cache') and len(cache.key_cache) > 0
+            has_content = (hasattr(cache, 'layers') and cache.layers) or \
+                          (hasattr(cache, 'key_cache') and len(cache.key_cache) > 0)
             if has_content:
                 n = len(cache.layers) if hasattr(cache, 'layers') else len(cache.key_cache)
                 logger.debug("Converted legacy PKV to DynamicCache (%d layers)", n)
@@ -181,8 +150,8 @@ def _to_cache(pkv: object) -> object:
                     else:
                         raise TypeError(f"Expected tensors, got {type(k).__name__}, {type(v).__name__}")
             # Check for layers (transformers 5.x) or key_cache (transformers 4.x)
-            has_content = hasattr(cache, 'layers') and cache.layers or \
-                          hasattr(cache, 'key_cache') and len(cache.key_cache) > 0
+            has_content = (hasattr(cache, 'layers') and cache.layers) or \
+                          (hasattr(cache, 'key_cache') and len(cache.key_cache) > 0)
             if has_content:
                 n = len(cache.layers) if hasattr(cache, 'layers') else len(cache.key_cache)
                 logger.debug("Converted list-of-tuples PKV to DynamicCache (%d layers)", n)
@@ -279,13 +248,16 @@ class TargetModel:
         """Score context + draft_tokens. Uses past_key_values when available.
 
         FIX: Avoids CPU→GPU sync by using a pre-allocated GPU buffer
-        and copy_ instead of torch.tensor(list, device=...).
+        and copy_ from a CPU tensor (non_blocking).
         """
+        from core.profiling.substep_timer import substep_timer
+
         k = len(draft_tokens)
         ctx_len = context.shape[1]
 
+        # --- substep: draft token transfer to GPU ---
+        t0 = time.perf_counter()
         if draft_tokens:
-            # Ensure draft buffer is large enough
             if self._draft_buffer is None or k > self._draft_buffer_size:
                 self._draft_buffer_size = max(k * 2, 16)
                 self._draft_buffer = torch.zeros(
@@ -293,58 +265,45 @@ class TargetModel:
                     dtype=torch.long,
                     device=context.device,
                 )
-            # Copy draft tokens to GPU buffer — single small transfer
-            self._draft_buffer[0, :k].copy_(
-                torch.tensor(draft_tokens, dtype=torch.long, device=context.device)
-            )
+            # Build on CPU first, then async copy to pre-allocated GPU buffer.
+            # This avoids the implicit CPU→GPU sync that
+            # torch.tensor(list, device=context.device) triggers.
+            cpu_tmp = torch.tensor(draft_tokens, dtype=torch.long)
+            self._draft_buffer[0, :k].copy_(cpu_tmp, non_blocking=True)
             draft_tensor = self._draft_buffer[:, :k]
         else:
             draft_tensor = None
+        substep_timer.record("verify.draft_to_gpu", (time.perf_counter() - t0) * 1000)
 
         out = None
         new_pkv = None
 
+        # --- substep: model forward (with KV cache) ---
+        t0_fwd = time.perf_counter()
         if past_key_values is not None and self._kv_ok:
             try:
-                # Ensure past_key_values is a Cache object for the model
                 pkv = _to_cache(past_key_values)
-
-                # If _to_cache couldn't convert, pkv lacks get_seq_length()
-                # and will crash the model. Skip to full forward instead.
                 if not hasattr(pkv, "get_seq_length"):
                     raise TypeError(f"PKV has no get_seq_length (type={type(pkv).__name__})")
-
                 past_len = _get_pkv_len(pkv)
-
-                # Safety: past_len must not exceed context length
                 if past_len > ctx_len:
                     raise ValueError(
                         f"KV cache length ({past_len}) > context length ({ctx_len})"
                     )
-
                 new_ctx = context[:, past_len:]
                 new_len = new_ctx.shape[1]
-
                 if draft_tensor is not None:
                     full_input = torch.cat([new_ctx, draft_tensor], dim=1)
                 else:
                     full_input = new_ctx
-
                 out = self.model(
                     full_input,
                     past_key_values=pkv,
                     use_cache=True,
                 )
                 new_pkv = _to_cache(out.past_key_values)
-
-                # Logits: we need k+1 positions starting from the last
-                # context token's prediction.
-                # full_input has (new_len + k) tokens.
-                # Logits at position (new_len - 1) = prediction for first
-                # draft token (or the bonus token if k==0).
                 start = new_len - 1
                 logits = out.logits[0, start : start + k + 1, :]
-
             except Exception as e:
                 logger.warning(
                     "Target KV cache failed (%s). Falling back to full forward.", e
@@ -353,7 +312,6 @@ class TargetModel:
                 out = None
 
         if out is None:
-            # Full forward fallback
             if draft_tensor is not None:
                 full_input = torch.cat([context, draft_tensor], dim=1)
             else:
@@ -361,9 +319,14 @@ class TargetModel:
             out = self.model(full_input, use_cache=True)
             new_pkv = _to_cache(out.past_key_values)
             logits = out.logits[0, ctx_len - 1 : ctx_len + k, :]
+        substep_timer.record("verify.model_forward", (time.perf_counter() - t0_fwd) * 1000)
 
+        # --- substep: logits extraction ---
+        t0 = time.perf_counter()
         if new_pkv is None or not hasattr(new_pkv, "get_seq_length"):
             if not hasattr(new_pkv, "get_seq_length"):
                 logger.info("Model returned non-Cache PKV — KV disabled for this prompt")
             self._kv_ok = False
+        substep_timer.record("verify.logits_extract", (time.perf_counter() - t0) * 1000)
+
         return logits, new_pkv

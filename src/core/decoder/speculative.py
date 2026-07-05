@@ -506,63 +506,55 @@ class SpeculativeDecoder:
         """
         GPU-vectorized acceptance test.
 
-        FIX: Eliminates 2 CPU syncs (.cpu().tolist() for accept_probs
-        and draws) by doing the comparison on GPU and finding the first
-        rejection via torch.cumprod.
-
         Returns (accepted_list, first_rejection_index).
         """
+        from core.profiling.substep_timer import substep_timer
+
         k = len(draft_tokens)
         if k == 0:
             return [], -1
 
         V = target_logits.shape[-1]
         t_eff = max(self.temperature, 1e-6)
-
-        # Batched softmax over all k positions
-        t_logits = target_logits[:k].float() / t_eff
-        if t_logits.isnan().any() or t_logits.isinf().any():
-            t_logits = torch.nan_to_num(t_logits, nan=0.0, posinf=1e6, neginf=-1e6)
-        target_probs = F.softmax(t_logits, dim=-1)  # (k, V)
-
         device = target_logits.device
-        tok_tensor = torch.tensor(draft_tokens, dtype=torch.long, device=device)
-        idx = torch.arange(k, device=device)
-        p_tok_vec = target_probs[idx, tok_tensor]  # (k,)
 
-        if translated_probs is not None:
-            q_tok_vec = translated_probs[idx, tok_tensor].clamp(min=1e-8)
-            accept_probs = (p_tok_vec / q_tok_vec).clamp(max=1.0)
-        else:
-            accept_probs = (p_tok_vec * V).clamp(max=1.0)
+        with substep_timer.track("ar.type_conversion"):
+            t_logits = target_logits[:k].float() / t_eff
 
-        # Generate random draws on the same device as the RNG
-        if rng is not None:
-            if str(rng.device) == str(device):
-                draws = torch.rand(k, generator=rng, device=device)
+        with substep_timer.track("ar.logsumexp"):
+            log_norm = torch.logsumexp(t_logits, dim=-1)  # (k,)
+
+        with substep_timer.track("ar.gather_p_tok"):
+            tok_tensor = torch.tensor(draft_tokens, dtype=torch.long, device=device)
+            arange_k = torch.arange(k, device=device)
+            p_tok_vec = (t_logits[arange_k, tok_tensor] - log_norm).exp()  # (k,)
+
+        with substep_timer.track("ar.accept_probs"):
+            if translated_probs is not None:
+                q_tok_vec = translated_probs[arange_k, tok_tensor].clamp(min=1e-8)
+                accept_probs = (p_tok_vec / q_tok_vec).clamp(max=1.0)
             else:
-                draws = torch.rand(k, generator=rng).to(device)
-        else:
-            draws = torch.rand(k, device=device)
+                accept_probs = (p_tok_vec * V).clamp(max=1.0)
 
-        # Vectorized acceptance: accept where draw < accept_prob
-        accepted_mask = draws < accept_probs  # (k,) bool
+        with substep_timer.track("ar.random_draws"):
+            if rng is not None:
+                if str(rng.device) == str(device):
+                    draws = torch.rand(k, generator=rng, device=device)
+                else:
+                    draws = torch.rand(k, generator=rng).to(device)
+            else:
+                draws = torch.rand(k, device=device)
 
-        # Find first rejection using cumprod: if all positions 0..i are
-        # accepted, cumprod[i] = True. First False = first rejection.
-        cum_accepted = torch.cumprod(accepted_mask, dim=0)
-        # accepted = cum_accepted is True
-        accepted_count_gpu = cum_accepted.sum().item()  # single sync
+        with substep_timer.track("ar.decision"):
+            accepted_mask = draws < accept_probs  # (k,) bool
+            cum_accepted = torch.cumprod(accepted_mask, dim=0)
+            accepted_count_gpu = cum_accepted.sum().item()  # single GPU sync
 
         if accepted_count_gpu == k:
-            # All accepted
-            accepted = draft_tokens[:k]
-            return accepted, -1
+            return draft_tokens[:k], -1
 
-        # First rejection index
-        rejected_at = accepted_count_gpu  # first False position
-        accepted = draft_tokens[:accepted_count_gpu]
-        return accepted, rejected_at
+        rejected_at = accepted_count_gpu
+        return draft_tokens[:accepted_count_gpu], rejected_at
 
     def _residual_sample(
         self,

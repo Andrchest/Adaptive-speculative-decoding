@@ -79,6 +79,7 @@ class ExperimentProfile:
     name: str = ""
     stages: list[StageTimings] = field(default_factory=list)
     step_timings: list[StepTimings] = field(default_factory=list)
+    substep_summary: dict[str, dict[str, float]] = field(default_factory=dict)
     gpu_mem_after_models_gb: float = 0.0
     gpu_mem_after_setup_gb: float = 0.0
     gpu_mem_peak_gb: float = 0.0
@@ -294,6 +295,10 @@ def run_profiled_experiment(
     # Global timing collector reset
     step_timings_collector.clear()
 
+    # Enable substep timer for fine-grained bottleneck diagnosis
+    from core.profiling.substep_timer import substep_timer
+    substep_timer.enable()
+
     # ── Stage 1: Model loading ──
     t0 = time.perf_counter()
     drafter, target = runner._build_models(cfg)
@@ -438,6 +443,10 @@ def run_profiled_experiment(
         )
 
     profile.total_wall_s = sum(s.duration_s for s in profile.stages)
+
+    # Disable substep timer and attach summary to profile
+    substep_timer.disable()
+    profile.substep_summary = substep_timer.summary()
 
     # Cleanup
     if hasattr(drafter, "cleanup"):
@@ -718,6 +727,58 @@ def render_gpu_table(profiles: list[ExperimentProfile]) -> Table:
     return table
 
 
+def render_substep_table(profiles: list[ExperimentProfile]) -> Table | None:
+    """Render min/max/avg/sum summary for substep timings collected during profiling."""
+    all_summary: dict[str, dict[str, float]] = {}
+    for p in profiles:
+        for name, stats in p.substep_summary.items():
+            if name not in all_summary:
+                all_summary[name] = dict(stats)
+            else:
+                all_summary[name]["min"] = min(all_summary[name]["min"], stats["min"])
+                all_summary[name]["max"] = max(all_summary[name]["max"], stats["max"])
+                all_summary[name]["sum"] += stats["sum"]
+                all_summary[name]["count"] += stats["count"]
+                all_summary[name]["avg"] = all_summary[name]["sum"] / all_summary[name]["count"]
+
+    if not all_summary:
+        return None
+
+    table = Table(
+        title="Substep Timing Summary (min / max / avg / sum ms)",
+        collapse_padding=True,
+    )
+    table.add_column("Substep", style="cyan", width=36)
+    table.add_column("Min", justify="right", width=10)
+    table.add_column("Max", justify="right", width=10)
+    table.add_column("Avg", justify="right", width=10)
+    table.add_column("Sum", justify="right", width=12)
+    table.add_column("Count", justify="right", width=7)
+
+    # Group by parent method for readability
+    groups: dict[str, list[tuple[str, dict[str, float]]]] = {}
+    for name, stats in sorted(all_summary.items()):
+        parts = name.split(".", 1)
+        group = parts[0] if len(parts) > 1 else "other"
+        groups.setdefault(group, []).append((name, stats))
+
+    for group_name, entries in groups.items():
+        table.add_row(
+            f"[bold]{group_name}[/bold]", "", "", "", "", ""
+        )
+        for name, stats in entries:
+            table.add_row(
+                f"  {name}",
+                f"{stats['min']:.2f}",
+                f"{stats['max']:.2f}",
+                f"{stats['avg']:.2f}",
+                f"{stats['sum']:.1f}",
+                str(int(stats["count"])),
+            )
+
+    return table
+
+
 def render_comparison(
     profiled: list[ExperimentProfile],
     plain: list[PlainModelProfile],
@@ -911,6 +972,14 @@ def main(
     console.print("\n" + "=" * 80)
     console.print("[bold white]GPU MEMORY USAGE[/bold white]")
     console.print(render_gpu_table(profiles))
+
+    console.print("\n" + "=" * 80)
+    console.print("[bold white]SUBSTEP TIMING DETAIL[/bold white]")
+    substep_tbl = render_substep_table(profiles)
+    if substep_tbl is not None:
+        console.print(substep_tbl)
+    else:
+        console.print("[dim]No substep timings recorded.[/dim]")
 
     # ── 4-bit vs FP16 comparison table ──
     if fp16_profiles:

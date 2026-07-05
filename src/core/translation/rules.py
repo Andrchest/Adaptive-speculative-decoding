@@ -140,11 +140,19 @@ class Rule1Mapping:
             100.0 * n_mapped / max(self.drafter_size, 1),
         )
 
-    def map_logits(self, drafter_logits: torch.Tensor) -> torch.Tensor:
+    def map_logits(
+        self,
+        drafter_logits: torch.Tensor | None = None,
+        drafter_probs: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """
         Parameters
         ----------
         drafter_logits : (batch, drafter_vocab) or (drafter_vocab,)
+            Ignored if *drafter_probs* is provided.
+        drafter_probs  : (batch, drafter_vocab) — pre-softmaxed probabilities.
+            When provided, skips the internal softmax (avoids double-softmax
+            when both Rule1 and Rule2 are called from CrossVocabTranslator).
 
         Returns
         -------
@@ -153,64 +161,42 @@ class Rule1Mapping:
         """
         logger.debug('Rule 1: mapping logits')
 
-        squeeze = drafter_logits.dim() == 1
-        if squeeze:
-            drafter_logits = drafter_logits.unsqueeze(0)
-
-        device = drafter_logits.device
-        drafter_probs = F.softmax(drafter_logits.float(), dim=-1)  # (B, Vd) or (B, 1, Vd)
+        if drafter_probs is None:
+            if drafter_logits is None:
+                raise ValueError("Either drafter_logits or drafter_probs must be provided")
+            squeeze = drafter_logits.dim() == 1
+            if squeeze:
+                drafter_logits = drafter_logits.unsqueeze(0)
+            drafter_probs = F.softmax(drafter_logits.float(), dim=-1)  # (B, Vd)
+        else:
+            squeeze = drafter_probs.dim() == 1
+            if squeeze:
+                drafter_probs = drafter_probs.unsqueeze(0)
 
         # Remove extra dimensions between batch and vocab (e.g. (5, 1, 50272) -> (5, 50272)).
-        # Some model families emit logits with an extra sequence dimension; keep only the
-        # last dimension as vocab and squeeze everything else into the batch dimension.
         if drafter_probs.dim() == 3 and drafter_probs.shape[1] == 1:
             drafter_probs = drafter_probs.squeeze(1)  # (B, Vd)
         batch = drafter_probs.shape[0]
+        device = drafter_probs.device
         target_probs = torch.zeros(
             batch, self.target_size, dtype=torch.float32, device=device
         )
 
-        # Ensure index tensors are on the same device as the data tensors
-        # to avoid implicit cross-device copies that can trigger OOM under
-        # memory fragmentation (see #index_add_ OOM with CUDA + CPU indices).
         valid_mask = self._valid_mask.to(device, non_blocking=True)
         mapping = self._mapping.to(device, non_blocking=True)
 
-        # Pre-compute index tensors once (avoid repeated torch.where calls)
         source_d_indices = torch.where(valid_mask)[0]  # (M,) on device
         target_d_indices = mapping[source_d_indices]    # (M,) on device
 
-        # --- Memory-safe implementation ---
-        # The fancy indexing (tensor[:, large_indices]) triggers a mysterious
-        # OOM (~47 GB) on this system regardless of device (CUDA or CPU).
-        #
-        # Root cause: PyTorch's advanced indexing implementation has a bug when
-        # the index tensor is large (~50K elements) on this hardware/software.
-        #
-        # Solution: use torch.gather which is a single kernel call and doesn't
-        # trigger the problematic advanced indexing path.
-        #
-        # Step 1: gather source probs using source_d_indices
-        # Step 2: scatter gathered probs to target positions using target_d_indices
+        # Use expand() instead of torch.stack() — returns a view, no data copy.
+        # expand(B, M) broadcasts the (M,) tensor to (B, M) without allocation.
+        indices_expanded = source_d_indices.unsqueeze(0).expand(batch, -1)  # (B, M)
+        src_gathered = torch.gather(drafter_probs, 1, indices_expanded)    # (B, M)
 
-        # Build per-batch index tensors: stack source_d_indices `batch` times
-        # so we get (B, M) matching drafter_probs shape on dim 1
-        # Build per-batch index tensors: stack source_d_indices `batch` times
-        # so we get (B, M) matching drafter_probs shape on dim 1
-        indices_stack = torch.stack(
-            [source_d_indices for _ in range(batch)], dim=0
-        )  # (B, M)
+        tgt_expanded = target_d_indices.unsqueeze(0).expand(batch, -1)     # (B, M)
+        target_probs.scatter_add_(1, tgt_expanded, src_gathered)
 
-        # gather: single kernel, no advanced indexing path
-        src_gathered = torch.gather(drafter_probs, 1, indices_stack)  # (B, M)
-
-        # Scatter gathered probs to target positions
-        tgt_indices_stack = torch.stack(
-            [target_d_indices for _ in range(batch)], dim=0
-        )  # (B, M)
-        target_probs.scatter_add_(1, tgt_indices_stack, src_gathered)
-
-        del indices_stack, tgt_indices_stack, src_gathered
+        del indices_expanded, tgt_expanded, src_gathered
         logger.debug('Rule 1: end mapping logits ')
 
         if squeeze:
@@ -327,37 +313,44 @@ class Rule2Mapping:
 
     def map_logits(
         self,
-        drafter_logits: torch.Tensor,
+        drafter_logits: torch.Tensor | None = None,
         rule1_mask: torch.Tensor | None = None,
+        drafter_probs: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Parameters
         ----------
         drafter_logits : (batch, drafter_vocab) or (drafter_vocab,)
+            Ignored if *drafter_probs* is provided.
         rule1_mask     : optional bool tensor (target_vocab,) marking tokens
                          already handled by Rule 1 (to avoid double-counting).
+        drafter_probs  : (batch, drafter_vocab) — pre-softmaxed probabilities.
+            When provided, skips the internal softmax (avoids double-softmax
+            when both Rule1 and Rule2 are called from CrossVocabTranslator).
 
         Returns
         -------
         rule2_target_probs : (batch, target_vocab) or (target_vocab,)
         """
-        squeeze = drafter_logits.dim() == 1
-        if squeeze:
-            drafter_logits = drafter_logits.unsqueeze(0)
-
-        drafter_probs = F.softmax(drafter_logits.float(), dim=-1)  # (B, Vd) or (B, 1, Vd)
+        if drafter_probs is None:
+            if drafter_logits is None:
+                raise ValueError("Either drafter_logits or drafter_probs must be provided")
+            squeeze = drafter_logits.dim() == 1
+            if squeeze:
+                drafter_logits = drafter_logits.unsqueeze(0)
+            drafter_probs = F.softmax(drafter_logits.float(), dim=-1)  # (B, Vd)
+            device = drafter_logits.device
+        else:
+            squeeze = drafter_probs.dim() == 1
+            if squeeze:
+                drafter_probs = drafter_probs.unsqueeze(0)
+            device = drafter_probs.device
 
         # Remove extra dimensions between batch and vocab (e.g. (5, 1, 50272) -> (5, 50272)).
         if drafter_probs.dim() == 3 and drafter_probs.shape[1] == 1:
             drafter_probs = drafter_probs.squeeze(1)  # (B, Vd)
 
-        device = drafter_logits.device
-
         # Choose dense or sparse matmul.
-        # Dense path: no sparse kernel launch overhead — 2-3× faster for
-        # small-to-medium vocabularies (e.g. OPT-125m: 50256² < 5M elements).
-        # Sparse fallback: only for very large vocab pairs where dense
-        # matrix would exceed ~200 MiB.
         if self._dense_T is not None:
             T = self._dense_T.to(device, non_blocking=True)
             target_probs = drafter_probs @ T.t()  # (B, Vt)
@@ -366,7 +359,6 @@ class Rule2Mapping:
             target_probs = torch.sparse.mm(drafter_probs, sparse_T.t())  # (B, Vt)
 
         if rule1_mask is not None:
-            # Zero out positions already handled by Rule 1.
             target_probs[rule1_mask.unsqueeze(0).expand_as(target_probs)] = 0.0
 
         if squeeze:

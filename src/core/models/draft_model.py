@@ -22,6 +22,38 @@ from transformers.cache_utils import Cache
 logger = logging.getLogger(__name__)
 
 
+def _normalize_cache(cache: object) -> object:
+    """Ensure all key/value tensors in a Cache are 4D in-place.
+    Never squeezes the heads dimension (dim=1).
+    """
+    if not isinstance(cache, Cache):
+        return cache
+    # transformers 5.x Cache — has .layers attribute
+    if hasattr(cache, 'layers'):
+        for layer in cache.layers:
+            if layer.is_initialized:
+                if layer.keys is not None and layer.keys.ndim == 5:
+                    # Extra dim between heads and seq_len: [B, H, 1, T, D]
+                    if layer.keys.shape[2] == 1:
+                        layer.keys = layer.keys.squeeze(2)
+                        layer.values = layer.values.squeeze(2)
+                    # Extra leading dim: [1, B, H, T, D]
+                    elif layer.keys.shape[0] == 1:
+                        layer.keys = layer.keys.squeeze(0)
+                        layer.values = layer.values.squeeze(0)
+    # transformers 4.x DynamicCache — has .key_cache and .value_cache
+    elif hasattr(cache, 'key_cache'):
+        for i in range(len(cache.key_cache)):
+            if cache.key_cache[i] is not None and cache.key_cache[i].ndim == 5:
+                if cache.key_cache[i].shape[2] == 1:
+                    cache.key_cache[i] = cache.key_cache[i].squeeze(2)
+                    cache.value_cache[i] = cache.value_cache[i].squeeze(2)
+                elif cache.key_cache[i].shape[0] == 1:
+                    cache.key_cache[i] = cache.key_cache[i].squeeze(0)
+                    cache.value_cache[i] = cache.value_cache[i].squeeze(0)
+    return cache
+
+
 def _load_tokenizer(model_name_or_path: str) -> AutoTokenizer:
     """Load tokenizer with automatic fallback to slow if fast fails.
 

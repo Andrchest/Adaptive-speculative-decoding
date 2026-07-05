@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 
 import torch
+import torch.nn.functional as F
 
 from .rules import Rule1Mapping, Rule2Mapping
 
@@ -91,33 +92,38 @@ class CrossVocabTranslator:
         -------
         target_probs : (k, target_vocab) probability tensor (sums to ≤ 1 per row)
         """
+        from core.profiling.substep_timer import substep_timer
+
         logger.debug("Translating %d draft logits", draft_logits.shape[0])
-        # Rule 1 — exact matches
-        r1 = self.rule1.map_logits(draft_logits)  # (k, target_vocab)
-        r1_mask = r1.sum(dim=0) > 0  # target tokens covered by R1
 
-        # Rule 2 — either lattice exact mapping or approximate redistribution
-        if self.lattice is not None:
-            # Lattice: exact probability mass via DAG forward-DP
-            r2 = self.lattice.exact_map_logits(draft_logits)  # (k, target_vocab)
-            # Zero out R1-covered positions to avoid double-counting
-            r2 = r2 * (1 - r1_mask.float().unsqueeze(0))
-            logger.debug("Using lattice for Rule 2 (exact mapping)")
-        else:
-            # Fallback: approximate redistribution via Rule 2 heuristic
-            r2 = self.rule2.map_logits(draft_logits, rule1_mask=r1_mask)
+        with substep_timer.track("translate.softmax"):
+            drafter_probs = F.softmax(draft_logits.float(), dim=-1)
 
-        # Combine: R1 has priority; R2 fills the rest
-        combined = r1 + r2
+        with substep_timer.track("translate.rule1_map"):
+            r1 = self.rule1.map_logits(drafter_probs=drafter_probs)  # (k, target_vocab)
 
-        # Learned translator blend
-        if self.learned_model is not None and self.learned_weight > 0:
-            learned = self.learned_model.predict(draft_logits)  # (k, target_vocab)
-            combined = (1 - self.learned_weight) * combined + self.learned_weight * learned
+        with substep_timer.track("translate.rule1_mask"):
+            r1_mask = r1.sum(dim=0) > 0  # target tokens covered by R1
 
-        # Normalise each row (may have residual un-mapped mass)
-        row_sums = combined.sum(dim=-1, keepdim=True).clamp(min=1e-8)
-        combined = combined / row_sums
+        with substep_timer.track("translate.rule2_matmul"):
+            if self.lattice is not None:
+                r2 = self.lattice.exact_map_logits(draft_logits)  # (k, target_vocab)
+            else:
+                r2 = self.rule2.map_logits(drafter_probs=drafter_probs, rule1_mask=r1_mask)
+
+        with substep_timer.track("translate.rule2_mask"):
+            if self.lattice is not None:
+                r2 = r2 * (1 - r1_mask.float().unsqueeze(0))
+
+        with substep_timer.track("translate.combine"):
+            combined = r1 + r2
+            if self.learned_model is not None and self.learned_weight > 0:
+                learned = self.learned_model.predict(draft_logits)
+                combined = (1 - self.learned_weight) * combined + self.learned_weight * learned
+
+        with substep_timer.track("translate.normalize"):
+            row_sums = combined.sum(dim=-1, keepdim=True).clamp(min=1e-8)
+            combined = combined / row_sums
 
         logger.debug(
             "Translation complete: %d positions -> target_vocab=%d r1_covered=%d",
