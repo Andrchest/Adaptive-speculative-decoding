@@ -150,7 +150,14 @@ class ContrastiveLoss(torch.nn.Module):
         # (the Rule1-mappable subset) for the KL to be well-defined.
         # Previously the unnormalized projection was passed directly,
         # producing a biased surrogate.
-        valid_mask = valid.unsqueeze(0).expand(k, -1)  # (k, drafter_vocab)
+        #
+        # NOTE: `valid` is derived from `target_to_draft_mapping` and has
+        # shape (target_vocab,), but we need a mask over drafter vocab
+        # positions. Build the drafter-side mask from d_idx instead.
+        drafter_valid = torch.zeros(drafter_vocab, dtype=torch.bool, device=draft_logits.device)
+        if d_idx.numel() > 0:
+            drafter_valid[d_idx] = True
+        valid_mask = drafter_valid.unsqueeze(0).expand(k, -1)  # (k, drafter_vocab)
         drafter_masked_log = draft_log[valid_mask].view(k, -1)
         drafter_masked_log = drafter_masked_log - torch.logsumexp(
             drafter_masked_log, dim=-1, keepdim=True

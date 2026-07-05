@@ -693,7 +693,7 @@ class BaseExperiment(abc.ABC):
                 for sr in decoder._step_results[-max_new_tokens:]:
                     seq_rec.add_step(
                         draft_len=sr.draft_length,
-                        accepted=len(sr.accepted_tokens),
+                        accepted=sr.accepted_count,
                         cache_hit=sr.cache_hit,
                     )
             decoder._step_results.clear()
