@@ -52,7 +52,12 @@ class DecodeRecord:
     def acceptance_rate(self) -> float:
         if not self.step_records:
             return 0.0
-        total_a = sum(r.accepted for r in self.step_records)
+        # Use accepted_draft (excludes bonus tokens) when available,
+        # fall back to accepted for backward compatibility.
+        total_a = sum(
+            (r.accepted_draft if r.accepted_draft >= 0 else r.accepted)
+            for r in self.step_records
+        )
         # Use actual_draft_len when available, fall back to draft_len
         total_d = sum(r.actual_draft_len if r.actual_draft_len > 0 else r.draft_len for r in self.step_records)
         return total_a / max(1, total_d)
@@ -65,6 +70,7 @@ class StepRecord:
     cache_hit: bool
     kl_div: float = 0.0
     actual_draft_len: int = 0  # 0 = unknown (kept for backward compat)
+    accepted_draft: int = -1  # -1 = fall back to `accepted` (backward compat)
 
 
 class BenchmarkCollector:
@@ -117,8 +123,9 @@ class BenchmarkCollector:
             cache_hit: bool = False,
             kl_div: float = 0.0,
             actual_draft_len: int = 0,
+            accepted_draft: int = -1,
         ) -> None:
-            self._rec.step_records.append(StepRecord(draft_len, accepted, cache_hit, kl_div, actual_draft_len))
+            self._rec.step_records.append(StepRecord(draft_len, accepted, cache_hit, kl_div, actual_draft_len, accepted_draft))
             self._rec.total_new_tokens += accepted
 
         def __exit__(self, *args) -> None:

@@ -218,8 +218,8 @@ def _patch_benchmark_collector(collector):
         original_init(self, col, prompt_len)
         self._prompt_idx = getattr(collector, "_current_prompt_idx", 0)
 
-    def patched_add_step(self, draft_len, accepted, cache_hit=False, kl_div=0.0, actual_draft_len=0):
-        original_add_step(self, draft_len, accepted, cache_hit, kl_div, actual_draft_len)
+    def patched_add_step(self, draft_len, accepted, cache_hit=False, kl_div=0.0, actual_draft_len=0, accepted_draft=-1):
+        original_add_step(self, draft_len, accepted, cache_hit, kl_div, actual_draft_len, accepted_draft)
         # Capture after each step for fine-grained analysis
         p = _profiler_state
         if p is not None and accepted > 0:
@@ -419,8 +419,9 @@ def run_profiled_experiment(
             for sr in decoder._step_results[-max_new_tokens:]:
                 seq_rec.add_step(
                     draft_len=sr.draft_length,
-                    accepted=sr.accepted_count,
+                    accepted=len(sr.accepted_tokens),
                     cache_hit=sr.cache_hit,
+                    accepted_draft=sr.accepted_count,
                 )
         decoder._step_results.clear()
 
