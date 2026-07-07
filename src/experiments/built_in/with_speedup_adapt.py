@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from experiments.base import BaseExperiment, BuildContext, ExperimentMeta
+from experiments.base import BaseExperiment, BuildContext, DecodeContext, ExperimentMeta
 from experiments.runner import ExperimentConfig
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,6 @@ class SpeedupAdaptiveExperiment(BaseExperiment):
         )
 
     def build_adaptive_controller(self, ctx: BuildContext):
-        """Build SpeedupPredictor + AdaptiveDraftController."""
         from core.extensions.adaptive.speedup_predictor import (
             AdaptiveDraftController,
             SpeedupPredictor,
@@ -69,3 +68,23 @@ class SpeedupAdaptiveExperiment(BaseExperiment):
             getattr(cfg, "k_max", 8),
         )
         return controller
+
+    def on_decode_step(self, ctx: DecodeContext, step_result, prompt_index: int) -> None:
+        """See AcceptanceAdaptiveExperiment.on_decode_step for rationale —
+        same cadence so both variants get an equal training budget."""
+        ctrl = ctx.adaptive_fn
+        if ctrl is None or not hasattr(ctrl, "predictor"):
+            return
+        train_every = getattr(ctx.config, "adaptive_train_every", 16)
+        if (prompt_index + 1) % train_every != 0:
+            return
+        mean_loss = ctrl.predictor.train_on_buffer(
+            n_steps=getattr(ctx.config, "adaptive_train_steps", 32),
+            batch_size=getattr(ctx.config, "adaptive_batch_size", 32),
+            lr=getattr(ctx.config, "adaptive_lr", 1e-3),
+        )
+        logger.debug("Speedup predictor trained: prompt=%d mean_loss=%.4f", prompt_index, mean_loss)
+
+    def on_extra_metrics(self, summary: dict) -> dict:
+        summary["adaptive_objective"] = "speedup"
+        return summary

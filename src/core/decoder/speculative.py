@@ -135,6 +135,12 @@ class SpeculativeDecoder:
         if hasattr(self.target, "reset_kv_state"):
             self.target.reset_kv_state()
 
+        if hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None:
+            self._adaptive_controller_ref._last_hidden = None
+            self._adaptive_controller_ref._last_k = None
+            if hasattr(self._adaptive_controller_ref, '_last_start'):
+                self._adaptive_controller_ref._last_start = None
+
         self.cache.step()
 
         grad_ctx = contextlib.nullcontext() if distiller is not None else torch.no_grad()
@@ -419,16 +425,20 @@ class SpeculativeDecoder:
                         bonus_drafter, drafter_vocab_size,
                     )
 
-                # Share hidden state with adaptive controller if attached
                 if hasattr(self, '_adaptive_controller_ref'):
                     ctrl = self._adaptive_controller_ref
                     if ctrl is not None and hasattr(ctrl, 'update_hidden'):
                         ctrl.update_hidden(bonus_out.hidden_states[-1][0, -1, :])
         else:
-            # Distillation mode or no KV: reset for next step
+            # No KV available: reset for next step
             self._drafter_kv = None
             self._drafter_kv_len = 0
             self._cached_drafter_logits = None
+
+            # Prevent Hidden State Leak if cache is dropped
+            if hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None:
+                if hasattr(self._adaptive_controller_ref, '_last_hidden'):
+                    self._adaptive_controller_ref._last_hidden = None
 
         # 8. Truncate target KV cache to keep only the verified prefix.
         kv_keep = context.shape[1] + accepted_count
@@ -462,6 +472,11 @@ class SpeculativeDecoder:
                 accepted_mask=accepted_mask,
                 prompt_ids=ctx_list,
             )
+
+        if hasattr(self, '_adaptive_controller_ref'):
+            ctrl = self._adaptive_controller_ref
+            if ctrl is not None and hasattr(ctrl, 'record_result'):
+                ctrl.record_result(accepted_count)
 
         return StepResult(
             draft_length=k,

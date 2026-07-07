@@ -44,6 +44,19 @@ class SpeedupPredictor(nn.Module):
             nn.GELU(),
             nn.Linear(128, k_max),
         )
+        # Bias the final layer toward a pessimistic prior (-2.0) rather
+        # than the default near-zero init. Training only ever updates
+        # the ONE head corresponding to the k that was actually chosen
+        # for a given hidden state (see train_on_buffer's obs_mask) — so
+        # select_k's argmax was comparing trained heads against heads
+        # that had simply never received a gradient. A near-zero init
+        # let those untrained heads look competitive with (or better
+        # than) heads that had genuinely learned a mediocre speedup,
+        # which is the root cause of poor k choices early in training.
+        # Starting low means an untrained head only wins argmax once
+        # some OTHER process has actively pushed every trained head
+        # below it — i.e. never, until real exploration earns it.
+        nn.init.constant_(self.net[-1].bias, -2.0)
         self._buffer: deque[SpeedupSample] = deque(maxlen=8192)
         self._optimizer: torch.optim.Optimizer | None = None
 
@@ -53,7 +66,11 @@ class SpeedupPredictor(nn.Module):
             out = torch.nan_to_num(out, nan=0.0, posinf=10.0, neginf=-10.0)
         return out
 
-    def select_k(self, hidden: torch.Tensor) -> int:
+    def select_k(self, hidden: torch.Tensor, epsilon: float = 0.10) -> int:
+        # 10% chance to explore a random k to escape the pessimistic init trap
+        if torch.rand(1).item() < epsilon:
+            return torch.randint(1, self.k_max + 1, (1,)).item()
+
         self.eval()
         with torch.no_grad():
             preds = self.forward(hidden.unsqueeze(0)).squeeze(0)
@@ -184,3 +201,8 @@ class AdaptiveDraftController:
         with torch.no_grad():
             out = self.drafter.model(context, output_hidden_states=True)
         return out.hidden_states[-1][0, -1, :].float()
+
+    def reset(self) -> None:
+        self._last_hidden = None
+        self._last_k = None
+        self._last_start = None

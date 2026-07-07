@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from experiments.built_in import (
+    AcceptanceAdaptiveExperiment,
     BaselineExperiment,
     ContrastiveExperiment,
     FullSystemExperiment,
@@ -41,6 +42,7 @@ ABLATION_SUITE = [
     ReplayExperiment(strategy="prioritized"),
     ContrastiveExperiment(),
     SpeedupAdaptiveExperiment(),
+    AcceptanceAdaptiveExperiment(),
     RoutingExperiment(),
     UniversalDrafterExperiment(),
     FullSystemExperiment(),

@@ -210,81 +210,71 @@ class DraftModel:
         past_key_values=None,
         past_len: int = 0,
         cached_logits: torch.Tensor | None = None,
-    ) -> tuple[list[int], torch.Tensor, None]:
+    ) -> tuple[list[int], torch.Tensor, object]:
         """
-        Distillation-aware drafting.
-
-        FIX: Steps 0..k-2 use KV cache under no_grad (same as _draft_impl_kv).
-        Only the FINAL step (k-1) runs with gradients — and it forwards
-        ONLY the last few tokens (not the full context) by detaching
-        the cached KV and using it as initial state.
-
-        This reduces the gradient-enabled forward from O(L+k) to O(2-3),
-        a major speedup when distillation is active.
+        Distillation-aware drafting with KV cache support.
+        Maintains KV cache efficiency while preserving gradients for ALL k drafted tokens.
         """
         greedy = temperature <= 1e-6
         result_tokens: list[int] = []
         logits_list: list[torch.Tensor] = []
-        sampled_tokens: list[torch.Tensor] = []
 
-        # --- Steps 0..k-2: KV cache + no_grad ---
-        # FIX: Pass DynamicCache() explicitly — without it, some models
-        # (e.g. pythia) return a plain tuple as past_key_values, which
-        # lacks get_seq_length() and crashes on subsequent forward calls.
-        from transformers.cache_utils import DynamicCache
-        past_key_values = DynamicCache()
-        with torch.no_grad():
-            out = self.model(context, past_key_values=past_key_values, use_cache=True)
-        past_key_values = out.past_key_values
+        # CRITICAL FIX: Detach state from previous steps to prevent PyTorch from
+        # traversing into the previously freed autograd graph.
+        if past_key_values is not None:
+            past_key_values = self._detach_pkv(past_key_values)
+        if cached_logits is not None:
+            cached_logits = cached_logits.detach()
 
-        for i in range(k - 1):
-            logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
-            logits_list.append(logits.unsqueeze(0).detach())
+        # Step 0: Initial forward (or use cached logits)
+        if cached_logits is not None:
+            logits = cached_logits.squeeze(0) if cached_logits.dim() > 1 else cached_logits
+            out_pkv = past_key_values
             next_token = self._sample_next_token(logits, temperature, greedy)
             result_tokens.append(next_token.item())
-            sampled_tokens.append(next_token)
-
-            with torch.no_grad():
-                out = self.model(
-                    next_token.unsqueeze(0).unsqueeze(0),
-                    past_key_values=past_key_values,
-                    use_cache=True,
-                )
-                past_key_values = out.past_key_values
-
-        # --- Step k-1: gradient-enabled forward ---
-        # FIX: Only forward the LAST sampled token (not full context).
-        # The KV cache from no_grad steps is detached and used as
-        # initial state — this is valid because the gradient only
-        # needs to flow through the LAST token's logits.
-        if sampled_tokens:
-            last_token = sampled_tokens[-1].unsqueeze(0).unsqueeze(0)
-            # Detach past_key_values to prevent graph corruption
-            detached_kv = self._detach_pkv(past_key_values)
-            out = self.model(
-                last_token,
-                past_key_values=detached_kv,
-                use_cache=False,
-            )
-            logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
+            logits_list.append(logits.unsqueeze(0))
+            new_input = next_token.unsqueeze(0).unsqueeze(0)
+            remaining = k - 1
+        elif past_key_values is not None and past_len > 0:
+            new_input = context[:, past_len:]
+            out = self.model(new_input, past_key_values=past_key_values, use_cache=True)
+            out_pkv = out.past_key_values
+            logits = out.logits[:, -1, :].squeeze(0)
+            next_token = self._sample_next_token(logits, temperature, greedy)
+            result_tokens.append(next_token.item())
+            logits_list.append(logits.unsqueeze(0))
+            new_input = next_token.unsqueeze(0).unsqueeze(0)
+            remaining = k - 1
         else:
-            # k==1: no previous steps, forward full context with gradients
-            out = self.model(context, use_cache=False)
-            logits = out.logits.reshape(-1, out.logits.shape[-1])[-1, :]
+            out = self.model(context, use_cache=True)
+            out_pkv = out.past_key_values
+            logits = out.logits[:, -1, :].squeeze(0)
+            next_token = self._sample_next_token(logits, temperature, greedy)
+            result_tokens.append(next_token.item())
+            logits_list.append(logits.unsqueeze(0))
+            new_input = next_token.unsqueeze(0).unsqueeze(0)
+            remaining = k - 1
 
-        logits_list.append(logits.unsqueeze(0))
-        next_token = self._sample_next_token(logits, temperature, greedy)
-        result_tokens.append(next_token.item())
+        # Steps 1..k-1: Autoregressive forward with gradients
+        for _ in range(remaining):
+            out = self.model(new_input, past_key_values=out_pkv, use_cache=True)
+            out_pkv = out.past_key_values
+            logits = out.logits[:, -1, :].squeeze(0)
+            logits_list.append(logits.unsqueeze(0))
+            next_token = self._sample_next_token(logits, temperature, greedy)
+            result_tokens.append(next_token.item())
+            new_input = next_token.unsqueeze(0).unsqueeze(0)
 
         logits_to_return = torch.stack(logits_list, dim=0)
         if logits_to_return.dim() == 3 and logits_to_return.shape[1] == 1:
             logits_to_return = logits_to_return.squeeze(1)
+
         logger.debug(
             "Drafter (distill) generated %d tokens, logits shape: %s",
             k,
             tuple(logits_to_return.shape),
         )
-        return result_tokens, logits_to_return, None  # KV cache not returned for distill
+        return result_tokens, logits_to_return, out_pkv
 
     @staticmethod
     def _detach_pkv(pkv):
