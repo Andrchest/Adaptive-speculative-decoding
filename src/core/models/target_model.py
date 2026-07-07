@@ -82,10 +82,8 @@ def _truncate_pkv(pkv: object, keep_len: int) -> object:
 
     # Legacy tuple-of-tuples — skip None entries
     def _truncate_layer(layer):
-        return tuple(
-            kv[..., :keep_len, :] if kv is not None else None
-            for kv in layer
-        )
+        return tuple(kv[..., :keep_len, :] if kv is not None else None for kv in layer)
+
     if isinstance(pkv, tuple) and len(pkv) > 0:
         try:
             return tuple(_truncate_layer(layer) for layer in pkv)
@@ -238,6 +236,21 @@ class TargetModel:
         """
         self._kv_ok = True
 
+    def cleanup(self) -> None:
+        """Release model from GPU memory.
+
+        Moves the model to CPU and deletes the reference.  After calling
+        this the TargetModel is no longer usable until reloaded.
+        """
+        if self.model is not None:
+            try:
+                self.model.cpu()
+            except Exception:
+                pass
+            self.model = None
+        self.tokenizer = None
+        self._draft_buffer = None
+
     @torch.no_grad()
     def verify(
         self,
@@ -305,13 +318,14 @@ class TargetModel:
                 start = new_len - 1
                 logits = out.logits[0, start : start + k + 1, :]
             except Exception as e:
-                logger.warning(
-                    "Target KV cache failed (%s). Falling back to full forward.", e
-                )
+                logger.warning("Target KV cache failed (%s). Falling back to full forward.", e)
                 self._kv_ok = False
                 out = None
 
         if out is None:
+            # Full forward fallback — successful forward produces fresh PKV.
+            # Reset _kv_ok so the NEXT step tries KV cache again with this fresh PKV.
+            # A one-time PKV format mismatch should not permanently disable caching.
             if draft_tensor is not None:
                 full_input = torch.cat([context, draft_tensor], dim=1)
             else:
@@ -320,6 +334,7 @@ class TargetModel:
             new_pkv = _to_cache(out.past_key_values)
             logits = out.logits[0, ctx_len - 1 : ctx_len + k, :]
         substep_timer.record("verify.model_forward", (time.perf_counter() - t0_fwd) * 1000)
+            self._kv_ok = True  # retry KV cache on next step with fresh PKV
 
         # --- substep: logits extraction ---
         t0 = time.perf_counter()

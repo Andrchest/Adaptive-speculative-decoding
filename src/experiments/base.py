@@ -425,24 +425,25 @@ class BaseExperiment(abc.ABC):
     def on_decode_step(
         self,
         ctx: DecodeContext,
-        step_result: StepResult,
+        step_results: list[StepResult],
         prompt_index: int,
     ) -> None:
-        """Called after each decode step (one prompt completion).
+        """Called after each prompt is decoded.
 
-        Override to implement per-step logic: distillation triggers,
+        Override to implement per-prompt logic: distillation triggers,
         routing decisions, custom metric collection, etc.
 
         Parameters
         ----------
         ctx : DecodeContext
             Mutable decode context.
-        step_result : StepResult
-            Statistics for the completed step.
+        step_results : list[StepResult]
+            List of StepResult objects for the completed prompt
+            (one per decode step within the prompt).
         prompt_index : int
             Zero-based index of the current prompt.
         """
-        del ctx, step_result, prompt_index  # unused in base
+        del ctx, step_results, prompt_index  # unused in base
 
     def on_after_decode(self, ctx: DecodeContext) -> None:
         """Called once after all prompts have been decoded.
@@ -477,6 +478,22 @@ class BaseExperiment(abc.ABC):
             The (possibly modified) summary dictionary.
         """
         return summary
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def cleanup(self) -> None:
+        """Release GPU memory and internal references after an experiment run.
+
+        Called by ``ExperimentRunner`` between experiments to prevent
+        CUDA memory exhaustion when running long experiment suites.
+
+        Subclasses should override this to release any model references,
+        buffers, or other GPU-held resources, then call ``super().cleanup()``.
+        """
+        self._components.clear()
+        self._overrides.clear()
 
     # ------------------------------------------------------------------
     # Execution (usually don't override)
@@ -531,9 +548,7 @@ class BaseExperiment(abc.ABC):
         # GPU memory tracking: collect samples during setup
         mem_samples: list[float] = []
         if torch.cuda.is_available():
-            mem_samples.append(
-                torch.cuda.memory_allocated(runner.device) / 1024**3
-            )
+            mem_samples.append(torch.cuda.memory_allocated(runner.device) / 1024**3)
             logger.info("GPU memory after models: %.2f GB", mem_samples[-1])
 
         # Build components
@@ -585,9 +600,7 @@ class BaseExperiment(abc.ABC):
 
         # GPU memory: after all components built
         if torch.cuda.is_available():
-            mem_samples.append(
-                torch.cuda.memory_allocated(runner.device) / 1024**3
-            )
+            mem_samples.append(torch.cuda.memory_allocated(runner.device) / 1024**3)
             logger.info("GPU memory after setup: %.2f GB", mem_samples[-1])
 
         # Benchmark collector
@@ -612,7 +625,8 @@ class BaseExperiment(abc.ABC):
             collector.set_baseline_tps(baseline_tps)
             logger.warning(
                 "Autoregressive baseline (verify()-based, k=1): %.1f tok/s over %d tokens",
-                baseline_tps, bl_result["tokens_generated"],
+                baseline_tps,
+                bl_result["tokens_generated"],
             )
         except Exception:
             logger.warning("Baseline TPS measurement failed", exc_info=True)
@@ -633,16 +647,18 @@ class BaseExperiment(abc.ABC):
 
         # Decode loop
         import experiments.runner as _rl_mod  # type: ignore
+
         _ll = getattr(_rl_mod, "_log_level", "QUIET")
         # Use tqdm for QUIET/NORMAL mode, simple loop otherwise
         _use_tqdm = _ll in ("QUIET", "NORMAL")
-        _verbose_mode = (_ll == "VERBOSE")
+        _verbose_mode = _ll == "VERBOSE"
         log_every = getattr(cfg, "log_every", 50)
 
         # Import tqdm if needed
         if _use_tqdm:
             try:
                 from tqdm import tqdm as _tqdm
+
                 _tqdm_available = True
             except ImportError:
                 _tqdm_available = False
@@ -667,9 +683,7 @@ class BaseExperiment(abc.ABC):
 
             # GPU memory: at each prompt (captures per-sequence peaks)
             if torch.cuda.is_available():
-                mem_samples.append(
-                    torch.cuda.memory_allocated(runner.device) / 1024**3
-                )
+                mem_samples.append(torch.cuda.memory_allocated(runner.device) / 1024**3)
 
             # Router selection (if applicable)
             if router is not None:
@@ -697,10 +711,12 @@ class BaseExperiment(abc.ABC):
                         cache_hit=sr.cache_hit,
                         accepted_draft=sr.accepted_count,
                     )
+            # Capture step results BEFORE clearing so the hook can use them
+            _step_results = list(decoder._step_results)
             decoder._step_results.clear()
 
-            # Hook: after each step
-            self.on_decode_step(decode_ctx, decoder.stats(), i)
+            # Hook: after each prompt (passes list of StepResult for this prompt)
+            self.on_decode_step(decode_ctx, _step_results, i)
 
             # Progress logging
             if _verbose_mode and i % log_every == 0:
@@ -715,10 +731,12 @@ class BaseExperiment(abc.ABC):
             # Update tqdm bar in QUIET/NORMAL mode
             if _use_tqdm and _tqdm_available:
                 partial = collector.summary()
-                _prompt_iter.set_postfix({
-                    "acc": f"{partial.get('acceptance_rate', 0):.3f}",
-                    "tps": f"{partial.get('tokens_per_sec', 0):.1f}",
-                })
+                _prompt_iter.set_postfix(
+                    {
+                        "acc": f"{partial.get('acceptance_rate', 0):.3f}",
+                        "tps": f"{partial.get('tokens_per_sec', 0):.1f}",
+                    }
+                )
 
         # Hooks: after decode
         self.on_after_decode(decode_ctx)
@@ -732,9 +750,7 @@ class BaseExperiment(abc.ABC):
 
         # GPU memory: after all decoding complete
         if torch.cuda.is_available():
-            mem_samples.append(
-                torch.cuda.memory_allocated(runner.device) / 1024**3
-            )
+            mem_samples.append(torch.cuda.memory_allocated(runner.device) / 1024**3)
 
         # Collect metrics (final summary — collector is cleared after this)
         summary = collector.summary()
