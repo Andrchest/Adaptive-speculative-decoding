@@ -333,8 +333,8 @@ class TargetModel:
             out = self.model(full_input, use_cache=True)
             new_pkv = _to_cache(out.past_key_values)
             logits = out.logits[0, ctx_len - 1 : ctx_len + k, :]
-        substep_timer.record("verify.model_forward", (time.perf_counter() - t0_fwd) * 1000)
             self._kv_ok = True  # retry KV cache on next step with fresh PKV
+        substep_timer.record("verify.model_forward", (time.perf_counter() - t0_fwd) * 1000)
 
         # --- substep: logits extraction ---
         t0 = time.perf_counter()
