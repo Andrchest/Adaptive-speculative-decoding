@@ -182,6 +182,7 @@ def _apply_overrides(
         # Explicit model paths always win (even over --tiny)
         if drafter_model:
             exp.set_config_override("drafter_model_path", drafter_model)
+            exp.set_config_override("drafter_model_paths", [drafter_model])
         if target_model:
             exp.set_config_override("target_model_path", target_model)
 

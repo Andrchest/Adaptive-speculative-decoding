@@ -645,10 +645,10 @@ class BanditRoutingExperiment(BaseExperiment):
             name=self.meta.name,
             drafter_model_path="Qwen/Qwen2.5-0.5B-Instruct",
             drafter_model_paths=[
-                "Qwen/Qwen2.5-0.5B-Instruct",
-                "Qwen/Qwen2.5-1.5B-Instruct",
+                "EleutherAI/pythia-70m",
+                "facebook/opt-125m",
             ],
-            target_model_path="Qwen/Qwen2.5-7B-Instruct",
+            target_model_path="Qwen/Qwen2.5-7B",
             use_rule1=True,
             use_rule2=True,
             use_lattice=False,
