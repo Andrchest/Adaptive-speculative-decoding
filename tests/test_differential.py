@@ -18,13 +18,12 @@ import torch
 from core.cache.ngram import NgramCache
 
 # Skip all tests if CUDA is not available.
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required"
-)
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def decoder_pipeline():
@@ -36,12 +35,8 @@ def decoder_pipeline():
     from core.cache.ngram import NgramCache
 
     torch.manual_seed(0)
-    drafter = DraftModel(
-        "facebook/opt-125m", device="cuda", dtype=torch.float32
-    )
-    target = TargetModel(
-        "facebook/opt-350m", device="cuda", dtype=torch.float16, load_in_4bit=True
-    )
+    drafter = DraftModel("facebook/opt-125m", device="cuda", dtype=torch.float32)
+    target = TargetModel("facebook/opt-350m", device="cuda", dtype=torch.float16, load_in_4bit=True)
     translator = CrossVocabTranslator.from_tokenizers(
         drafter.tokenizer,
         target.tokenizer,
@@ -90,9 +85,7 @@ class TestDeterminism:
             decoder.cache = NgramCache()
             out2 = decoder.generate(input_ids, max_new_tokens=32, rng=rng2)
 
-            assert out1.tolist() == out2.tolist(), (
-                f"Seed {seed}: repeated runs differ"
-            )
+            assert out1.tolist() == out2.tolist(), f"Seed {seed}: repeated runs differ"
 
 
 class TestAcceptanceTheorem:
@@ -115,15 +108,11 @@ class TestAcceptanceTheorem:
             stats = decoder.stats()
             rate = stats.get("acceptance_rate", 0.0)
             rates.append(rate)
-            assert 0.0 <= rate <= 1.0, (
-                f"Seed {seed}: acceptance rate {rate:.3f} out of [0, 1]"
-            )
+            assert 0.0 <= rate <= 1.0, f"Seed {seed}: acceptance rate {rate:.3f} out of [0, 1]"
 
         # Mean acceptance rate should be in a reasonable range
         mean_rate = sum(rates) / len(rates)
-        assert 0.1 < mean_rate < 1.0, (
-            f"Mean acceptance rate {mean_rate:.3f} out of expected range"
-        )
+        assert 0.1 < mean_rate < 1.0, f"Mean acceptance rate {mean_rate:.3f} out of expected range"
 
 
 class TestTokenDiversity:
@@ -146,6 +135,4 @@ class TestTokenDiversity:
             all_tokens.append(tuple(output.tolist()[0]))
 
         unique_count = len(set(all_tokens))
-        assert unique_count >= 9, (
-            f"Only {unique_count}/10 unique token sequences (expect ≥9)"
-        )
+        assert unique_count >= 9, f"Only {unique_count}/10 unique token sequences (expect ≥9)"

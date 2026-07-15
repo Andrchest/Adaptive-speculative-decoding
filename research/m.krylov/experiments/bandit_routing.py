@@ -343,16 +343,18 @@ def _extract_prompt_features(
         return torch.zeros(max_features)
 
     vs = float(max(vocab_size, 1))
-    features = torch.stack([
-        torch.tensor(math.log(n + 1), device=ids.device),
-        torch.tensor(ids.unique().size(0), device=ids.device) / n,
-        ids.mean() / vs,
-        (ids.std() if n > 1 else torch.tensor(0.0, device=ids.device)) / vs,
-        (ids < 100).float().mean(),
-        ((ids >= 100) & (ids < 1000)).float().mean(),
-        ((ids >= 1000) & (ids < 5000)).float().mean(),
-        (ids >= 5000).float().mean(),
-    ])
+    features = torch.stack(
+        [
+            torch.tensor(math.log(n + 1), device=ids.device),
+            torch.tensor(ids.unique().size(0), device=ids.device) / n,
+            ids.mean() / vs,
+            (ids.std() if n > 1 else torch.tensor(0.0, device=ids.device)) / vs,
+            (ids < 100).float().mean(),
+            ((ids >= 100) & (ids < 1000)).float().mean(),
+            ((ids >= 1000) & (ids < 5000)).float().mean(),
+            (ids >= 5000).float().mean(),
+        ]
+    )
     features = features[:max_features].cpu()
     norm = features.norm()
     if norm > 0:

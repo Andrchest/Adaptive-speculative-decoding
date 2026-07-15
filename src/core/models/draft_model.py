@@ -29,7 +29,7 @@ def _normalize_cache(cache: object) -> object:
     if not isinstance(cache, Cache):
         return cache
     # transformers 5.x Cache — has .layers attribute
-    if hasattr(cache, 'layers'):
+    if hasattr(cache, "layers"):
         for layer in cache.layers:
             if layer.is_initialized:
                 if layer.keys is not None and layer.keys.ndim == 5:
@@ -42,7 +42,7 @@ def _normalize_cache(cache: object) -> object:
                         layer.keys = layer.keys.squeeze(0)
                         layer.values = layer.values.squeeze(0)
     # transformers 4.x DynamicCache — has .key_cache and .value_cache
-    elif hasattr(cache, 'key_cache'):
+    elif hasattr(cache, "key_cache"):
         for i in range(len(cache.key_cache)):
             if cache.key_cache[i] is not None and cache.key_cache[i].ndim == 5:
                 if cache.key_cache[i].shape[2] == 1:
@@ -66,7 +66,8 @@ def _load_tokenizer(model_name_or_path: str) -> AutoTokenizer:
     except Exception as e:
         logger.warning(
             "Fast tokenizer failed for %s: %s. Falling back to slow tokenizer.",
-            model_name_or_path, e,
+            model_name_or_path,
+            e,
         )
         return AutoTokenizer.from_pretrained(model_name_or_path, use_fast=False)
 
@@ -162,7 +163,7 @@ class DraftModel:
             # grows by fewer tokens than were drafted. Clamp to avoid
             # empty/negative slicing.
             actual_past = min(past_len, context.shape[1])
-            new_input = context[:, actual_past:]   # only the unseen tail
+            new_input = context[:, actual_past:]  # only the unseen tail
             if new_input.shape[1] == 0:
                 # Nothing new to process — just use last token from context
                 new_input = context[:, -1:]
@@ -178,6 +179,7 @@ class DraftModel:
             # FIX: Pass DynamicCache() explicitly — without it, some models
             # return a plain tuple as past_key_values which crashes later.
             from transformers.cache_utils import DynamicCache
+
             init_pkv = DynamicCache()
             out = self.model(context, past_key_values=init_pkv, use_cache=True)
             out_pkv = out.past_key_values

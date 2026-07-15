@@ -178,7 +178,8 @@ class CrossVocabTranslator:
             device,
         )
         return cls(
-            r1, r2,
+            r1,
+            r2,
             learned_model=learned_model,
             learned_weight=learned_weight,
             lattice=lattice,
@@ -217,7 +218,11 @@ class CrossVocabTranslator:
 
         # Fallback: for tokens without reverse mapping, use string round-trip
         needs_fallback = mapped < 0
-        if needs_fallback.any() and self.target_tokenizer is not None and self.drafter_tokenizer is not None:
+        if (
+            needs_fallback.any()
+            and self.target_tokenizer is not None
+            and self.drafter_tokenizer is not None
+        ):
             fallback_indices = torch.where(needs_fallback)[0]
             for idx in fallback_indices:
                 t_id = target_token_ids[idx.item()]
@@ -228,14 +233,18 @@ class CrossVocabTranslator:
                         mapped[idx] = enc[0]
                     else:
                         # Last resort: use drafter EOS or 0
-                        eos_id = getattr(self.drafter_tokenizer, 'eos_token_id', None)
+                        eos_id = getattr(self.drafter_tokenizer, "eos_token_id", None)
                         mapped[idx] = eos_id if eos_id is not None else 0
                 except Exception:
-                    eos_id = getattr(self.drafter_tokenizer, 'eos_token_id', None)
+                    eos_id = getattr(self.drafter_tokenizer, "eos_token_id", None)
                     mapped[idx] = eos_id if eos_id is not None else 0
         elif needs_fallback.any():
             # No tokenizers available — use drafter EOS as fallback
-            eos_id = getattr(self.drafter_tokenizer, 'eos_token_id', None) if self.drafter_tokenizer else None
+            eos_id = (
+                getattr(self.drafter_tokenizer, "eos_token_id", None)
+                if self.drafter_tokenizer
+                else None
+            )
             fallback_id = eos_id if eos_id is not None else 0
             mapped[needs_fallback] = fallback_id
 

@@ -38,7 +38,9 @@ from typing import Any
 import torch
 
 # Ensure the external venv's site-packages is in path
-_venv_sp = "/home/andreipc/migration/Adaptive-speculative-decoding/.venv/lib/python3.12/site-packages"
+_venv_sp = (
+    "/home/andreipc/migration/Adaptive-speculative-decoding/.venv/lib/python3.12/site-packages"
+)
 if _venv_sp not in sys.path:
     sys.path.insert(0, _venv_sp)
 
@@ -62,6 +64,7 @@ for noisy in ("urllib3", "httpx", "requests", "transformers", "huggingface_hub",
 # Profiling data structures
 # =============================================================================
 
+
 @dataclass
 class MemorySnapshot:
     timestamp: float
@@ -76,6 +79,7 @@ class MemorySnapshot:
 @dataclass
 class StructureSnapshot:
     """Snapshots of key data structures that can grow."""
+
     timestamp: float
     collector_records: int = 0
     distiller_losses: int = 0
@@ -110,21 +114,25 @@ class ExperimentProfile:
 # GPU helpers
 # =============================================================================
 
+
 def get_gpu_info() -> dict[str, float]:
     """Return current GPU metrics."""
     info: dict[str, float] = {}
     if torch.cuda.is_available():
         info["gpu_available"] = True
-        info["gpu_allocated_gb"] = torch.cuda.memory_allocated(0) / (1024 ** 3)
-        info["gpu_reserved_gb"] = torch.cuda.memory_reserved(0) / (1024 ** 3)
+        info["gpu_allocated_gb"] = torch.cuda.memory_allocated(0) / (1024**3)
+        info["gpu_reserved_gb"] = torch.cuda.memory_reserved(0) / (1024**3)
         # Approximate GPU util from nvidia-smi
         try:
             import subprocess
+
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=5
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
-            vals = [float(v.strip()) for v in result.stdout.strip().split('\n') if v.strip()]
+            vals = [float(v.strip()) for v in result.stdout.strip().split("\n") if v.strip()]
             info["gpu_util_pct"] = vals[0] if vals else 0.0
         except Exception:
             info["gpu_util_pct"] = 0.0
@@ -145,9 +153,9 @@ def snapshot_memory(phase: str) -> MemorySnapshot:
         stats1 = all_stats[1] if len(all_stats) > 1 else None
         stats2 = all_stats[2] if len(all_stats) > 2 else None
         gc_counts = (
-            getattr(stats0, 'collect', 0) if stats0 else 0,
-            getattr(stats1, 'collect', 0) if stats1 else 0,
-            getattr(stats2, 'collections', 0) if stats2 else 0,
+            getattr(stats0, "collect", 0) if stats0 else 0,
+            getattr(stats1, "collect", 0) if stats1 else 0,
+            getattr(stats2, "collections", 0) if stats2 else 0,
         )
     except (IndexError, AttributeError):
         gc_counts = (0, 0, 0)
@@ -218,8 +226,18 @@ def _patch_benchmark_collector(collector):
         original_init(self, col, prompt_len)
         self._prompt_idx = getattr(collector, "_current_prompt_idx", 0)
 
-    def patched_add_step(self, draft_len, accepted, cache_hit=False, kl_div=0.0, actual_draft_len=0, accepted_draft=-1):
-        original_add_step(self, draft_len, accepted, cache_hit, kl_div, actual_draft_len, accepted_draft)
+    def patched_add_step(
+        self,
+        draft_len,
+        accepted,
+        cache_hit=False,
+        kl_div=0.0,
+        actual_draft_len=0,
+        accepted_draft=-1,
+    ):
+        original_add_step(
+            self, draft_len, accepted, cache_hit, kl_div, actual_draft_len, accepted_draft
+        )
         # Capture after each step for fine-grained analysis
         p = _profiler_state
         if p is not None and accepted > 0:
@@ -233,15 +251,18 @@ def _patch_benchmark_collector(collector):
             wall = self._rec.wall_time_s
             tps = self._rec.tokens_per_sec
             total_new = self._rec.total_new_tokens
-            avg_draft = (sum(s.draft_len for s in self._rec.step_records)
-                         / max(len(self._rec.step_records), 1))
-            p["prompt_metrics"].append(PromptMetrics(
-                prompt_index=self._prompt_idx,
-                wall_time_s=wall,
-                tps=tps,
-                draft_len=avg_draft,
-                accepted=total_new,
-            ))
+            avg_draft = sum(s.draft_len for s in self._rec.step_records) / max(
+                len(self._rec.step_records), 1
+            )
+            p["prompt_metrics"].append(
+                PromptMetrics(
+                    prompt_index=self._prompt_idx,
+                    wall_time_s=wall,
+                    tps=tps,
+                    draft_len=avg_draft,
+                    accepted=total_new,
+                )
+            )
             # Take a structure snapshot at end of each prompt
             snap = snapshot_structures(p.get("ctx_refs"))
             snap.timestamp = time.perf_counter()
@@ -256,6 +277,7 @@ def _patch_benchmark_collector(collector):
 # =============================================================================
 # Experiment runner with profiling
 # =============================================================================
+
 
 def run_profiled_experiment(
     exp_class,
@@ -435,9 +457,7 @@ def run_profiled_experiment(
 
     snap = snapshot_memory("06_decode_complete")
     profile.snapshots.append(snap)
-    profile.struct_snapshots.append(
-        snapshot_structures(_profiler_state.get("ctx_refs"))
-    )
+    profile.struct_snapshots.append(snapshot_structures(_profiler_state.get("ctx_refs")))
 
     # Save profile data
     os.makedirs(output_dir, exist_ok=True)
@@ -449,8 +469,10 @@ def run_profiled_experiment(
         json.dump(profile_data, f, indent=2, default=str)
 
     logger.info("Profile saved to %s", profile_path)
-    logger.info("Summary: %s", json.dumps({k: round(v, 3) if isinstance(v, float) else v
-                                          for k, v in summary.items()}))
+    logger.info(
+        "Summary: %s",
+        json.dumps({k: round(v, 3) if isinstance(v, float) else v for k, v in summary.items()}),
+    )
 
     # Cleanup
     del decoder, drafter, target, translator, cache, distiller, router, collector
@@ -474,7 +496,11 @@ def _serialize_profile(profile: ExperimentProfile, summary: dict) -> dict:
                 "gpu_reserved_gb": round(s.gpu_reserved_gb, 4),
                 "gpu_util_pct": round(s.gpu_util_pct, 1),
                 "gc_total": s.gc_total,
-                "timestamp_offset_s": round(s.timestamp - (profile.snapshots[0].timestamp if profile.snapshots else s.timestamp), 4),
+                "timestamp_offset_s": round(
+                    s.timestamp
+                    - (profile.snapshots[0].timestamp if profile.snapshots else s.timestamp),
+                    4,
+                ),
             }
             for s in profile.snapshots
         ],
@@ -488,7 +514,15 @@ def _serialize_profile(profile: ExperimentProfile, summary: dict) -> dict:
                 "cache_size": s.cache_size,
                 "cache_max_size": s.cache_max_size,
                 "step_results_len": s.step_results_len,
-                "timestamp_offset_s": round(s.timestamp - (profile.struct_snapshots[0].timestamp if profile.struct_snapshots else s.timestamp), 4),
+                "timestamp_offset_s": round(
+                    s.timestamp
+                    - (
+                        profile.struct_snapshots[0].timestamp
+                        if profile.struct_snapshots
+                        else s.timestamp
+                    ),
+                    4,
+                ),
             }
             for s in profile.struct_snapshots
         ],
@@ -509,6 +543,7 @@ def _serialize_profile(profile: ExperimentProfile, summary: dict) -> dict:
 # =============================================================================
 # Report generator
 # =============================================================================
+
 
 def generate_report(profiles: list[ExperimentProfile]) -> str:
     """Generate a human-readable profiling report."""
@@ -535,15 +570,23 @@ def generate_report(profiles: list[ExperimentProfile]) -> str:
             reserved_initial = prof.snapshots[0].gpu_reserved_gb
             reserved_final = prof.snapshots[-1].gpu_reserved_gb
 
-            lines.append(f"  GPU allocated: {initial_alloc:.2f}GB → {final_alloc:.2f}GB (Δ={final_alloc - initial_alloc:+.2f}GB)")
-            lines.append(f"  GPU reserved:  {reserved_initial:.2f}GB → {reserved_final:.2f}GB (Δ={reserved_final - reserved_initial:+.2f}GB)")
+            lines.append(
+                f"  GPU allocated: {initial_alloc:.2f}GB → {final_alloc:.2f}GB (Δ={final_alloc - initial_alloc:+.2f}GB)"
+            )
+            lines.append(
+                f"  GPU reserved:  {reserved_initial:.2f}GB → {reserved_final:.2f}GB (Δ={reserved_final - reserved_initial:+.2f}GB)"
+            )
             lines.append(f"  Peak allocated: {peak_alloc:.2f}GB")
 
             # Detect growth
             if final_alloc > initial_alloc + 0.1:
-                lines.append(f"  ⚠️  MEMORY LEAK DETECTED: {final_alloc - initial_alloc:.2f}GB leaked during experiment")
+                lines.append(
+                    f"  ⚠️  MEMORY LEAK DETECTED: {final_alloc - initial_alloc:.2f}GB leaked during experiment"
+                )
             if reserved_final > reserved_initial + 0.2:
-                lines.append(f"  ⚠️  GPU reserved grew: {reserved_final - reserved_initial:.2f}GB (uncollectable fragments)")
+                lines.append(
+                    f"  ⚠️  GPU reserved grew: {reserved_final - reserved_initial:.2f}GB (uncollectable fragments)"
+                )
 
         # Per-prompt TPS
         if prof.prompt_metrics:
@@ -555,13 +598,15 @@ def generate_report(profiles: list[ExperimentProfile]) -> str:
                 lines.append(f"  TPS: avg={avg_tps:.1f} min={min_tps:.1f} max={max_tps:.1f}")
 
                 # Check if TPS degrades over time
-                first_half = tps_values[:len(tps_values)//2]
-                second_half = tps_values[len(tps_values)//2:]
+                first_half = tps_values[: len(tps_values) // 2]
+                second_half = tps_values[len(tps_values) // 2 :]
                 if first_half and second_half:
                     first_avg = sum(first_half) / len(first_half)
                     second_avg = sum(second_half) / len(second_half)
                     if second_avg < first_avg * 0.7:
-                        lines.append(f"  ⚠️  TPS DEGRADATION: {first_avg:.1f} → {second_avg:.1f} ({(1-second_avg/first_avg)*100:.0f}% drop)")
+                        lines.append(
+                            f"  ⚠️  TPS DEGRADATION: {first_avg:.1f} → {second_avg:.1f} ({(1 - second_avg / first_avg) * 100:.0f}% drop)"
+                        )
 
     # ---- Data Structure Growth ----
     lines.append("\n" + "─" * 80)
@@ -608,7 +653,9 @@ def generate_report(profiles: list[ExperimentProfile]) -> str:
             lines.append(f"  {'Prompt':>6} {'Wall(s)':>8} {'TPS':>8} {'Draft':>8} {'Accept':>8}")
             lines.append(f"  {'─' * 6} {'─' * 8} {'─' * 8} {'─' * 8} {'─' * 8}")
             for pm in prof.prompt_metrics[:30]:  # First 30
-                lines.append(f"  {pm.prompt_index:>6} {pm.wall_time_s:>8.3f} {pm.tps:>8.1f} {pm.draft_len:>8.2f} {pm.accepted:>8}")
+                lines.append(
+                    f"  {pm.prompt_index:>6} {pm.wall_time_s:>8.3f} {pm.tps:>8.1f} {pm.draft_len:>8.2f} {pm.accepted:>8}"
+                )
             if len(prof.prompt_metrics) > 30:
                 lines.append(f"  ... and {len(prof.prompt_metrics) - 30} more prompts")
 
@@ -640,20 +687,26 @@ def generate_report(profiles: list[ExperimentProfile]) -> str:
             # Per-prompt memory drift (after models loaded)
             prompt_snaps = [s for s in prof.snapshots if s.phase.startswith("05_prompt_")]
             if len(prompt_snaps) >= 3:
-                mid_alloc = prompt_snaps[len(prompt_snaps)//2].gpu_allocated_gb
+                mid_alloc = prompt_snaps[len(prompt_snaps) // 2].gpu_allocated_gb
                 if mid_alloc > prompt_snaps[0].gpu_allocated_gb + 0.3:
-                    lines.append(f"  🟡 GPU memory grows mid-experiment: {mid_alloc - prompt_snaps[0].gpu_allocated_gb:.2f}GB")
+                    lines.append(
+                        f"  🟡 GPU memory grows mid-experiment: {mid_alloc - prompt_snaps[0].gpu_allocated_gb:.2f}GB"
+                    )
 
         # Structure growth check
         if prof.struct_snapshots and len(prof.struct_snapshots) >= 2:
             init = prof.struct_snapshots[0]
             final = prof.struct_snapshots[-1]
             if final.collector_records > 50:
-                lines.append(f"  🟡 BenchmarkCollector: {final.collector_records} records (unbounded)")
+                lines.append(
+                    f"  🟡 BenchmarkCollector: {final.collector_records} records (unbounded)"
+                )
             if final.distiller_losses > 100:
                 lines.append(f"  🟡 Distiller losses: {final.distiller_losses} entries (unbounded)")
             if final.replay_buffer_size > 0:
-                lines.append(f"  🟡 Replay buffer: {final.replay_buffer_size}/{4096} entries (bounded)")
+                lines.append(
+                    f"  🟡 Replay buffer: {final.replay_buffer_size}/{4096} entries (bounded)"
+                )
 
     lines.append("\n" + "=" * 80)
     lines.append("END OF REPORT")
@@ -666,17 +719,28 @@ def generate_report(profiles: list[ExperimentProfile]) -> str:
 # CLI
 # =============================================================================
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Profile memory & performance of speculative decoding experiments")
+    parser = argparse.ArgumentParser(
+        description="Profile memory & performance of speculative decoding experiments"
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--experiment", action="append", help="Run specific experiment(s) by name")
     group.add_argument("--suite", choices=["ablation"], help="Run full ablation suite")
     parser.add_argument("--tiny", action="store_true", help="Use tiny models (OPT-125m/OPT-350m)")
-    parser.add_argument("-n", "--max-samples", type=int, default=10, help="Max samples per experiment (default: 10)")
-    parser.add_argument("--max-new-tokens", type=int, default=64, help="Max new tokens per sequence")
-    parser.add_argument("--output-dir", default="results_profile", help="Output directory for profiles")
+    parser.add_argument(
+        "-n", "--max-samples", type=int, default=10, help="Max samples per experiment (default: 10)"
+    )
+    parser.add_argument(
+        "--max-new-tokens", type=int, default=64, help="Max new tokens per sequence"
+    )
+    parser.add_argument(
+        "--output-dir", default="results_profile", help="Output directory for profiles"
+    )
     parser.add_argument("--device", default="cuda", help="Device to run on")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be profiled, don't run")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be profiled, don't run"
+    )
     args = parser.parse_args()
 
     # Import experiment suites
@@ -695,8 +759,9 @@ def main():
         parser.print_help()
         return
 
-    logger.info("Profiling %d experiment(s): %s", len(experiments),
-                [e.meta.name for e in experiments])
+    logger.info(
+        "Profiling %d experiment(s): %s", len(experiments), [e.meta.name for e in experiments]
+    )
 
     profiles = []
     for exp in experiments:
@@ -717,6 +782,7 @@ def main():
             profiles.append(profile)
         except Exception as e:
             import traceback
+
             logger.error("Experiment %s FAILED: %s", exp.meta.name, e)
             traceback.print_exc()
             profiles.append(ExperimentProfile(name=exp.meta.name, error=str(e)))

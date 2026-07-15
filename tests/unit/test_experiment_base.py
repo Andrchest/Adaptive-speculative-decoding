@@ -11,7 +11,7 @@ import os
 import sys
 
 # Ensure src/ is on the path (mirrors existing test pattern)
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 import pytest
 
@@ -345,6 +345,7 @@ class TestAlwaysPresentMetrics:
         ]
         for key in required:
             assert key in summary, f"Missing required metric: {key}"
+
     def test_get_config(self) -> None:
         from experiments.built_in import BaselineExperiment
 

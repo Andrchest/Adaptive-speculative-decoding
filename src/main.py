@@ -44,8 +44,8 @@ from rich.logging import RichHandler
 
 
 class LogLevel(str, Enum):
-    QUIET = "QUIET"      # tqdm progress only + summary at end
-    NORMAL = "NORMAL"    # + warning/error
+    QUIET = "QUIET"  # tqdm progress only + summary at end
+    NORMAL = "NORMAL"  # + warning/error
     VERBOSE = "VERBOSE"  # + all info (legacy behavior)
 
     def to_logging_level(self) -> int:
@@ -56,9 +56,12 @@ class LogLevel(str, Enum):
 # --- Global logging setup ---
 _log_level: LogLevel = LogLevel.QUIET
 
+
 class _SourceFilter(logging.Filter):
     """Allow only our own source loggers through."""
+
     _ALLOWED = {"src"}
+
     def filter(self, record: logging.LogRecord) -> bool:
         if not self._ALLOWED:
             return True
@@ -87,6 +90,7 @@ def _setup_logging(level: LogLevel) -> None:
 
 import os as _os
 
+
 def _has_tty() -> bool:
     return _os.isatty(1)
 
@@ -95,17 +99,25 @@ def _init_progress(total: int, desc: str = "") -> object:
     """Return a tqdm progress object or a no-op when stderr is not a tty."""
     try:
         from tqdm import tqdm as _tqdm
+
         if _has_tty():
             return _tqdm(total=total, desc=desc or None, leave=False, ncols=80)
     except ImportError:
         pass
+
     # Fallback: no-op
     class _NoOp:
         def __init__(self, *a, **k):
             pass
-        def update(self, n=1): pass
-        def close(self): pass
+
+        def update(self, n=1):
+            pass
+
+        def close(self):
+            pass
+
     return _NoOp()
+
 
 for noisy in ("urllib3", "httpx", "requests", "transformers", "huggingface_hub"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
@@ -172,10 +184,13 @@ def _apply_overrides(
         # override them
         if tiny_models:
             exp.set_config_override("drafter_model_path", "facebook/opt-125m")
-            exp.set_config_override("drafter_model_paths", [
-                "facebook/opt-125m",
-                "facebook/opt-350m",
-            ])
+            exp.set_config_override(
+                "drafter_model_paths",
+                [
+                    "facebook/opt-125m",
+                    "facebook/opt-350m",
+                ],
+            )
             exp.set_config_override("target_model_path", "facebook/opt-350m")
             exp.set_config_override("max_new_tokens", 32)
 
@@ -279,11 +294,13 @@ def main(  # noqa: C901
     # --- Set persistent HuggingFace cache directory ---
     if hf_cache:
         import os as _os
+
         _os.environ["HF_HOME"] = hf_cache
         logger.info("HF_HOME set to: %s", hf_cache)
 
     # --- Set global log level BEFORE any experiment runs ---
     import experiments.runner as _rl_mod
+
     _rl_mod._log_level = log_level.value
     logger.info("Global _log_level set to: %s", log_level.value)
     logger.info(
@@ -423,8 +440,7 @@ def _print_summary(results: list[dict]) -> None:
     from rich.table import Table
 
     sorted_results = sorted(
-        results,
-        key=lambda r: r["metrics"].get("wall_time_total_s", float("inf"))
+        results, key=lambda r: r["metrics"].get("wall_time_total_s", float("inf"))
     )
 
     table = Table(collapse_padding=True, header_style="bold cyan")
@@ -463,7 +479,7 @@ def _print_summary(results: list[dict]) -> None:
         table.add_row(
             str(rank),
             f"[cyan]{name}[/]{badge}",
-            f"{acc*100:.1f}%",
+            f"{acc * 100:.1f}%",
             f"{avg_acc:.2f}",
             str(int(round(avg_draft))),
             f"{tps:.1f}",

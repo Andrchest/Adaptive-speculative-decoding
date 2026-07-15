@@ -53,7 +53,7 @@ class TestTPSMetric:
         # Overall TPS = 1020 / 101.0 ≈ 10.1
         total_tps = summary["tokens_per_sec"]
         assert abs(total_tps - 1020 / 101.0) < 0.5, (
-            f"Expected TPS ≈ {1020/101:.1f}, got {total_tps:.1f}"
+            f"Expected TPS ≈ {1020 / 101:.1f}, got {total_tps:.1f}"
         )
         assert summary["total_new_tokens"] == 1020
         assert summary["wall_time_total_s"] == 101.0
@@ -80,13 +80,9 @@ class TestTPSMetric:
         avg_tps = summary["avg_tokens_per_sec"]
 
         # Overall = 1100 / 1000.01 ≈ 1.1 TPS (correct)
-        assert abs(overall_tps - 1100 / 1000.01) < 0.1, (
-            f"Expected ~1.1, got {overall_tps:.1f}"
-        )
+        assert abs(overall_tps - 1100 / 1000.01) < 0.1, f"Expected ~1.1, got {overall_tps:.1f}"
         # Mean-of-means = (10000 + 1) / 2 = 5000.5 (heavily biased by short burst)
-        assert avg_tps > 100, (
-            f"avg_tps should be heavily biased high, got {avg_tps:.0f}"
-        )
+        assert avg_tps > 100, f"avg_tps should be heavily biased high, got {avg_tps:.0f}"
         # Overall should be close to the slower sequence
         assert overall_tps < 10, (
             f"Overall TPS {overall_tps:.1f} should be close to 1.1, not inflated"
@@ -181,9 +177,7 @@ class TestLatticeDP:
 
         source = inspect.getsource(TokenizerLattice.exact_map_logits)
         k_assignments = source.count("k = ")
-        assert k_assignments <= 1, (
-            f"Found {k_assignments} assignments to 'k' in exact_map_logits"
-        )
+        assert k_assignments <= 1, f"Found {k_assignments} assignments to 'k' in exact_map_logits"
 
 
 # ------------------------------------------------------------------
@@ -226,7 +220,9 @@ class TestLRUCache:
         assert "a" in lattice._lattice_cache, (
             f"Most recently accessed 'a' should remain. Cache: {list(lattice._lattice_cache.keys())}"
         )
-        assert "b" in lattice._lattice_cache, f"'b' was just inserted. Cache: {list(lattice._lattice_cache.keys())}"
+        assert "b" in lattice._lattice_cache, (
+            f"'b' was just inserted. Cache: {list(lattice._lattice_cache.keys())}"
+        )
         assert "ab" not in lattice._lattice_cache, (
             f"'ab' should have been evicted. Cache: {list(lattice._lattice_cache.keys())}"
         )
@@ -303,7 +299,9 @@ class TestRandomization:
         from experiments.base import BaseExperiment
 
         source = inspect.getsource(BaseExperiment.run)
-        assert "rng=torch_rng" in source, "BaseExperiment.run() should pass rng to decoder.generate()"
+        assert "rng=torch_rng" in source, (
+            "BaseExperiment.run() should pass rng to decoder.generate()"
+        )
 
 
 # ------------------------------------------------------------------

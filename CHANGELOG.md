@@ -8,13 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 - Project scaffolding with `pyproject.toml` (uv + hatchling)
-- Multi-stage Dockerfile (CUDA 12.4 runtime)
-- docker-compose.yml (app + MLflow tracking)
 - Pre-commit hooks (ruff, mypy, pre-commit-hooks)
 - Research workspace for 6 team members
 - Documentation skeleton (architecture, modules, research)
 - GitHub templates (PR, issues, CODEOWNERS)
-- CI pipeline (lint, type-check, test, docker)
+- CI pipeline (lint, type-check, test)
 - AI agent guidelines (AGENTS.md)
 
 ### Changed
@@ -26,7 +24,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   Migrated ``_load_dataset`` to instance method with tokenizer variant.
   Added unit tests for all base classes (20 tests, all passing).
   Full plan: ``docs/plans/experiment-refactor-option-b.md``.
-- **Experiment refactoring (Phase 1):** Migrated all 11 ablation experiments
+- **Experiment refactoring (Phase 1):** Migrated all 12 ablation experiments
   to individual ``BaseExperiment`` subclasses:
   ``LatticeExperiment``, ``TranslatorExperiment``, ``OnlineDistillExperiment``,
   ``ReplayExperiment`` (parameterized fifo/prioritized), ``ContrastiveExperiment``,
@@ -55,7 +53,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Experiment refactoring (Phase 4):** Added ``tests/unit/test_experiment_suites.py``
   with 56 tests covering all built-in experiment classes (import, instantiation,
   config validation, metadata), inheritance hierarchy, ``ABLATION_SUITE`` composition,
-  discovery functions, and template package. Total unit tests: 91 (all passing).
+  discovery functions, and template package.
 - **Experiment refactoring (Phase 5):** Updated ``AGENTS.md`` with experiment
   architecture section (Strategy pattern, CLI reference, key classes). Verified
   ``ruff check`` and ``ruff format`` clean across all experiment modules.
+- **Cleanup:** Removed Dockerfile, docker-compose.yml, docs/, reports/, and stale
+  plan files. Moved ``src/profiler.py`` to ``scripts/profiler.py``. Moved
+  ``src/tests/unit/test_sub_optimal_fixes.py`` to ``tests/unit/``. Formatted all
+  files with ``ruff format``. Updated AGENTS.md, README.md, CHANGELOG.md to match
+  actual codebase state.

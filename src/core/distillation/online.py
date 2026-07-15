@@ -251,8 +251,8 @@ class OnlineDistiller:
         self._accum_count = 0
         self._step_count += 1
         # deque slicing not supported in Python 3.12; use list() for the recent window
-        kl_recent = list(self.kl_losses)[-self.accum_steps:]
-        nll_recent = list(self.nll_losses)[-self.accum_steps:]
+        kl_recent = list(self.kl_losses)[-self.accum_steps :]
+        nll_recent = list(self.nll_losses)[-self.accum_steps :]
         logger.info(
             "Weight update step=%d loss=%.6f kl=%.6f nll=%.6f",
             self._step_count,

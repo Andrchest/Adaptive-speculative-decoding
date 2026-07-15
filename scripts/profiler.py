@@ -109,7 +109,9 @@ class PlainModelProfile:
 _original_decode_step = None
 
 
-def _profiled_decode_step(self, context, k, ctx_list=None, drafter_ctx=None, distiller=None, rng=None):
+def _profiled_decode_step(
+    self, context, k, ctx_list=None, drafter_ctx=None, distiller=None, rng=None
+):
     """Instrumented version of SpeculativeDecoder._decode_step."""
     from core.decoder.speculative import StepResult as _StepResult
 
@@ -131,9 +133,7 @@ def _profiled_decode_step(self, context, k, ctx_list=None, drafter_ctx=None, dis
     draft_ms = (time.perf_counter() - t0) * 1000
 
     if not draft_tokens_drafter:
-        return _StepResult(
-            draft_length=0, accepted_count=0, rejected_at=-1, cache_hit=False
-        )
+        return _StepResult(draft_length=0, accepted_count=0, rejected_at=-1, cache_hit=False)
 
     # Phase 3: translate
     t0 = time.perf_counter()
@@ -143,9 +143,7 @@ def _profiled_decode_step(self, context, k, ctx_list=None, drafter_ctx=None, dis
             from core.translation.vocabulary import _align_last_dim
 
             translated_probs = self.translator.translate(draft_logits / t_eff)
-            translated_probs = _align_last_dim(
-                translated_probs, self.translator.rule1.target_size
-            )
+            translated_probs = _align_last_dim(translated_probs, self.translator.rule1.target_size)
     else:
         translated_probs = None
 
@@ -155,7 +153,7 @@ def _profiled_decode_step(self, context, k, ctx_list=None, drafter_ctx=None, dis
     # Phase 4: target verify (with KV cache)
     t0 = time.perf_counter()
     target_logits, self._target_kv = self.target.verify(
-        context, draft_tokens_target, past_key_values=getattr(self, '_target_kv', None)
+        context, draft_tokens_target, past_key_values=getattr(self, "_target_kv", None)
     )
     verify_ms = (time.perf_counter() - t0) * 1000
 
@@ -181,6 +179,7 @@ def _profiled_decode_step(self, context, k, ctx_list=None, drafter_ctx=None, dis
     if self._target_kv is not None:
         try:
             from core.models.target_model import _truncate_pkv
+
             self._target_kv = _truncate_pkv(self._target_kv, kv_keep)
         except (TypeError, IndexError):
             self._target_kv = None
@@ -256,6 +255,7 @@ def restore_decode_step():
     global _original_decode_step
     if _original_decode_step:
         from core.decoder.speculative import SpeculativeDecoder
+
         SpeculativeDecoder._decode_step = _original_decode_step
         _original_decode_step = None
 
@@ -297,6 +297,7 @@ def run_profiled_experiment(
 
     # Enable substep timer for fine-grained bottleneck diagnosis
     from core.profiling.substep_timer import substep_timer
+
     substep_timer.enable()
 
     # ── Stage 1: Model loading ──
@@ -307,9 +308,7 @@ def run_profiled_experiment(
     profile.stages.append(StageTimings(stage="model_loading", duration_s=t1 - t0))
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-        profile.gpu_mem_after_models_gb = (
-            torch.cuda.memory_allocated(device) / 1024**3
-        )
+        profile.gpu_mem_after_models_gb = torch.cuda.memory_allocated(device) / 1024**3
 
     # ── Stage 2: Build components ──
     t0 = time.perf_counter()
@@ -344,9 +343,7 @@ def run_profiled_experiment(
     profile.stages.append(StageTimings(stage="build_components", duration_s=t1 - t0))
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-        profile.gpu_mem_after_setup_gb = (
-            torch.cuda.memory_allocated(device) / 1024**3
-        )
+        profile.gpu_mem_after_setup_gb = torch.cuda.memory_allocated(device) / 1024**3
 
     # ── Stage 3: Load dataset ──
     t0 = time.perf_counter()
@@ -395,8 +392,12 @@ def run_profiled_experiment(
 
             # Instrumented decode step
             result = decoder._decode_step(
-                generated, k, drafter_context_ids[:],
-                drafter_ctx=drafter_ctx, distiller=distiller, rng=torch_rng,
+                generated,
+                k,
+                drafter_context_ids[:],
+                drafter_ctx=drafter_ctx,
+                distiller=distiller,
+                rng=torch_rng,
             )
             decoder._step_results.append(result)
             decoder.cache.step()
@@ -405,7 +406,9 @@ def run_profiled_experiment(
             budget = max_new_tokens - new_tokens
             emitted = result.accepted_tokens[:budget]
             if emitted:
-                new_ids = torch.tensor(emitted, dtype=torch.long, device=generated.device).unsqueeze(0)
+                new_ids = torch.tensor(
+                    emitted, dtype=torch.long, device=generated.device
+                ).unsqueeze(0)
                 generated = torch.cat([generated, new_ids], dim=1)
 
                 # Translate accepted tokens back to drafter vocab
@@ -435,12 +438,8 @@ def run_profiled_experiment(
 
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-        profile.gpu_mem_peak_gb = (
-            torch.cuda.max_memory_allocated(device) / 1024**3
-        )
-        profile.gpu_mem_final_gb = (
-            torch.cuda.memory_allocated(device) / 1024**3
-        )
+        profile.gpu_mem_peak_gb = torch.cuda.max_memory_allocated(device) / 1024**3
+        profile.gpu_mem_final_gb = torch.cuda.memory_allocated(device) / 1024**3
 
     profile.total_wall_s = sum(s.duration_s for s in profile.stages)
 
@@ -455,6 +454,7 @@ def run_profiled_experiment(
         drafter.remove_hooks()
     del drafter, target, translator, cache, decoder
     import gc
+
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -611,6 +611,7 @@ def run_torch_profiled_experiment(
         drafter.remove_hooks()
     del drafter, target, translator, cache, decoder
     import gc
+
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -698,7 +699,9 @@ def render_percent_bars(profiles: list[ExperimentProfile]) -> None:
     for p in profiles:
         if not p.stages or p.total_wall_s == 0:
             continue
-        console.print(f"\n[bold blue]▓ {p.name}[/bold blue]  [dim](total: {p.total_wall_s:.1f}s)[/dim]")
+        console.print(
+            f"\n[bold blue]▓ {p.name}[/bold blue]  [dim](total: {p.total_wall_s:.1f}s)[/dim]"
+        )
         for s in p.stages:
             pct = (s.duration_s / p.total_wall_s * 100) if p.total_wall_s > 0 else 0
             bar_len = max(1, int(pct / 2))
@@ -763,9 +766,7 @@ def render_substep_table(profiles: list[ExperimentProfile]) -> Table | None:
         groups.setdefault(group, []).append((name, stats))
 
     for group_name, entries in groups.items():
-        table.add_row(
-            f"[bold]{group_name}[/bold]", "", "", "", "", ""
-        )
+        table.add_row(f"[bold]{group_name}[/bold]", "", "", "", "", "")
         for name, stats in entries:
             table.add_row(
                 f"  {name}",
@@ -830,20 +831,51 @@ def render_comparison(
 
 
 def main(
-    samples: Annotated[int, typer.Option("-n", "--samples", help="Number of samples to profile")] = 10,
-    max_new_tokens: Annotated[int, typer.Option("--max-tokens", "-m", help="Max new tokens per prompt")] = 32,
-    experiments: Annotated[str, typer.Option("--experiments", "-e", help="Comma-separated experiment names")] = "01_baseline,08_speedup_adapt,11_full_system",
-    suite: Annotated[str, typer.Option("--suite", "-s", help="Experiment suite: ablation, all")] = "",
-    compare_plain: Annotated[bool, typer.Option("--compare", "-c", help="Compare with plain target model")] = False,
-    compare_4bit_fp16: Annotated[bool, typer.Option("--compare-4bit-fp16", help="Compare 4-bit vs FP16 target model")] = False,
-    cprofile_flag: Annotated[bool, typer.Option("--cprofile", "-p", help="Run Python-level cProfile")] = False,
-    cprofile_top: Annotated[int, typer.Option("--cprofile-top", help="Top-N cProfile entries")] = 20,
-    torch_profile_flag: Annotated[bool, typer.Option("--torch-profile", "-t", help="Run GPU kernel-level profiling with torch.profiler")] = False,
-    torch_warmup: Annotated[int, typer.Option("--torch-warmup", help="Warmup steps before torch profiling starts")] = 2,
-    torch_active: Annotated[int, typer.Option("--torch-active", help="Number of steps to profile with torch.profiler")] = 5,
-    torch_trace_dir: Annotated[str, typer.Option("--torch-trace-dir", help="Directory for TensorBoard trace output")] = "",
-    drafter_model: Annotated[str, typer.Option("--drafter-model", help="Drafter model path (overrides default)")] = "",
-    target_model: Annotated[str, typer.Option("--target-model", help="Target model path (overrides default)")] = "",
+    samples: Annotated[
+        int, typer.Option("-n", "--samples", help="Number of samples to profile")
+    ] = 10,
+    max_new_tokens: Annotated[
+        int, typer.Option("--max-tokens", "-m", help="Max new tokens per prompt")
+    ] = 32,
+    experiments: Annotated[
+        str, typer.Option("--experiments", "-e", help="Comma-separated experiment names")
+    ] = "01_baseline,08_speedup_adapt,11_full_system",
+    suite: Annotated[
+        str, typer.Option("--suite", "-s", help="Experiment suite: ablation, all")
+    ] = "",
+    compare_plain: Annotated[
+        bool, typer.Option("--compare", "-c", help="Compare with plain target model")
+    ] = False,
+    compare_4bit_fp16: Annotated[
+        bool, typer.Option("--compare-4bit-fp16", help="Compare 4-bit vs FP16 target model")
+    ] = False,
+    cprofile_flag: Annotated[
+        bool, typer.Option("--cprofile", "-p", help="Run Python-level cProfile")
+    ] = False,
+    cprofile_top: Annotated[
+        int, typer.Option("--cprofile-top", help="Top-N cProfile entries")
+    ] = 20,
+    torch_profile_flag: Annotated[
+        bool,
+        typer.Option(
+            "--torch-profile", "-t", help="Run GPU kernel-level profiling with torch.profiler"
+        ),
+    ] = False,
+    torch_warmup: Annotated[
+        int, typer.Option("--torch-warmup", help="Warmup steps before torch profiling starts")
+    ] = 2,
+    torch_active: Annotated[
+        int, typer.Option("--torch-active", help="Number of steps to profile with torch.profiler")
+    ] = 5,
+    torch_trace_dir: Annotated[
+        str, typer.Option("--torch-trace-dir", help="Directory for TensorBoard trace output")
+    ] = "",
+    drafter_model: Annotated[
+        str, typer.Option("--drafter-model", help="Drafter model path (overrides default)")
+    ] = "",
+    target_model: Annotated[
+        str, typer.Option("--target-model", help="Target model path (overrides default)")
+    ] = "",
     output: Annotated[str, typer.Option("--output", "-o", help="JSON output file")] = "",
 ):
     """Profile Adaptive Speculative Decoding experiments."""
@@ -853,12 +885,14 @@ def main(
 
     drafter_name = drafter_model.split("/")[-1] if drafter_model else "opt-125m"
     target_name = target_model.split("/")[-1] if target_model else "opt-350m"
-    console.print(Panel(
-        f"[green]Device:[/green] {device}  "
-        f"[green]GPU:[/green] {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'}\n"
-        f"[green]Models:[/green] {drafter_name} (drafter) / {target_name} (target)\n"
-        f"[green]Samples:[/green] {samples}  [green]Max tokens:[/green] {max_new_tokens}"
-    ))
+    console.print(
+        Panel(
+            f"[green]Device:[/green] {device}  "
+            f"[green]GPU:[/green] {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'}\n"
+            f"[green]Models:[/green] {drafter_name} (drafter) / {target_name} (target)\n"
+            f"[green]Samples:[/green] {samples}  [green]Max tokens:[/green] {max_new_tokens}"
+        )
+    )
 
     # Select experiments
     if suite:
@@ -871,7 +905,9 @@ def main(
         console.print("[red]No experiments matched.[/red]")
         sys.exit(1)
 
-    console.print(f"[dim]Profiling {len(exps)} experiment(s): {', '.join(e.meta.name for e in exps)}[/dim]\n")
+    console.print(
+        f"[dim]Profiling {len(exps)} experiment(s): {', '.join(e.meta.name for e in exps)}[/dim]\n"
+    )
 
     # Apply model overrides
     for exp in exps:
@@ -888,17 +924,22 @@ def main(
     profiles: list[ExperimentProfile] = []
 
     for idx, exp in enumerate(exps, 1):
-        console.print(f"\n[bold yellow]▓ [{idx}/{len(exps)}] Profiling: {exp.meta.name}[/bold yellow]")
+        console.print(
+            f"\n[bold yellow]▓ [{idx}/{len(exps)}] Profiling: {exp.meta.name}[/bold yellow]"
+        )
         try:
             install_profiled_decode_step()
             p = run_profiled_experiment(exp, device, samples, max_new_tokens)
             profiles.append(p)
-            console.print(f"  [green]✓[/green] {p.total_wall_s:.2f}s, {p.n_steps} steps, "
-                        f"accepted={p.n_accepted_total}, draft={p.n_draft_total}")
+            console.print(
+                f"  [green]✓[/green] {p.total_wall_s:.2f}s, {p.n_steps} steps, "
+                f"accepted={p.n_accepted_total}, draft={p.n_draft_total}"
+            )
             if p.error:
                 console.print(f"  [red]Error:[/red] {p.error}")
         except Exception as e:
             import traceback
+
             console.print(f"  [red]✗[/red] {e}")
             tb = traceback.format_exc()
             console.print(f"  [dim]{tb}[/dim]")
@@ -907,6 +948,7 @@ def main(
         finally:
             restore_decode_step()
             import gc
+
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -918,19 +960,24 @@ def main(
         console.print("\n" + "=" * 80)
         console.print("[bold yellow]Running 4-bit vs FP16 target comparison...[/bold yellow]")
         for idx, exp in enumerate(exps, 1):
-            console.print(f"\n[bold yellow]▓ [{idx}/{len(exps)}] FP16 run: {exp.meta.name}[/bold yellow]")
+            console.print(
+                f"\n[bold yellow]▓ [{idx}/{len(exps)}] FP16 run: {exp.meta.name}[/bold yellow]"
+            )
             # Override: load target in FP16 (no 4-bit quantization)
             exp.set_config_override("target_use_4bit", False)
             try:
                 install_profiled_decode_step()
                 fp16_p = run_profiled_experiment(exp, device, samples, max_new_tokens)
                 fp16_profiles[exp.meta.name] = fp16_p
-                console.print(f"  [green]✓[/green] FP16: {fp16_p.total_wall_s:.2f}s, "
-                            f"{fp16_p.n_steps} steps, gpu_mem={fp16_p.gpu_mem_peak_gb:.2f}GB")
+                console.print(
+                    f"  [green]✓[/green] FP16: {fp16_p.total_wall_s:.2f}s, "
+                    f"{fp16_p.n_steps} steps, gpu_mem={fp16_p.gpu_mem_peak_gb:.2f}GB"
+                )
                 if fp16_p.error:
                     console.print(f"  [red]Error:[/red] {fp16_p.error}")
             except Exception as e:
                 import traceback
+
                 console.print(f"  [red]✗[/red] {e}")
                 tb = traceback.format_exc()
                 console.print(f"  [dim]{tb}[/dim]")
@@ -949,11 +996,14 @@ def main(
                 max_new_tokens,
             )
             plain_profiles.append(pp)
-            console.print(f"  [green]✓[/green] {pp.total_wall_s:.2f}s, "
-                        f"{pp.tokens_per_sec:.1f} tok/s, {pp.tokens_generated} tokens")
+            console.print(
+                f"  [green]✓[/green] {pp.total_wall_s:.2f}s, "
+                f"{pp.tokens_per_sec:.1f} tok/s, {pp.tokens_generated} tokens"
+            )
         except Exception as e:
             console.print(f"  [red]✗[/red] {e}")
             import traceback
+
             console.print(f"  [dim]{traceback.format_exc()}[/dim]")
 
     # ── Render reports ──
@@ -1052,24 +1102,33 @@ def main(
 
         torch_analyses = []
         for idx, exp in enumerate(exps, 1):
-            console.print(f"\n[bold yellow]▓ [{idx}/{len(exps)}] torch.profiler: {exp.meta.name}[/bold yellow]")
+            console.print(
+                f"\n[bold yellow]▓ [{idx}/{len(exps)}] torch.profiler: {exp.meta.name}[/bold yellow]"
+            )
             try:
                 analysis = run_torch_profiled_experiment(
-                    exp, device, samples, max_new_tokens,
+                    exp,
+                    device,
+                    samples,
+                    max_new_tokens,
                     warmup_steps=torch_warmup,
                     active_steps=torch_active,
                     output_dir=torch_trace_dir,
                 )
                 if analysis is not None:
                     torch_analyses.append((exp.meta.name, analysis))
-                    console.print(f"  [green]✓[/green] {len(analysis.kernels_by_gpu_time)} kernels profiled, "
-                                f"{len(analysis.bottlenecks)} bottlenecks detected")
+                    console.print(
+                        f"  [green]✓[/green] {len(analysis.kernels_by_gpu_time)} kernels profiled, "
+                        f"{len(analysis.bottlenecks)} bottlenecks detected"
+                    )
             except Exception as e:
                 import traceback
+
                 console.print(f"  [red]✗[/red] {e}")
                 console.print(f"  [dim]{traceback.format_exc()}[/dim]")
             finally:
                 import gc
+
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -1084,46 +1143,54 @@ def main(
     if output:
         data = []
         for p in profiles:
-            data.append({
-                "name": p.name,
-                "total_wall_s": p.total_wall_s,
-                "n_prompts": p.n_prompts,
-                "n_steps": p.n_steps,
-                "n_accepted_total": p.n_accepted_total,
-                "n_draft_total": p.n_draft_total,
-                "gpu_mem_after_models_gb": p.gpu_mem_after_models_gb,
-                "gpu_mem_after_setup_gb": p.gpu_mem_after_setup_gb,
-                "gpu_mem_peak_gb": p.gpu_mem_peak_gb,
-                "gpu_mem_final_gb": p.gpu_mem_final_gb,
-                "stages": [
-                    {"stage": s.stage, "duration_s": s.duration_s, "pct_of_total": s.pct_of_total}
-                    for s in p.stages
-                ],
-                "error": p.error,
-            })
+            data.append(
+                {
+                    "name": p.name,
+                    "total_wall_s": p.total_wall_s,
+                    "n_prompts": p.n_prompts,
+                    "n_steps": p.n_steps,
+                    "n_accepted_total": p.n_accepted_total,
+                    "n_draft_total": p.n_draft_total,
+                    "gpu_mem_after_models_gb": p.gpu_mem_after_models_gb,
+                    "gpu_mem_after_setup_gb": p.gpu_mem_after_setup_gb,
+                    "gpu_mem_peak_gb": p.gpu_mem_peak_gb,
+                    "gpu_mem_final_gb": p.gpu_mem_final_gb,
+                    "stages": [
+                        {
+                            "stage": s.stage,
+                            "duration_s": s.duration_s,
+                            "pct_of_total": s.pct_of_total,
+                        }
+                        for s in p.stages
+                    ],
+                    "error": p.error,
+                }
+            )
         # Add torch.profiler data if available
-        if torch_profile_flag and 'torch_analyses' in dir():
+        if torch_profile_flag and "torch_analyses" in dir():
             for name, analysis in torch_analyses:
-                data.append({
-                    "name": f"torch_profile_{name}",
-                    "total_gpu_time_us": analysis.total_gpu_time_us,
-                    "total_cpu_time_us": analysis.total_cpu_time_us,
-                    "python_gpu_ratio": analysis.python_gpu_ratio,
-                    "gpu_matmul_pct": analysis.gpu_matmul_pct,
-                    "host_sync_kernels_in_top10": analysis.host_sync_kernels_in_top10,
-                    "has_rule2_bottleneck": analysis.has_rule2_bottleneck,
-                    "has_host_sync_overhead": analysis.has_host_sync_overhead,
-                    "has_rule1_scatter_overhead": analysis.has_rule1_scatter_overhead,
-                    "has_python_dispatch_overhead": analysis.has_python_dispatch_overhead,
-                    "top_kernels_by_gpu": [
-                        {"name": k.name, "gpu_pct": k.gpu_pct, "count": k.count}
-                        for k in analysis.kernels_by_gpu_time[:20]
-                    ],
-                    "bottlenecks": [
-                        {"category": b.category, "severity": b.severity, "message": b.message}
-                        for b in analysis.bottlenecks
-                    ],
-                })
+                data.append(
+                    {
+                        "name": f"torch_profile_{name}",
+                        "total_gpu_time_us": analysis.total_gpu_time_us,
+                        "total_cpu_time_us": analysis.total_cpu_time_us,
+                        "python_gpu_ratio": analysis.python_gpu_ratio,
+                        "gpu_matmul_pct": analysis.gpu_matmul_pct,
+                        "host_sync_kernels_in_top10": analysis.host_sync_kernels_in_top10,
+                        "has_rule2_bottleneck": analysis.has_rule2_bottleneck,
+                        "has_host_sync_overhead": analysis.has_host_sync_overhead,
+                        "has_rule1_scatter_overhead": analysis.has_rule1_scatter_overhead,
+                        "has_python_dispatch_overhead": analysis.has_python_dispatch_overhead,
+                        "top_kernels_by_gpu": [
+                            {"name": k.name, "gpu_pct": k.gpu_pct, "count": k.count}
+                            for k in analysis.kernels_by_gpu_time[:20]
+                        ],
+                        "bottlenecks": [
+                            {"category": b.category, "severity": b.severity, "message": b.message}
+                            for b in analysis.bottlenecks
+                        ],
+                    }
+                )
         with open(output, "w") as f:
             json.dump(data, f, indent=2, default=str)
         console.print(f"\n[green]JSON saved to {output}[/green]")
@@ -1138,7 +1205,7 @@ def main(
         for i, s in enumerate(sorted_stages[:3]):
             pct = s.duration_s / p.total_wall_s * 100
             console.print(
-                f"  [red]{p.name}[/red] #{i+1}: [bold]{s.stage}[/bold] = {pct:.1f}% "
+                f"  [red]{p.name}[/red] #{i + 1}: [bold]{s.stage}[/bold] = {pct:.1f}% "
                 f"({s.duration_s:.3f}s)"
             )
 
@@ -1148,14 +1215,26 @@ def main(
             continue
         console.print(f"\n[bold red]⚠ PER-STEP BOTTLENECKS ({p.name})[/bold red]")
         n = len(p.step_timings)
-        fields = ["draft_forward_ms", "target_verify_ms", "translate_ms",
-                   "accept_reject_ms", "residual_sample_ms", "cache_lookup_ms"]
-        sorted_fields = sorted(fields, key=lambda f: np.mean([getattr(s, f) for s in p.step_timings]), reverse=True)
+        fields = [
+            "draft_forward_ms",
+            "target_verify_ms",
+            "translate_ms",
+            "accept_reject_ms",
+            "residual_sample_ms",
+            "cache_lookup_ms",
+        ]
+        sorted_fields = sorted(
+            fields, key=lambda f: np.mean([getattr(s, f) for s in p.step_timings]), reverse=True
+        )
         for i, f in enumerate(sorted_fields[:4]):
             avg_val = np.mean([getattr(s, f) for s in p.step_timings])
-            pct = (avg_val / np.mean([s.total_ms for s in p.step_timings]) * 100) if np.mean([s.total_ms for s in p.step_timings]) > 0 else 0
+            pct = (
+                (avg_val / np.mean([s.total_ms for s in p.step_timings]) * 100)
+                if np.mean([s.total_ms for s in p.step_timings]) > 0
+                else 0
+            )
             console.print(
-                f"  [red]{p.name}[/red] step #{i+1}: [bold]{f.replace('_ms','')}[/bold] = "
+                f"  [red]{p.name}[/red] step #{i + 1}: [bold]{f.replace('_ms', '')}[/bold] = "
                 f"{avg_val:.1f}ms ({pct:.1f}%)"
             )
 

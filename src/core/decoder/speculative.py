@@ -102,8 +102,8 @@ class SpeculativeDecoder:
         self._target_kv = None
 
         self._same_vocab = (
-            translator.rule1.drafter_size == translator.rule1.target_size and
-            translator.rule1._valid_mask.all()
+            translator.rule1.drafter_size == translator.rule1.target_size
+            and translator.rule1._valid_mask.all()
         )
 
     # ------------------------------------------------------------------
@@ -135,10 +135,10 @@ class SpeculativeDecoder:
         if hasattr(self.target, "reset_kv_state"):
             self.target.reset_kv_state()
 
-        if hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None:
+        if hasattr(self, "_adaptive_controller_ref") and self._adaptive_controller_ref is not None:
             self._adaptive_controller_ref._last_hidden = None
             self._adaptive_controller_ref._last_k = None
-            if hasattr(self._adaptive_controller_ref, '_last_start'):
+            if hasattr(self._adaptive_controller_ref, "_last_start"):
                 self._adaptive_controller_ref._last_start = None
 
         self.cache.step()
@@ -189,7 +189,9 @@ class SpeculativeDecoder:
             k = self._choose_draft_length(generated, adaptive_length_fn)
 
             result = self._decode_step(
-                generated, k, ctx_list,
+                generated,
+                k,
+                ctx_list,
                 drafter_ctx=drafter_ctx,  # always in drafter vocab
                 distiller=distiller,
                 rng=rng,
@@ -221,7 +223,9 @@ class SpeculativeDecoder:
             else:
                 consec_zero += 1
                 if consec_zero >= max_consec_zero:
-                    logger.warning("Stopping after %d consecutive zero-emission steps", max_consec_zero)
+                    logger.warning(
+                        "Stopping after %d consecutive zero-emission steps", max_consec_zero
+                    )
                     break
 
             if pos > prompt_len and self._is_eos(output[0, pos - 1]):
@@ -230,7 +234,9 @@ class SpeculativeDecoder:
 
         logger.info(
             "Finished: generated=%d steps=%d cache_hit_rate=%.3f",
-            pos - prompt_len, len(self._step_results), self.cache.hit_rate(),
+            pos - prompt_len,
+            len(self._step_results),
+            self.cache.hit_rate(),
         )
         return output[:, :pos]
 
@@ -342,9 +348,7 @@ class SpeculativeDecoder:
             translated_probs = None
 
         # 3. Translate drafter-vocab token ids → target-vocab token ids.
-        draft_tokens_target = self._translate_draft_tokens(
-            draft_tokens_drafter, translated_probs
-        )
+        draft_tokens_target = self._translate_draft_tokens(draft_tokens_drafter, translated_probs)
         if len(draft_tokens_target) != k:
             draft_tokens_target = draft_tokens_target[:k]
 
@@ -397,7 +401,11 @@ class SpeculativeDecoder:
                     )
                     with torch.no_grad():
                         from core.models.target_model import _to_cache
-                        need_hidden = hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None
+
+                        need_hidden = (
+                            hasattr(self, "_adaptive_controller_ref")
+                            and self._adaptive_controller_ref is not None
+                        )
                         try:
                             bonus_out = self.drafter.model(
                                 bonus_tensor,
@@ -422,12 +430,13 @@ class SpeculativeDecoder:
                 else:
                     logger.debug(
                         "Skipping drafter bonus forward: token %d >= drafter vocab %d (cross-vocab)",
-                        bonus_drafter, drafter_vocab_size,
+                        bonus_drafter,
+                        drafter_vocab_size,
                     )
 
-                if hasattr(self, '_adaptive_controller_ref'):
+                if hasattr(self, "_adaptive_controller_ref"):
                     ctrl = self._adaptive_controller_ref
-                    if ctrl is not None and hasattr(ctrl, 'update_hidden'):
+                    if ctrl is not None and hasattr(ctrl, "update_hidden"):
                         ctrl.update_hidden(bonus_out.hidden_states[-1][0, -1, :])
         else:
             # No KV available: reset for next step
@@ -436,8 +445,11 @@ class SpeculativeDecoder:
             self._cached_drafter_logits = None
 
             # Prevent Hidden State Leak if cache is dropped
-            if hasattr(self, '_adaptive_controller_ref') and self._adaptive_controller_ref is not None:
-                if hasattr(self._adaptive_controller_ref, '_last_hidden'):
+            if (
+                hasattr(self, "_adaptive_controller_ref")
+                and self._adaptive_controller_ref is not None
+            ):
+                if hasattr(self._adaptive_controller_ref, "_last_hidden"):
                     self._adaptive_controller_ref._last_hidden = None
 
         # 8. Truncate target KV cache to keep only the verified prefix.
@@ -473,9 +485,9 @@ class SpeculativeDecoder:
                 prompt_ids=ctx_list,
             )
 
-        if hasattr(self, '_adaptive_controller_ref'):
+        if hasattr(self, "_adaptive_controller_ref"):
             ctrl = self._adaptive_controller_ref
-            if ctrl is not None and hasattr(ctrl, 'record_result'):
+            if ctrl is not None and hasattr(ctrl, "record_result"):
                 ctrl.record_result(accepted_count)
 
         return StepResult(
@@ -499,7 +511,9 @@ class SpeculativeDecoder:
         k = len(draft_tokens_drafter)
         mapping = self.translator.rule1._mapping
 
-        device = str(translated_probs.device) if translated_probs is not None else str(mapping.device)
+        device = (
+            str(translated_probs.device) if translated_probs is not None else str(mapping.device)
+        )
         if mapping.device.type != device:
             mapping = mapping.to(device)
 
@@ -519,8 +533,8 @@ class SpeculativeDecoder:
             # FIX: Don't use raw drafter token id as fallback — it may be
             # >= target model's vocab_size, causing embedding OOB errors.
             # Use target UNK token (or pad token) as safe fallback.
-            unk_id = getattr(self.target.tokenizer, 'unk_token_id', None)
-            pad_id = getattr(self.target.tokenizer, 'pad_token_id', None)
+            unk_id = getattr(self.target.tokenizer, "unk_token_id", None)
+            pad_id = getattr(self.target.tokenizer, "pad_token_id", None)
             fallback_id = unk_id if unk_id is not None else (pad_id if pad_id is not None else 0)
             mapped[still_negative] = fallback_id
 

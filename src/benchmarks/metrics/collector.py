@@ -55,11 +55,12 @@ class DecodeRecord:
         # Use accepted_draft (excludes bonus tokens) when available,
         # fall back to accepted for backward compatibility.
         total_a = sum(
-            (r.accepted_draft if r.accepted_draft >= 0 else r.accepted)
-            for r in self.step_records
+            (r.accepted_draft if r.accepted_draft >= 0 else r.accepted) for r in self.step_records
         )
         # Use actual_draft_len when available, fall back to draft_len
-        total_d = sum(r.actual_draft_len if r.actual_draft_len > 0 else r.draft_len for r in self.step_records)
+        total_d = sum(
+            r.actual_draft_len if r.actual_draft_len > 0 else r.draft_len for r in self.step_records
+        )
         return total_a / max(1, total_d)
 
 
@@ -125,7 +126,9 @@ class BenchmarkCollector:
             actual_draft_len: int = 0,
             accepted_draft: int = -1,
         ) -> None:
-            self._rec.step_records.append(StepRecord(draft_len, accepted, cache_hit, kl_div, actual_draft_len, accepted_draft))
+            self._rec.step_records.append(
+                StepRecord(draft_len, accepted, cache_hit, kl_div, actual_draft_len, accepted_draft)
+            )
             self._rec.total_new_tokens += accepted
 
         def __exit__(self, *args) -> None:
@@ -247,19 +250,25 @@ class BenchmarkCollector:
         wall_total = result.get("wall_time_total_s", 0)
         wall_mean = result.get("wall_time_mean_s", 0)
         n_seq = result.get("n_sequences", 0)
-        lines.append(f"  Duration: {wall_total:.3f}s  ({wall_mean:.3f}s per sample, {n_seq} sequences)")
+        lines.append(
+            f"  Duration: {wall_total:.3f}s  ({wall_mean:.3f}s per sample, {n_seq} sequences)"
+        )
 
         # --- Throughput ---
         tps = result.get("tokens_per_sec", 0)
         avg_tps = result.get("avg_tokens_per_sec", 0)
         total_tokens = result.get("total_new_tokens", 0)
-        lines.append(f"  Throughput: {tps:.1f} tok/s  (avg {avg_tps:.1f} tok/s, {total_tokens} tokens)")
+        lines.append(
+            f"  Throughput: {tps:.1f} tok/s  (avg {avg_tps:.1f} tok/s, {total_tokens} tokens)"
+        )
 
         # --- Acceptance ---
         acc_rate = result.get("acceptance_rate", 0)
         avg_acc = result.get("avg_accepted_tokens", 0)
         avg_draft = result.get("avg_draft_length", 0)
-        lines.append(f"  Acceptance: {acc_rate:.1%}  ({avg_acc:.2f}/{avg_draft:.2f} avg accepted / draft)")
+        lines.append(
+            f"  Acceptance: {acc_rate:.1%}  ({avg_acc:.2f}/{avg_draft:.2f} avg accepted / draft)"
+        )
 
         # --- Cache ---
         cache_hit = result.get("cache_hit_rate", 0)
@@ -311,9 +320,15 @@ class BenchmarkCollector:
         lines = []
         lines.append(f"\n{'=' * 55}")
         lines.append(f"  Experiment: {self.name}")
-        lines.append(f"  Duration: {wall_total:.3f}s  ({wall_mean:.3f}s per sample, {n_seq} sequences)")
-        lines.append(f"  Throughput: {tps:.1f} tok/s  (avg {avg_tps:.1f} tok/s, {total_tokens} tokens)")
-        lines.append(f"  Acceptance: {acc_rate:.1%}  ({avg_acc:.2f}/{avg_draft:.2f} avg accepted / draft)")
+        lines.append(
+            f"  Duration: {wall_total:.3f}s  ({wall_mean:.3f}s per sample, {n_seq} sequences)"
+        )
+        lines.append(
+            f"  Throughput: {tps:.1f} tok/s  (avg {avg_tps:.1f} tok/s, {total_tokens} tokens)"
+        )
+        lines.append(
+            f"  Acceptance: {acc_rate:.1%}  ({avg_acc:.2f}/{avg_draft:.2f} avg accepted / draft)"
+        )
         lines.append(f"  Cache hit:  {cache_hit:.1%}")
         lines.append(f"  GPU: peak={gpu_peak:.2f} GB  mean={gpu_mean:.2f} GB")
         if "training_loss_mean" in result:

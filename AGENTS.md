@@ -14,13 +14,20 @@ src/
 │   ├── translation/     # Cross-vocab translation (Rule1, Rule2)
 │   ├── cache/           # N-gram cache with eviction strategies
 │   ├── distillation/    # Online distillation
+│   ├── profiling/       # Substep timer, torch profiler
 │   └── extensions/      # Experimental modules
+│       ├── adaptive/    # Acceptance & speedup predictors
+│       ├── contrastive/ # Contrastive loss
+│       ├── lattice/     # Tokenizer lattice
+│       ├── multitarget/ # Universal drafter
+│       ├── replay/      # Replay buffer
+│       ├── routing/     # Dynamic router
+│       └── translator/  # Learned translator
 ├── experiments/         # Experiment runner & ablation suite
+│   ├── built_in/        # 12 built-in experiments
+│   └── templates/       # Copy-paste template for researchers
 ├── benchmarks/          # Metrics collection
-├── config/              # Configuration
-├── utils/               # Shared utilities (logging, model loading)
-├── inference/           # API (future)
-└── main.py              # Entry point
+└── config/              # Configuration
 
 tests/
 ├── unit/                # Unit tests
@@ -28,6 +35,7 @@ tests/
 └── extension_tests/     # Extension tests
 
 research/                # Per-researcher work area
+scripts/                 # Standalone scripts (profiler, etc.)
 ```
 
 ## 🔧 Key Conventions
@@ -81,7 +89,7 @@ Experiments use a **Strategy pattern**: each experiment is a `BaseExperiment` su
 | `BaseExperiment` | `src/experiments/base.py` | ABC for all experiments |
 | `ExperimentRunner` | `src/experiments/runner.py` | Orchestrator (models, datasets, persistence) |
 | `ExperimentConfig` | `src/experiments/runner.py` | Configuration dataclass |
-| `ABLATION_SUITE` | `src/experiments/suites.py` | Standard 11-experiment ablation |
+| `ABLATION_SUITE` | `src/experiments/suites.py` | Standard 12-experiment ablation |
 | `discover_experiments()` | `src/experiments/suites.py` | Auto-discover built-in + research |
 
 ### Built-in Experiments
@@ -93,7 +101,7 @@ than duplicate their logic.
 ### CLI
 
 ```bash
-python src/main.py --suite ablation       # Run all 11 ablation experiments
+python src/main.py --suite ablation       # Run all 12 ablation experiments
 python src/main.py --experiment 01_baseline  # Run one experiment
 python src/main.py --research              # Run all research experiments
 python src/main.py --list                  # List all experiments

@@ -303,9 +303,7 @@ def run_model_matrix(args: argparse.Namespace) -> list[tuple[ModelPair, list[dic
 
         failures = failed_experiments(results)
         if failures and not args.continue_on_error:
-            raise RuntimeError(
-                f"Experiment failure(s) for {pair.slug}: " + " | ".join(failures)
-            )
+            raise RuntimeError(f"Experiment failure(s) for {pair.slug}: " + " | ".join(failures))
 
         plot_path = plot_model_pair_summary(results, pair_plots_dir, pair)
         print(f"Pair CSV saved to: {metrics_csv}")

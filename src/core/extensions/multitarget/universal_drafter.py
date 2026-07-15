@@ -137,11 +137,11 @@ class UniversalDrafter(nn.Module):
         self,
         context: torch.Tensor,
         k: int,
-        target_name: str |None = None,
+        target_name: str | None = None,
         temperature: float = 1.0,
         past_key_values=None,
         past_len: int = 0,
-        cached_logits: torch.Tensor |None = None,
+        cached_logits: torch.Tensor | None = None,
     ) -> tuple[list[int], torch.Tensor]:
         """
         Draft k tokens conditioned on the specified target family.

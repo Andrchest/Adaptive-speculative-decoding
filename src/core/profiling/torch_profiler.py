@@ -84,9 +84,7 @@ class TorchProfilerAnalysis:
     def gpu_matmul_pct(self) -> float:
         """Combined GPU time percentage of aten::mm + aten::matmul."""
         return sum(
-            k.gpu_pct
-            for k in self.kernels_by_gpu_time
-            if k.name in ("aten::mm", "aten::matmul")
+            k.gpu_pct for k in self.kernels_by_gpu_time if k.name in ("aten::mm", "aten::matmul")
         )
 
     @property
@@ -98,11 +96,7 @@ class TorchProfilerAnalysis:
     @property
     def index_add_large_self(self) -> list[KernelStat]:
         """aten::index_add_ kernels with large self tensors."""
-        return [
-            k
-            for k in self.kernels_by_gpu_time
-            if k.name == "aten::index_add_" and k.count > 0
-        ]
+        return [k for k in self.kernels_by_gpu_time if k.name == "aten::index_add_" and k.count > 0]
 
     @property
     def python_gpu_ratio(self) -> float:
@@ -227,9 +221,7 @@ def _detect_bottlenecks(analysis: TorchProfilerAnalysis) -> list[Bottleneck]:
         sync_kernels_str = ", ".join(sync_in_top10)
         # Compute total sync GPU time
         sync_gpu_pct = sum(
-            k.gpu_pct
-            for k in analysis.kernels_by_gpu_time[:10]
-            if k.name in sync_in_top10
+            k.gpu_pct for k in analysis.kernels_by_gpu_time[:10] if k.name in sync_in_top10
         )
         b = Bottleneck(
             category="host_sync",
@@ -280,7 +272,8 @@ def _detect_bottlenecks(analysis: TorchProfilerAnalysis) -> list[Bottleneck]:
 
     # Also check scatter_ and gather_ which are part of Rule1
     scatter_kernels = [
-        k for k in analysis.kernels_by_gpu_time
+        k
+        for k in analysis.kernels_by_gpu_time
         if k.name in ("aten::scatter_", "aten::scatter_add_", "aten::gather")
     ]
     if scatter_kernels:
@@ -418,6 +411,7 @@ def run_torch_profile(
 
     # ── Warmup phase (no profiling) ──
     import contextlib
+
     grad_ctx = contextlib.nullcontext() if distiller is not None else torch.no_grad()
 
     if warmup_steps > 0:
@@ -500,8 +494,11 @@ def run_torch_profile(
     # ── Detect bottlenecks ──
     analysis.bottlenecks = _detect_bottlenecks(analysis)
 
-    logger.info("torch.profiler analysis complete: %d kernels, %d bottlenecks detected",
-                len(by_gpu), len(analysis.bottlenecks))
+    logger.info(
+        "torch.profiler analysis complete: %d kernels, %d bottlenecks detected",
+        len(by_gpu),
+        len(analysis.bottlenecks),
+    )
 
     return analysis
 
@@ -538,8 +535,12 @@ def _run_decode_steps(
         )
 
         result = decoder._decode_step(
-            generated, k, drafter_context_ids[:],
-            drafter_ctx=drafter_ctx, distiller=distiller, rng=rng,
+            generated,
+            k,
+            drafter_context_ids[:],
+            drafter_ctx=drafter_ctx,
+            distiller=distiller,
+            rng=rng,
         )
         decoder._step_results.append(result)
         decoder.cache.step()
@@ -646,14 +647,16 @@ def print_torch_profile_summary(analysis: TorchProfilerAnalysis, console):
     total_cpu_ms = analysis.total_cpu_time_us / 1000
     ratio = analysis.python_gpu_ratio
 
-    console.print(Panel(
-        f"[green]Total GPU kernel time:[/green] {total_gpu_ms:.1f}ms\n"
-        f"[green]Total CPU time:[/green] {total_cpu_ms:.1f}ms\n"
-        f"[green]Python/GPU ratio:[/green] {ratio:.2f}x\n"
-        f"[green]GPU kernels profiled:[/green] {len(analysis.kernels_by_gpu_time)}\n"
-        f"[green]Steps profiled:[/green] {analysis.step_count}",
-        title="torch.profiler Summary",
-    ))
+    console.print(
+        Panel(
+            f"[green]Total GPU kernel time:[/green] {total_gpu_ms:.1f}ms\n"
+            f"[green]Total CPU time:[/green] {total_cpu_ms:.1f}ms\n"
+            f"[green]Python/GPU ratio:[/green] {ratio:.2f}x\n"
+            f"[green]GPU kernels profiled:[/green] {len(analysis.kernels_by_gpu_time)}\n"
+            f"[green]Steps profiled:[/green] {analysis.step_count}",
+            title="torch.profiler Summary",
+        )
+    )
 
     # Key metrics for the 4 checks
     console.print("\n[bold white]DIAGNOSTIC CHECKS[/bold white]")

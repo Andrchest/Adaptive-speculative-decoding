@@ -159,7 +159,7 @@ class Rule1Mapping:
         target_probs   : (batch, target_vocab) or (target_vocab,)
                          Un-normalised; caller may need softmax.
         """
-        logger.debug('Rule 1: mapping logits')
+        logger.debug("Rule 1: mapping logits")
 
         if drafter_probs is None:
             if drafter_logits is None:
@@ -178,26 +178,24 @@ class Rule1Mapping:
             drafter_probs = drafter_probs.squeeze(1)  # (B, Vd)
         batch = drafter_probs.shape[0]
         device = drafter_probs.device
-        target_probs = torch.zeros(
-            batch, self.target_size, dtype=torch.float32, device=device
-        )
+        target_probs = torch.zeros(batch, self.target_size, dtype=torch.float32, device=device)
 
         valid_mask = self._valid_mask.to(device, non_blocking=True)
         mapping = self._mapping.to(device, non_blocking=True)
 
         source_d_indices = torch.where(valid_mask)[0]  # (M,) on device
-        target_d_indices = mapping[source_d_indices]    # (M,) on device
+        target_d_indices = mapping[source_d_indices]  # (M,) on device
 
         # Use expand() instead of torch.stack() — returns a view, no data copy.
         # expand(B, M) broadcasts the (M,) tensor to (B, M) without allocation.
         indices_expanded = source_d_indices.unsqueeze(0).expand(batch, -1)  # (B, M)
-        src_gathered = torch.gather(drafter_probs, 1, indices_expanded)    # (B, M)
+        src_gathered = torch.gather(drafter_probs, 1, indices_expanded)  # (B, M)
 
-        tgt_expanded = target_d_indices.unsqueeze(0).expand(batch, -1)     # (B, M)
+        tgt_expanded = target_d_indices.unsqueeze(0).expand(batch, -1)  # (B, M)
         target_probs.scatter_add_(1, tgt_expanded, src_gathered)
 
         del indices_expanded, tgt_expanded, src_gathered
-        logger.debug('Rule 1: end mapping logits ')
+        logger.debug("Rule 1: end mapping logits ")
 
         if squeeze:
             return target_probs.squeeze(0)
@@ -290,14 +288,19 @@ class Rule2Mapping:
         if not rows:
             # No transfer entries — create an all-zero matrix of the right shape.
             self._dense_T = torch.zeros(
-                self.target_size, self.drafter_size, dtype=torch.float32,
+                self.target_size,
+                self.drafter_size,
+                dtype=torch.float32,
             )
-            logger.debug("Rule2: dense matrix built (empty, %dx%d)",
-                         self.target_size, self.drafter_size)
+            logger.debug(
+                "Rule2: dense matrix built (empty, %dx%d)", self.target_size, self.drafter_size
+            )
             return
 
         dense = torch.zeros(
-            self.target_size, self.drafter_size, dtype=torch.float32,
+            self.target_size,
+            self.drafter_size,
+            dtype=torch.float32,
         )
         dense[rows, cols] = torch.tensor(vals, dtype=torch.float32)
         self._dense_T = dense
@@ -305,8 +308,11 @@ class Rule2Mapping:
         total = self.target_size * self.drafter_size
         logger.info(
             "Rule2: dense matrix built (%d / %d entries = %.2f%% non-zero, %dx%d)",
-            nnz, total, 100.0 * nnz / total if total else 0,
-            self.target_size, self.drafter_size,
+            nnz,
+            total,
+            100.0 * nnz / total if total else 0,
+            self.target_size,
+            self.drafter_size,
         )
 
     # ------------------------------------------------------------------
@@ -390,9 +396,7 @@ class Rule2Mapping:
             indices = torch.tensor([rows, cols], dtype=torch.long)  # (2, nnz)
             values = torch.tensor(vals, dtype=torch.float32)
 
-        return torch.sparse_coo_tensor(
-            indices, values, (target_size, drafter_size)
-        )
+        return torch.sparse_coo_tensor(indices, values, (target_size, drafter_size))
 
     @staticmethod
     def _build_string_list(tokenizer) -> list[str]:

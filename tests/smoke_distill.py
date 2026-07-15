@@ -65,9 +65,7 @@ def main() -> None:
     print_mem("after drafter")
 
     print("Loading target...")
-    target = TargetModel(
-        target_path, device=device, dtype=torch.float32, load_in_4bit=False
-    )
+    target = TargetModel(target_path, device=device, dtype=torch.float32, load_in_4bit=False)
     print_mem("after target")
 
     # Translator

@@ -112,14 +112,12 @@ class FullSystemExperiment(BaseExperiment):
             r=getattr(cfg, "lora_rank", 8),
             lora_alpha=getattr(cfg, "lora_alpha", 16.0),
             lora_dropout=getattr(cfg, "lora_dropout", 0.05),
-            target_modules=getattr(
-                cfg, "lora_target_modules", ["q_proj", "v_proj"]
-            ),
+            target_modules=getattr(cfg, "lora_target_modules", ["q_proj", "v_proj"]),
         )
         drafter.model = get_peft_model(drafter.model, config)
         for p in drafter.model.parameters():
             if p.requires_grad:
-                p.data = p.data.float() # will cast to fp32
+                p.data = p.data.float()  # will cast to fp32
 
         trainable = sum(p.numel() for p in drafter.model.parameters() if p.requires_grad)
         total = sum(p.numel() for p in drafter.model.parameters())

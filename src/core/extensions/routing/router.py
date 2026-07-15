@@ -120,7 +120,7 @@ class DynamicRouter:
         Falls back to spec 0 if the selected spec has no model loaded.
         """
         if self.router is None or self.embedder is None:
-            logger.info('Selecting default (0) drafter')
+            logger.info("Selecting default (0) drafter")
             return self.specs[0].model, 0
 
         emb = self.embedder(input_ids)  # (d,)
@@ -128,7 +128,8 @@ class DynamicRouter:
         if self.specs[idx].model is None:
             logger.warning(
                 "Router selected drafter %d/%d but model is None; falling back to spec 0",
-                idx, self.n_drafters,
+                idx,
+                self.n_drafters,
             )
             idx = 0
         logger.debug("Router selected drafter %d/%d", idx, self.n_drafters)

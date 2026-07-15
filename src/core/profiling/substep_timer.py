@@ -87,9 +87,7 @@ class SubstepTimer:
             try:
                 yield
             finally:
-                self._data.setdefault(name, []).append(
-                    (time.perf_counter() - t0) * 1000
-                )
+                self._data.setdefault(name, []).append((time.perf_counter() - t0) * 1000)
 
     # -- internal --
 

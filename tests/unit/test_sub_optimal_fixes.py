@@ -19,6 +19,7 @@ from experiments.runner import ExperimentConfig
 # Fix #1 (P0): target_use_4bit config field exists
 # ──────────────────────────────────────────────────────────────────────
 
+
 class TestTargetUse4BitConfig:
     """Verify the new ExperimentConfig field exists and serializes."""
 
@@ -35,6 +36,7 @@ class TestTargetUse4BitConfig:
         d = cfg.__dict__ if hasattr(cfg, "__dict__") else {}
         # As dataclass: use __dataclass_fields__
         import dataclasses as dc
+
         d = dc.asdict(cfg)
         assert "target_use_4bit" in d
         assert d["target_use_4bit"] is False
@@ -44,19 +46,20 @@ class TestTargetUse4BitConfig:
 # Fix #2 (P1): batch tokenization correctness
 # ──────────────────────────────────────────────────────────────────────
 
+
 class TestBatchTokenization:
     """Batch tokenization must produce identical results to per-sample."""
 
     @pytest.fixture
     def tokenizer(self):
         from transformers import AutoTokenizer
+
         return AutoTokenizer.from_pretrained("facebook/opt-125m")
 
     def test_batch_equals_individual(self, tokenizer):
         """Batch encode 100 samples; each result matches per-sample encode."""
         texts = [
-            f"This is sample number {i} with some extra text to make it longer."
-            for i in range(100)
+            f"This is sample number {i} with some extra text to make it longer." for i in range(100)
         ]
 
         # Per-sample encoding
@@ -76,9 +79,7 @@ class TestBatchTokenization:
 
         # Compare
         for i in range(len(texts)):
-            assert torch.equal(individual[i], batch_results[i]), (
-                f"Mismatch at sample {i}"
-            )
+            assert torch.equal(individual[i], batch_results[i]), f"Mismatch at sample {i}"
 
     def test_batch_preserves_sequence_length(self, tokenizer):
         """Batch encoding preserves exact sequence lengths."""
@@ -97,6 +98,7 @@ class TestBatchTokenization:
 # Fix #3 (P2): dense Rule2 matmul equivalence
 # ──────────────────────────────────────────────────────────────────────
 
+
 class TestDenseRule2Matmul:
     """Dense matmul must produce results numerically equal to sparse."""
 
@@ -107,6 +109,7 @@ class TestDenseRule2Matmul:
         Returns (target_size, drafter_size, transfer_dict).
         """
         import random
+
         target_size = 50
         drafter_size = 40
         transfer = {}
@@ -209,6 +212,7 @@ class TestDenseRule2Matmul:
 # ──────────────────────────────────────────────────────────────────────
 # Integration: run a single experiment with new config
 # ──────────────────────────────────────────────────────────────────────
+
 
 class TestIntegration:
     """Quick integration tests for the new config fields."""

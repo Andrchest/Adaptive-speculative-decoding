@@ -146,7 +146,7 @@ class ReplayDistiller:
         buffer: ReplayBuffer,
         replay_every: int = 32,
         replay_batch: int = 8,
-        target_model = None,
+        target_model=None,
     ) -> None:
         self.distiller = distiller
         self.buffer = buffer
@@ -165,7 +165,7 @@ class ReplayDistiller:
         Attach a ContrastiveLoss module to be added to subsequent steps.
         """
         self.distiller.set_contrastive_loss(loss_module)
-        logger.info('ReplayDistiller contrastive loss attachment')
+        logger.info("ReplayDistiller contrastive loss attachment")
 
     def step(
         self,
@@ -258,16 +258,12 @@ class ReplayDistiller:
                 continue
 
             # Reconstruct input: (prompt + draft_tokens[:-1])
-            prompt_ids = torch.tensor(
-                t.prompt_ids, dtype=torch.long, device=device
-            ).unsqueeze(0)
+            prompt_ids = torch.tensor(t.prompt_ids, dtype=torch.long, device=device).unsqueeze(0)
             draft_tokens_tensor = torch.tensor(
                 t.draft_tokens, dtype=torch.long, device=device
             ).unsqueeze(0)
             if k > 1:
-                input_for_drafter = torch.cat(
-                    [prompt_ids, draft_tokens_tensor[:, :-1]], dim=1
-                )
+                input_for_drafter = torch.cat([prompt_ids, draft_tokens_tensor[:, :-1]], dim=1)
             else:
                 input_for_drafter = prompt_ids
 
@@ -275,9 +271,7 @@ class ReplayDistiller:
             try:
                 out = self.distiller.drafter.model(input_for_drafter)
             except Exception as e:
-                logger.warning(
-                    "Replay: skipping trace due to drafter forward error: %s", e
-                )
+                logger.warning("Replay: skipping trace due to drafter forward error: %s", e)
                 continue
 
             # logits at positions [prompt_len-1, prompt_len, ..., prompt_len+k-2]
@@ -293,16 +287,12 @@ class ReplayDistiller:
                         )
                         target_logits = target_logits[:k]  # only the k draft positions
                 except Exception as e:
-                    logger.warning(
-                        "Replay: target forward failed, skipping trace: %s", e
-                    )
+                    logger.warning("Replay: target forward failed, skipping trace: %s", e)
                     continue
             else:
                 # Fallback: skip target-specific distillation signal.
                 # Draft prediction learning still works via KL on drafter logits.
-                logger.debug(
-                    "Replay: no target_model provided, skipping target_logits for trace"
-                )
+                logger.debug("Replay: no target_model provided, skipping target_logits for trace")
                 continue
 
             # Reconstruct accepted_mask positionally (C6 fix).

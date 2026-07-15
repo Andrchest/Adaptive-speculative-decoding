@@ -47,10 +47,8 @@ htmlcov/
 *.ipynb
 !research/v.poponnikov/notebooks/dynamic_k_comparison.ipynb
 
-# Results & artifacts (kept per-researcher)
-results/
-results_test*/
-*_test*.json
+# Results & artifacts
+results*/
 comparison_table.csv
 mlflow.db
 mlruns/
@@ -76,13 +74,8 @@ dmypy.json
 *.checkpoint
 wandb/
 
-# Handoff docs
-research/m.krylov/HANDOFF.md
-
 # Pi agent artifacts
 .pi/
 
 # Profiling results
 results_profile/
-
-.pi/

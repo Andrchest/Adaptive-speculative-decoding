@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Benchmark Rule2 optimization end-to-end."""
+
 import sys
 import time
 import logging
@@ -25,7 +26,8 @@ def main():
         "facebook/opt-350m", device=DEVICE, dtype=torch.float32, load_in_4bit=False
     )
     translator = CrossVocabTranslator.from_tokenizers(
-        drafter_tok, target_model.tokenizer,
+        drafter_tok,
+        target_model.tokenizer,
         drafter_vocab_size=drafter.model.config.vocab_size,
         target_vocab_size=target_model.model.config.vocab_size,
     )

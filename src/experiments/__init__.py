@@ -21,7 +21,7 @@ ExperimentRunner :
 Suites
 ------
 ABLATION_SUITE :
-    The standard 11-experiment ablation study.
+    The standard 12-experiment ablation study.
 discover_experiments :
     Auto-discover built-in + research experiments.
 

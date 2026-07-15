@@ -37,7 +37,12 @@ def _get_pkv_len(pkv: object) -> int:
         except Exception:
             pass
     # transformers 4.x DynamicCache — key_cache list of tensors
-    if isinstance(pkv, DynamicCache) and hasattr(pkv, "key_cache") and len(pkv.key_cache) > 0 and pkv.key_cache[0] is not None:
+    if (
+        isinstance(pkv, DynamicCache)
+        and hasattr(pkv, "key_cache")
+        and len(pkv.key_cache) > 0
+        and pkv.key_cache[0] is not None
+    ):
         return pkv.key_cache[0].shape[-2]
     # transformers 5.x DynamicCache — layers[i].keys.shape[-2]
     if isinstance(pkv, DynamicCache) and hasattr(pkv, "layers"):
@@ -127,10 +132,11 @@ def _to_cache(pkv: object) -> object:
                         k, v = _normalize_kv_dims(k, v)
                         cache.update(k, v, i)
             # Check for layers (transformers 5.x) or key_cache (transformers 4.x)
-            has_content = (hasattr(cache, 'layers') and cache.layers) or \
-                          (hasattr(cache, 'key_cache') and len(cache.key_cache) > 0)
+            has_content = (hasattr(cache, "layers") and cache.layers) or (
+                hasattr(cache, "key_cache") and len(cache.key_cache) > 0
+            )
             if has_content:
-                n = len(cache.layers) if hasattr(cache, 'layers') else len(cache.key_cache)
+                n = len(cache.layers) if hasattr(cache, "layers") else len(cache.key_cache)
                 logger.debug("Converted legacy PKV to DynamicCache (%d layers)", n)
                 return cache
         except Exception as e:
@@ -146,12 +152,15 @@ def _to_cache(pkv: object) -> object:
                         k, v = _normalize_kv_dims(k, v)
                         cache.update(k, v, i)
                     else:
-                        raise TypeError(f"Expected tensors, got {type(k).__name__}, {type(v).__name__}")
+                        raise TypeError(
+                            f"Expected tensors, got {type(k).__name__}, {type(v).__name__}"
+                        )
             # Check for layers (transformers 5.x) or key_cache (transformers 4.x)
-            has_content = (hasattr(cache, 'layers') and cache.layers) or \
-                          (hasattr(cache, 'key_cache') and len(cache.key_cache) > 0)
+            has_content = (hasattr(cache, "layers") and cache.layers) or (
+                hasattr(cache, "key_cache") and len(cache.key_cache) > 0
+            )
             if has_content:
-                n = len(cache.layers) if hasattr(cache, 'layers') else len(cache.key_cache)
+                n = len(cache.layers) if hasattr(cache, "layers") else len(cache.key_cache)
                 logger.debug("Converted list-of-tuples PKV to DynamicCache (%d layers)", n)
                 return cache
         except Exception as e:
@@ -172,7 +181,8 @@ def _load_tokenizer(model_name_or_path: str) -> AutoTokenizer:
     except Exception as e:
         logger.warning(
             "Fast tokenizer failed for %s: %s. Falling back to slow tokenizer.",
-            model_name_or_path, e,
+            model_name_or_path,
+            e,
         )
         return AutoTokenizer.from_pretrained(model_name_or_path, use_fast=False)
 
@@ -300,9 +310,7 @@ class TargetModel:
                     raise TypeError(f"PKV has no get_seq_length (type={type(pkv).__name__})")
                 past_len = _get_pkv_len(pkv)
                 if past_len > ctx_len:
-                    raise ValueError(
-                        f"KV cache length ({past_len}) > context length ({ctx_len})"
-                    )
+                    raise ValueError(f"KV cache length ({past_len}) > context length ({ctx_len})")
                 new_ctx = context[:, past_len:]
                 new_len = new_ctx.shape[1]
                 if draft_tensor is not None:

@@ -54,6 +54,7 @@ What's covered
     Verifies C16 fix — the adapter is applied once (via hooks), not
     twice.
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -247,13 +248,20 @@ def _build_decoder(vocab_size=8, k=3, temperature=1.0, seed=0):
     target = FakeTargetModel(vocab_size, target_model, tok)
 
     translator = CrossVocabTranslator.from_tokenizers(
-        tok, tok, device="cpu",
-        drafter_vocab_size=vocab_size, target_vocab_size=vocab_size,
+        tok,
+        tok,
+        device="cpu",
+        drafter_vocab_size=vocab_size,
+        target_vocab_size=vocab_size,
     )
     cache = NgramCache(max_size=64, eviction="lru")
     decoder = SpeculativeDecoder(
-        drafter=drafter, target=target, translator=translator,
-        cache=cache, draft_length=k, temperature=temperature,
+        drafter=drafter,
+        target=target,
+        translator=translator,
+        cache=cache,
+        draft_length=k,
+        temperature=temperature,
     )
     return decoder, drafter, target
 
@@ -421,9 +429,7 @@ def test_drafter_greedy_at_zero_temperature():
     prompt = torch.tensor([[0, 1, 2]], dtype=torch.long)
     t1, _ = drafter.draft(prompt, k=3, temperature=0.0)
     t2, _ = drafter.draft(prompt, k=3, temperature=0.0)
-    assert t1 == t2, (
-        f"Greedy drafter should be deterministic; got {t1} and {t2}"
-    )
+    assert t1 == t2, f"Greedy drafter should be deterministic; got {t1} and {t2}"
 
 
 # ---------------------------------------------------------------------------
@@ -448,8 +454,11 @@ def test_drafter_temperature_propagates_to_q():
     drafter_model = FakeDrafterModel(V, seed=3)
     drafter = FakeDrafterWrapper(drafter_model, tok)
     translator = CrossVocabTranslator.from_tokenizers(
-        tok, tok, device="cpu",
-        drafter_vocab_size=V, target_vocab_size=V,
+        tok,
+        tok,
+        device="cpu",
+        drafter_vocab_size=V,
+        target_vocab_size=V,
     )
 
     # Get drafter logits at a fixed prompt
@@ -494,14 +503,15 @@ def test_draft_token_translation_cross_vocab():
     target_tok = FakeTokenizer({f"tok_{i}": V - 1 - i for i in range(V)})
 
     translator = CrossVocabTranslator.from_tokenizers(
-        drafter_tok, target_tok, device="cpu",
-        drafter_vocab_size=V, target_vocab_size=V,
+        drafter_tok,
+        target_tok,
+        device="cpu",
+        drafter_vocab_size=V,
+        target_vocab_size=V,
     )
     # Sanity: Rule1 should map drafter id i → target id V-1-i
     mapping = translator.rule1._mapping.tolist()
-    assert mapping == [V - 1 - i for i in range(V)], (
-        f"Rule1 mapping wrong: {mapping}"
-    )
+    assert mapping == [V - 1 - i for i in range(V)], f"Rule1 mapping wrong: {mapping}"
 
     # Build a decoder with this translator and a fake drafter/target.
     from core.cache.ngram import NgramCache
@@ -513,9 +523,12 @@ def test_draft_token_translation_cross_vocab():
     target = FakeTargetModel(V, target_model, target_tok)
 
     decoder = SpeculativeDecoder(
-        drafter=drafter, target=target, translator=translator,
+        drafter=drafter,
+        target=target,
+        translator=translator,
         cache=NgramCache(max_size=64, eviction="lru"),
-        draft_length=3, temperature=1.0,
+        draft_length=3,
+        temperature=1.0,
     )
 
     # Construct translated_probs and call _translate_draft_tokens
@@ -524,13 +537,11 @@ def test_draft_token_translation_cross_vocab():
     with torch.no_grad():
         _, draft_logits = drafter.draft(prompt, k=3, temperature=1.0)
         translated_probs = translator.translate(draft_logits)
-    draft_tokens_target = decoder._translate_draft_tokens(
-        draft_tokens_drafter, translated_probs
-    )
+    draft_tokens_target = decoder._translate_draft_tokens(draft_tokens_drafter, translated_probs)
     # Each drafter token i should map to target token V-1-i
     assert draft_tokens_target == [V - 1 - i for i in draft_tokens_drafter], (
         f"Cross-vocab translation wrong: drafter={draft_tokens_drafter} "
-        f"target={draft_tokens_target} expected={[V-1-i for i in draft_tokens_drafter]}"
+        f"target={draft_tokens_target} expected={[V - 1 - i for i in draft_tokens_drafter]}"
     )
 
 
@@ -686,15 +697,20 @@ def test_distiller_set_contrastive_loss():
     V = 8
     tok = FakeTokenizer({f"tok_{i}": i for i in range(V)})
     translator = CrossVocabTranslator.from_tokenizers(
-        tok, tok, device="cpu",
-        drafter_vocab_size=V, target_vocab_size=V,
+        tok,
+        tok,
+        device="cpu",
+        drafter_vocab_size=V,
+        target_vocab_size=V,
     )
     drafter_model = FakeDrafterModel(V, seed=5)
     drafter = FakeDrafterWrapper(drafter_model, tok)
     optimizer = torch.optim.SGD(drafter_model.parameters(), lr=1e-3)
     distiller = OnlineDistiller(
-        drafter_model=drafter, translator=translator,
-        optimizer=optimizer, accum_steps=2,
+        drafter_model=drafter,
+        translator=translator,
+        optimizer=optimizer,
+        accum_steps=2,
     )
     # Initially no contrastive loss
     assert distiller._contrastive_loss is None
@@ -724,8 +740,11 @@ def test_replay_re_runs_drafter_forward():
     V = 8
     tok = FakeTokenizer({f"tok_{i}": i for i in range(V)})
     translator = CrossVocabTranslator.from_tokenizers(
-        tok, tok, device="cpu",
-        drafter_vocab_size=V, target_vocab_size=V,
+        tok,
+        tok,
+        device="cpu",
+        drafter_vocab_size=V,
+        target_vocab_size=V,
     )
     drafter_model = FakeDrafterModel(V, seed=6)
     drafter = FakeDrafterWrapper(drafter_model, tok)
@@ -735,13 +754,18 @@ def test_replay_re_runs_drafter_forward():
     # trigger an _update_weights (which would call optimizer.step()
     # AND optimizer.zero_grad(), wiping the grads we want to inspect).
     distiller = OnlineDistiller(
-        drafter_model=drafter, translator=translator,
-        optimizer=optimizer, accum_steps=100,
+        drafter_model=drafter,
+        translator=translator,
+        optimizer=optimizer,
+        accum_steps=100,
     )
     buf = ReplayBuffer(capacity=4, strategy="fifo")
     replay = ReplayDistiller(
-        distiller=distiller, buffer=buf, replay_every=1,
-        replay_batch=2, target_model=target_model,
+        distiller=distiller,
+        buffer=buf,
+        replay_every=1,
+        replay_batch=2,
+        target_model=target_model,
     )
 
     # Manually craft a Trace where the SAME token id appears at both an
@@ -751,7 +775,7 @@ def test_replay_re_runs_drafter_forward():
     # draft_tokens has duplicate id 5 at positions 0 (accepted) and 2 (rejected)
     draft_tokens = [5, 4, 5]
     accepted_tokens = [5, 4]  # ids at positions 0 and 1
-    rejected_tokens = [5]     # id at position 2 (DUPLICATE of pos 0!)
+    rejected_tokens = [5]  # id at position 2 (DUPLICATE of pos 0!)
     k = len(draft_tokens)
 
     # Trace no longer stores logits (memory fix). Replay recomputes
@@ -777,8 +801,7 @@ def test_replay_re_runs_drafter_forward():
     # (If the C5 fix were broken — i.e. replay used the detached
     # stored logits — the gradients would be None.)
     grads_present = any(
-        p.grad is not None and p.grad.abs().sum().item() > 0
-        for p in drafter_model.parameters()
+        p.grad is not None and p.grad.abs().sum().item() > 0 for p in drafter_model.parameters()
     )
     assert grads_present, (
         "Replay did not produce any gradient in the drafter's parameters "
@@ -796,8 +819,7 @@ def test_replay_re_runs_drafter_forward():
     n_accepted = len(accepted_tokens)
     expected_mask = [i < n_accepted for i in range(k)]
     assert expected_mask == [True, True, False], (
-        f"Positional mask reconstruction wrong: {expected_mask} "
-        f"(C6 fix broken)"
+        f"Positional mask reconstruction wrong: {expected_mask} (C6 fix broken)"
     )
 
 
@@ -817,7 +839,15 @@ def test_universal_drafter_no_double_adapter():
     does not contain a manual call to self.target_adapter.
     """
     import pathlib
-    FILE = pathlib.Path(__file__).resolve().parent.parent.parent / "src" / "core" / "extensions" / "multitarget" / "universal_drafter.py"
+
+    FILE = (
+        pathlib.Path(__file__).resolve().parent.parent.parent
+        / "src"
+        / "core"
+        / "extensions"
+        / "multitarget"
+        / "universal_drafter.py"
+    )
     source = FILE.read_text()
 
     # Find the body of the draft() method
@@ -862,15 +892,20 @@ def test_distillation_kl_uses_normalized_target():
     V = 8
     tok = FakeTokenizer({f"tok_{i}": i for i in range(V)})
     translator = CrossVocabTranslator.from_tokenizers(
-        tok, tok, device="cpu",
-        drafter_vocab_size=V, target_vocab_size=V,
+        tok,
+        tok,
+        device="cpu",
+        drafter_vocab_size=V,
+        target_vocab_size=V,
     )
     drafter_model = FakeDrafterModel(V, seed=7)
     drafter = FakeDrafterWrapper(drafter_model, tok)
     optimizer = torch.optim.SGD(drafter_model.parameters(), lr=0.0)  # no update
     distiller = OnlineDistiller(
-        drafter_model=drafter, translator=translator,
-        optimizer=optimizer, accum_steps=100,  # never update
+        drafter_model=drafter,
+        translator=translator,
+        optimizer=optimizer,
+        accum_steps=100,  # never update
     )
 
     k = 3
@@ -899,11 +934,17 @@ def test_distillation_kl_uses_normalized_target():
     target_masked = target_probs / target_probs.sum(dim=-1, keepdim=True).clamp(min=1e-8)
 
     # KL(target || drafter) = sum target * (log target - log drafter)
-    expected_kl = (target_masked * (target_masked.clamp(min=1e-8).log() - drafter_masked_log)).sum(dim=-1).mean()
+    expected_kl = (
+        (target_masked * (target_masked.clamp(min=1e-8).log() - drafter_masked_log))
+        .sum(dim=-1)
+        .mean()
+    )
     # The distiller's loss = kl + lambda * nll. We check that the kl
     # component is reasonable (positive, finite).
     assert expected_kl.item() > 0, "Expected KL should be positive"
-    print(f"\n[kl-normalization] distiller_loss={loss.item():.4f} expected_kl={expected_kl.item():.4f}")
+    print(
+        f"\n[kl-normalization] distiller_loss={loss.item():.4f} expected_kl={expected_kl.item():.4f}"
+    )
 
 
 if __name__ == "__main__":

@@ -92,25 +92,22 @@ Adaptive-speculative-decoding/
 │   │   ├── translation/      # Cross-vocab translation (Rule1, Rule2)
 │   │   ├── cache/            # N-gram cache with eviction strategies
 │   │   ├── distillation/     # Online distillation
+│   │   ├── profiling/        # Substep timer, torch profiler
 │   │   └── extensions/       # Experimental modules
 │   ├── experiments/          # Experiment runner & ablation suite
 │   │   ├── base.py           # BaseExperiment (Strategy pattern)
 │   │   ├── runner.py         # ExperimentRunner (orchestrator)
 │   │   ├── suites.py         # ABLATION_SUITE, discovery
-│   │   ├── built_in/         # 10 built-in experiments
+│   │   ├── built_in/         # 12 built-in experiments
 │   │   └── templates/        # Copy-paste template for researchers
 │   ├── benchmarks/           # Metrics collection
-│   ├── config/               # Configuration
-│   ├── utils/                # Shared utilities
-│   ├── inference/            # Production inference (future)
-│   └── main.py               # CLI entry point
+│   └── config/               # Configuration
 ├── tests/                    # Test suite
 │   ├── unit/                 # Unit tests
 │   ├── integration/          # Integration tests
 │   └── extension_tests/      # Extension-specific tests
 ├── research/                 # Research areas per team member
-├── docs/                     # Documentation
-├── notebooks/                # Jupyter notebooks for analysis
+├── scripts/                  # Standalone scripts (profiler, etc.)
 └── pyproject.toml            # Project configuration (uv + hatchling)
 ```
 
@@ -133,8 +130,8 @@ cp src/experiments/templates/minimal_template.py \
 # 3. Edit: change meta, get_config(), optional build_* / on_* overrides
 
 # 4. Run
-eu run python src/main.py --research          # all research experiments
-eu run python src/main.py --experiment my_idea  # single experiment
+uv run python src/main.py --research          # all research experiments
+uv run python src/main.py --experiment my_idea  # single experiment
 ```
 
 See `src/experiments/templates/minimal_template.py` and `research/README.md` for details.
@@ -183,12 +180,12 @@ Results are saved as JSON (`results/<name>.json`) and CSV (`results/comparison_t
 
 ### Built-in Experiments (Ablation Suite)
 
-11 experiments reproducing the original flag-based suite:
+12 experiments reproducing the original flag-based suite:
 
 ```bash
-uv run python src/main.py --list              # list all 11 experiments
+uv run python src/main.py --list              # list all 12 experiments
 uv run python src/main.py --smoke             # run smoke test (1 sample, tiny models)
-uv run python src/main.py --suite ablation    # run all 11 ablation experiments
+uv run python src/main.py --suite ablation    # run all 12 ablation experiments
 uv run python src/main.py --experiment 01_baseline   # run one experiment
 uv run python src/main.py --research           # run all research experiments
 uv run python src/main.py --list --research    # list research experiments only
@@ -201,22 +198,8 @@ uv run python src/main.py --list --research    # list research experiments only
 | `src/experiments/base.py` | `BaseExperiment` ABC, `BuildContext`, `DecodeContext` |
 | `src/experiments/runner.py` | `ExperimentRunner` orchestrator, `ExperimentConfig` |
 | `src/experiments/suites.py` | `ABLATION_SUITE`, `discover_experiments()` |
-| `src/experiments/built_in/` | 10 built-in experiment classes |
+| `src/experiments/built_in/` | 12 built-in experiment classes |
 | `src/experiments/templates/` | `minimal_template.py` for researchers |
-
-## 🐳 Docker
-
-```bash
-# Build
-docker compose build
-
-# Run (with GPU)
-docker compose run --rm app python src/main.py --smoke
-
-# Start MLflow tracking
-docker compose up -d mlflow
-# → http://localhost:5000
-```
 
 ## 🔗 References
 

@@ -82,7 +82,9 @@ class AcceptanceRatePredictor(nn.Module):
         """Returns predicted acceptance rates (batch, k_max) in [0, 1]."""
         return torch.sigmoid(self.forward(hidden))
 
-    def select_k(self, hidden: torch.Tensor, expected_tokens: bool = True, epsilon: float = 0.10) -> int:
+    def select_k(
+        self, hidden: torch.Tensor, expected_tokens: bool = True, epsilon: float = 0.10
+    ) -> int:
         if torch.rand(1).item() < epsilon:
             return torch.randint(1, self.k_max + 1, (1,)).item()
 
@@ -98,9 +100,7 @@ class AcceptanceRatePredictor(nn.Module):
         return k
 
     def record(self, hidden: torch.Tensor, draft_len: int, acceptance_rate: float) -> None:
-        self._buffer.append(
-            AcceptanceSample(hidden.detach().cpu(), draft_len, acceptance_rate)
-        )
+        self._buffer.append(AcceptanceSample(hidden.detach().cpu(), draft_len, acceptance_rate))
 
     def train_on_buffer(
         self,
@@ -148,9 +148,7 @@ class AcceptanceRatePredictor(nn.Module):
 
             self._optimizer.zero_grad()
             pred_logits = self.forward(hidden_batch)
-            loss = F.binary_cross_entropy_with_logits(
-                pred_logits[obs_mask], target[obs_mask]
-            )
+            loss = F.binary_cross_entropy_with_logits(pred_logits[obs_mask], target[obs_mask])
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
             self._optimizer.step()
