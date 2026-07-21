@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research Paper</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      height: 100%;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      background: #1a1a2e;
+    }
+    header {
+      flex-shrink: 0;
+      padding: 12px 20px;
+      color: #e0e0e0;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      background: #16213e;
+    }
+    iframe {
+      flex: 1;
+      width: 100%;
+      border: none;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <header>📄 paper.pdf</header>
+  <iframe src="paper.pdf" type="application/pdf"></iframe>
+</body>
+</html>
