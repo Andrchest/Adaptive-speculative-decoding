@@ -1,41 +1,524 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Research Paper</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    html, body {
-      height: 100%;
-    }
-    body {
-      display: flex;
-      flex-direction: column;
-      background: #1a1a2e;
-    }
-    header {
-      flex-shrink: 0;
-      padding: 12px 20px;
-      color: #e0e0e0;
-      font-family: system-ui, sans-serif;
-      font-size: 14px;
-      background: #16213e;
-    }
-    iframe {
-      flex: 1;
-      width: 100%;
-      border: none;
-      background: #fff;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdaSpec: Adaptive Speculative Decoding</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #0f172a;
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --text-main: #334155;
+            --text-light: #64748b;
+            --accent: #38bdf8;
+            --success: #10b981;
+            --danger: #ef4444;
+            --border: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            line-height: 1.6;
+        }
+
+        /* Typography */
+        h1, h2, h3, h4 {
+            color: var(--secondary);
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        
+        h2 { font-size: 2rem; margin-bottom: 1.5rem; text-align: center; }
+        h3 { font-size: 1.25rem; margin-bottom: 0.75rem; color: var(--primary-dark); }
+        p { margin-bottom: 1rem; }
+
+        /* Header / Hero */
+        header {
+            background: linear-gradient(135deg, var(--secondary) 0%, #1e293b 100%);
+            color: white;
+            padding: 5rem 2rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        header::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%; width: 200%; height: 200%;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.1) 0%, transparent 50%);
+            z-index: 1;
+        }
+
+        header h1 {
+            color: white;
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+            position: relative;
+            z-index: 2;
+            background: linear-gradient(to right, #38bdf8, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header p.subtitle {
+            font-size: 1.25rem;
+            color: #cbd5e1;
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .header-links {
+            margin-top: 1.5rem;
+            position: relative;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+        }
+        
+        .header-links a {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.5rem 1.5rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-github {
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+        }
+        
+        .btn-github:hover {
+            background-color: #000;
+            transform: translateY(-2px);
+        }
+        
+        .btn-paper {
+            background-color: var(--primary);
+            color: white;
+            border: 1px solid var(--primary-dark);
+        }
+        
+        .btn-paper:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-2px);
+        }
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* Abstract Section */
+        .abstract {
+            background: var(--surface);
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+            margin-top: -3rem;
+            position: relative;
+            z-index: 10;
+            border-left: 5px solid var(--primary);
+        }
+
+        .abstract h3 {
+            color: var(--secondary);
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Schema Section */
+        .schema-section {
+            margin: 5rem 0;
+            text-align: center;
+        }
+
+        .schema-section img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 16px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+            border: 1px solid var(--border);
+            transition: transform 0.3s ease;
+        }
+        
+        .schema-section img:hover {
+            transform: scale(1.02);
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+            margin: 3rem 0;
+        }
+
+        /* Feature Cards */
+        .card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            border: 1px solid var(--border);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15);
+        }
+
+        .card ul {
+            list-style-position: inside;
+            color: var(--text-light);
+            margin-bottom: 1rem;
+            padding-left: 0.5rem;
+        }
+        
+        .card li { margin-bottom: 0.5rem; }
+        
+        .card .icon {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: #eff6ff;
+            color: var(--primary);
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Table Styles */
+        .table-container {
+            overflow-x: auto;
+            margin: 3rem 0;
+            background: var(--surface);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background-color: #f1f5f9;
+            color: var(--secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.875rem;
+            letter-spacing: 0.05em;
+        }
+
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background-color: #f8fafc; }
+        
+        .highlight-row {
+            background-color: #f0fdf4 !important;
+            border-left: 4px solid var(--success);
+        }
+
+        /* Math and Code spans */
+        .math {
+            font-family: 'Cambria Math', 'Times New Roman', serif;
+            font-style: italic;
+            font-weight: bold;
+            color: var(--primary-dark);
+            background: #eff6ff;
+            padding: 0.1rem 0.3rem;
+            border-radius: 4px;
+        }
+        
+        code {
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            background: #f1f5f9;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.875em;
+            color: #b91c1c;
+        }
+
+        /* Optimizations list */
+        .optimizations {
+            background: var(--secondary);
+            color: white;
+            padding: 4rem 0;
+            margin-top: 5rem;
+        }
+        
+        .optimizations h2 { color: white; }
+        
+        .opt-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        .opt-item {
+            background: #1e293b;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border-left: 3px solid var(--accent);
+        }
+        .opt-item h4 { color: #f8fafc; margin-bottom: 0.5rem; }
+        .opt-item p { color: #cbd5e1; font-size: 0.9rem; margin: 0; }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-light);
+            font-size: 0.875rem;
+            background: var(--bg);
+        }
+        
+        /* Icons */
+        .svg-icon {
+            width: 1.25rem;
+            height: 1.25rem;
+            margin-right: 0.5rem;
+            fill: currentColor;
+        }
+    </style>
 </head>
 <body>
-  <header>📄 paper.pdf</header>
-  <iframe src="paper.pdf" type="application/pdf"></iframe>
+
+    <header>
+        <h1>AdaSpec</h1>
+        <p class="subtitle">Unified Framework for Cross-Vocabulary Translation, Online Distillation, and Dynamic Draft Selection</p>
+        <div class="header-links">
+            <a href="https://github.com/Andrchest/Adaptive-speculative-decoding" target="_blank" class="btn-github">
+                <svg class="svg-icon" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+                </svg>
+                GitHub Repository
+            </a>
+            <a href="LINK_ON_PAPER" target="_blank" class="btn-paper">
+                <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                Read the Paper
+            </a>
+        </div>
+    </header>
+
+    <div class="container">
+        <section class="abstract">
+            <h3>Project Overview</h3>
+            <p><strong>Adaptive Speculative Decoding (AdaSpec)</strong> is an advanced research framework for accelerating text generation in Large Language Models (LLMs). Instead of classic autoregressive generation, a fast small model (drafter) prepares a draft of several tokens, and a large model (target) verifies them in a single pass. If the tokens are correct, we get multiple tokens for the price of one large model <code>forward pass</code>.</p>
+            <p>The framework resolves three fundamental challenges of speculative decoding: cross-vocabulary mismatch, inability to adapt models on-the-fly, and static draft lengths.</p>
+        </section>
+
+        <section class="schema-section">
+            <h2>System Architecture</h2>
+            <img src="schema.png" alt="AdaSpec Architecture Diagram">
+        </section>
+
+        <section>
+            <h2>Key Components & Extensions</h2>
+            <div class="grid">
+                
+                <!-- Speculative Decoding Loop -->
+                <div class="card">
+                    <div class="icon">Core Loop</div>
+                    <h3>Speculative Decoding</h3>
+                    <p>The fundamental step-by-step cycle implemented in the <code>SpeculativeDecoder</code> class.</p>
+                    <ul>
+                        <li><strong>Drafting:</strong> Autoregressive generation of <span class="math">k</span> tokens using KV cache (saving O(seq_len) compute).</li>
+                        <li><strong>Verification:</strong> Parallel verification of <span class="math">k+1</span> tokens by the target model.</li>
+                        <li><strong>Accept/Reject:</strong> GPU-vectorized evaluation of the <span class="math">min(1, p/q)</span> condition.</li>
+                        <li><strong>Bonus Token:</strong> Sampling a token from the residual distribution at the rejection point to guarantee correctness.</li>
+                    </ul>
+                </div>
+
+                <!-- Cross-Vocab Translation -->
+                <div class="card">
+                    <div class="icon">Translation</div>
+                    <h3>Cross-Vocabulary Translation</h3>
+                    <p>A multi-tier system bridging models with different tokenizers (e.g., Llama and Qwen).</p>
+                    <ul>
+                        <li><strong>Rule 1 (Exact match):</strong> Exact 1-to-1 probability transfer for matching IDs (covers ~70%).</li>
+                        <li><strong>Rule 2 (Approximate):</strong> Substring matching via Aho-Corasick automaton and probability redistribution.</li>
+                        <li><strong>Tokenizer Lattice:</strong> DP-based graph for exact replacement of Rule 2 (currently in research).</li>
+                    </ul>
+                </div>
+
+                <!-- Online Distillation -->
+                <div class="card">
+                    <div class="icon">Learning</div>
+                    <h3>Online Distillation</h3>
+                    <p>Continuous fine-tuning of the drafter model during generation via LoRA with gradient accumulation.</p>
+                    <ul>
+                        <li><strong>KL Divergence:</strong> For tokens with direct Rule 1 mapping.</li>
+                        <li><strong>N-gram NLL:</strong> For merged tokens on accepted sequences.</li>
+                        <li><strong>Contrastive Loss (InfoNCE):</strong> Using rejected tokens as hard negatives.</li>
+                    </ul>
+                </div>
+
+                <!-- Adaptive Draft Length -->
+                <div class="card">
+                    <div class="icon">Dynamic K</div>
+                    <h3>Adaptive Draft Selection</h3>
+                    <p>Intelligent control of the draft length (k) based on context difficulty (heuristic and learned).</p>
+                    <ul>
+                        <li><strong>Speedup Predictor:</strong> Predicts the optimal k based on hidden states.</li>
+                        <li><strong>Latent Regime Controller:</strong> HMM identifying difficulty regimes (easy, normal, hard) and sampling <span class="math">k</span> from a truncated Poisson distribution.</li>
+                    </ul>
+                </div>
+
+                <!-- Multi-Drafter Routing -->
+                <div class="card">
+                    <div class="icon">Routing</div>
+                    <h3>Multi-Drafter Routing</h3>
+                    <p>Dynamic selection of the best drafter model from a pool for a specific prompt (trade-off speed vs quality).</p>
+                    <ul>
+                        <li><strong>Bandit Algorithms:</strong> UCB1, Thompson Sampling, and LinUCB for on-the-fly policy learning.</li>
+                        <li><strong>MLP Router:</strong> Prediction based on prompt embeddings (length, vocabulary diversity).</li>
+                    </ul>
+                </div>
+
+                <!-- N-Gram Cache & Universal -->
+                <div class="card">
+                    <div class="icon">Cache & Universal</div>
+                    <h3>Cache & Universal Drafter</h3>
+                    <p>Modules for reducing computational overhead and enabling universality.</p>
+                    <ul>
+                        <li><strong>N-gram Cache:</strong> 65K-entry cache with LRU, LFU, and Acceptance-weighted strategies to bypass drafter forward passes.</li>
+                        <li><strong>Universal Drafter:</strong> A single drafter model (via target-specific LoRA adapters) serving different target families.</li>
+                    </ul>
+                </div>
+
+            </div>
+        </section>
+
+        <section>
+            <h2>Experimental Results (Ablation Suite)</h2>
+            <p>The research pipeline uses the Strategy pattern, enabling a systematic ablation of all components (Target: Qwen2.5-7B).</p>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Configuration</th>
+                            <th>Acceptance Rate</th>
+                            <th>Tokens/Step</th>
+                            <th>Draft (k)</th>
+                            <th>TPS</th>
+                            <th>Wall-Clock Speedup</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1. Baseline (Rule 1 + Rule 2 + Cache)</td>
+                            <td>59.5%</td>
+                            <td>3.64</td>
+                            <td>5</td>
+                            <td>18.3</td>
+                            <td>1.02x</td>
+                        </tr>
+                        <tr>
+                            <td>2. + Online Distillation</td>
+                            <td>67.1%</td>
+                            <td>4.04</td>
+                            <td>5</td>
+                            <td>17.1</td>
+                            <td>0.90x</td>
+                        </tr>
+                        <tr>
+                            <td>3. + Speedup Adapt (Predictor)</td>
+                            <td>53.1%</td>
+                            <td>4.07</td>
+                            <td>7</td>
+                            <td>19.9</td>
+                            <td>1.06x</td>
+                        </tr>
+                        <tr class="highlight-row">
+                            <td><strong>4. Latent Regime (HMM)</strong></td>
+                            <td><strong>55.7%</strong></td>
+                            <td><strong>4.77</strong></td>
+                            <td><strong>7</strong></td>
+                            <td><strong>23.2</strong></td>
+                            <td><strong>1.19x</strong></td>
+                        </tr>
+                        <tr class="highlight-row">
+                            <td><strong>5. Bandit UCB + Distillation</strong></td>
+                            <td><strong>71.2%</strong></td>
+                            <td><strong>4.42</strong></td>
+                            <td><strong>5</strong></td>
+                            <td><strong>18.6</strong></td>
+                            <td><strong>0.99x</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p style="text-align: center; font-size: 0.9rem; color: var(--text-light);">
+                <em>* Latent Regime achieves maximum speedup (1.19x) by generating more tokens per step, while Bandit UCB + Distillation yields the highest Acceptance Rate (71.2%).</em>
+            </p>
+        </section>
+    </div>
+
+    <section class="optimizations">
+        <div class="container">
+            <h2>Critical Optimizations (Performance Tweaks)</h2>
+            <p style="text-align: center; max-width: 800px; margin: 0 auto; color: #cbd5e1;">The project underwent a series of low-level performance enhancements making theoretical algorithms efficient in practice.</p>
+            <div class="opt-grid">
+                <div class="opt-item">
+                    <h4>KV Cache Reuse (Drafter)</h4>
+                    <p>Key-value cache is preserved across steps, processing only 1-2 new tokens instead of a full O(seq_len) pass. Yields 10-60x speedup.</p>
+                </div>
+                <div class="opt-item">
+                    <h4>GPU-Vectorized Accept/Reject</h4>
+                    <p>Eliminated Python loops with CPU/GPU synchronizations. Acceptance condition is now computed with a single `cumprod` on GPU.</p>
+                </div>
+                <div class="opt-item">
+                    <h4>Bonus Token Forward Reuse</h4>
+                    <p>A single drafter forward pass extends the KV cache and outputs hidden states for the Adaptive controller (saves 1 redundant pass).</p>
+                </div>
+                <div class="opt-item">
+                    <h4>Dense Transfer Matrix</h4>
+                    <p>Dense matmul is used instead of sparse kernel launch overhead for small vocabularies, significantly speeding up Rule 2 mapping.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>© 2026 AdaSpec Research Team. Built for Large Language Model Inference Acceleration.</p>
+            <p>Tech Stack: Python 3.12, PyTorch, Transformers, Accelerate, BitsAndBytes, NetworkX, MLflow, Typer.</p>
+        </div>
+    </footer>
+
 </body>
 </html>
